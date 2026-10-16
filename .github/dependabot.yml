@@ -21,6 +21,10 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    # A major do @types/node acompanha a do runtime (.node-version) e sobe junto com ele.
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       npm:
         patterns: ["*"]
