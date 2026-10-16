@@ -28,7 +28,7 @@ O risco está concentrado numa peça: TanStack DB, ainda pré-1.0. Todo o resto 
 | Camada | Escolha | Risco | Observação |
 | --- | --- | --- | --- |
 | Shell / roteamento | Next.js 16, App Router, static export | Baixo | Sem servidor Next em produção |
-| UI | Sanjou UI sobre Base UI + Tailwind CSS 4 | Baixo | Componentes de sync são novos no DS |
+| UI | Sanjou UI sobre Base UI + Tailwind CSS 4 | Baixo | Componentes de sync são do app, feitos com primitivos do Sanjou ([ADR 0020](../decisions/0020-componentes-que-faltam-no-sanjou-ficam-no-app.md)) |
 | Dados locais | TanStack DB + `@tanstack/offline-transactions` | **Médio** | Pré-1.0; isolado em `services/` |
 | Sync | Delta + outbox sobre a REST do .NET | Médio | Sem infraestrutura extra |
 | Formulários | TanStack Form + Zod | Baixo | Zod gerado do contrato |
@@ -192,6 +192,7 @@ src/
     sync/scheduler.ts                # gatilhos de pull e status de rede
     auth/session.ts                  # access token em memória, janela offline
     auth/refreshLock.ts              # Web Locks + BroadcastChannel
+    components/                      # shell, sync e o que falta no Sanjou (ADR 0020)
   sw.ts                              # service worker (Serwist)
 ```
 
@@ -268,7 +269,7 @@ A ousadia visual é tornar o sync legível sem torná-lo barulhento. O estado ap
 - Animação só em transição de estado, curta e desligada por `prefers-reduced-motion`.
 - Keyboard-first: command palette e atalhos para salvar etapa, abrir pendências e alternar registros.
 
-Os componentes recebem um `SyncState` genérico e não conhecem TanStack DB, então podem entrar no Sanjou UI como diferencial do design system.
+Os componentes ficam no app, em `shared/components/` ([ADR 0020](../decisions/0020-componentes-que-faltam-no-sanjou-ficam-no-app.md)). Recebem um `SyncState` genérico e não conhecem TanStack DB, então podem ir para o Sanjou UI se outro projeto precisar deles.
 
 **Fonte do design.** As telas são desenhadas no Figma, num arquivo do app que usa a biblioteca publicada do Sanjou UI, e implementadas a partir do link da seleção pelo MCP do Figma no Claude Code. A tela de campo e os componentes de sync acima são desenhados no marco MD, antes de qualquer tela em código. O fluxo completo está em ["Das telas no Figma para o código"](../vision.md#das-telas-no-figma-para-o-código), no documento [Visão do Projeto](../vision.md).
 

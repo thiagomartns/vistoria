@@ -29,8 +29,10 @@ Essas fronteiras são regra, não convenção (viram regras de lint).
 - **Rotas sem segmento dinâmico.** Nada de `[id]`: o id vai na query string (`/inspections/edit?id=`),
   lido com `useSearchParams` dentro de `Suspense`. Static export não aceita rota dinâmica com id de runtime.
 - Proibido no static export: Server Components com dados, Server Actions, middleware, rotas de API, ISR.
-- **Usar os componentes do Sanjou UI e nunca recriá-los** com `div` e classes. Componente que falta vira
-  issue no repositório do Sanjou; a tela usa um placeholder marcado até ele sair.
+- **Usar os componentes do Sanjou UI e nunca recriá-los** com `div` e classes. Componente que falta é
+  componente local em `src/shared/components/`, só com primitivos e tokens do Sanjou
+  ([ADR 0020](../../docs/decisions/0020-componentes-que-faltam-no-sanjou-ficam-no-app.md)); se for
+  genérico, entra em "Candidatos ao Sanjou".
 - React Compiler ligado: sem `useMemo`/`useCallback` manuais.
 
 ## Comandos (rodar dentro de `apps/web` ou com `pnpm --filter web`)
@@ -40,3 +42,10 @@ Essas fronteiras são regra, não convenção (viram regras de lint).
 ## Figma → Sanjou
 
 _Preenchida no MD_ (ver [Das telas no Figma para o código](../../docs/vision.md#das-telas-no-figma-para-o-código)).
+
+## Candidatos ao Sanjou
+
+Componentes locais genéricos que sobem em bloco na próxima release do Sanjou (ADR 0020). No Figma,
+levam "Candidato ao Sanjou" na descrição. Uma linha por componente: nome, caminho, motivo.
+
+_Nenhum ainda._

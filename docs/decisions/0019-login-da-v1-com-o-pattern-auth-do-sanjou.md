@@ -1,6 +1,6 @@
 # 0019 — Login da V1 com o pattern Auth do Sanjou
 
-- **Status:** Proposto
+- **Status:** Aceito
 - **Data:** 2026-10-16
 
 ## Contexto
