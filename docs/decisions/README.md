@@ -1,0 +1,25 @@
+# Decisões (ADRs)
+
+Um arquivo por decisão, com Contexto, Decisão e Consequências. Um ADR aceito nunca é editado:
+uma decisão nova o substitui e diz qual substituiu. Novo ADR: `/adr <título>` a partir do [template](0000-template.md).
+
+| # | Decisão | Status | Data |
+| --- | --- | --- | --- |
+| [0001](0001-dominio-vistoria-de-imoveis.md) | Domínio: vistoria de imóveis para locação | Aceito | 2026-10-16 |
+| [0002](0002-fotos-fora-da-v1.md) | Fotos fora da V1 | Aceito | 2026-10-16 |
+| [0003](0003-um-vistoriador-varios-aparelhos.md) | Um vistoriador, vários aparelhos | Aceito | 2026-10-16 |
+| [0004](0004-signup-aberto-com-rate-limit.md) | Cadastro aberto com rate limit | Aceito | 2026-10-16 |
+| [0005](0005-vistoria-concluida-imutavel.md) | Vistoria concluída é imutável | Aceito | 2026-10-16 |
+| [0006](0006-laudo-pagina-imprimivel.md) | Laudo como página imprimível | Aceito | 2026-10-16 |
+| [0007](0007-busca-so-no-banco-local.md) | Busca e listagem só no banco local | Aceito | 2026-10-16 |
+| [0008](0008-exclusao-soft-delete-com-tombstones.md) | Exclusão só de vistoria em andamento, com tombstones | Aceito | 2026-10-16 |
+| [0009](0009-banco-sql-server.md) | Banco: SQL Server | Aceito | 2026-10-16 |
+| [0010](0010-front-em-static-export.md) | Front em static export | Aceito | 2026-10-16 |
+| [0011](0011-hospedagem-docker-compose-mesma-origem.md) | Hospedagem: docker-compose na mesma origem | Aceito | 2026-10-16 |
+| [0012](0012-sem-sync-engine-dedicado.md) | Sem sync engine dedicado | Aceito | 2026-10-16 |
+| [0013](0013-entidades-sensiveis-sem-sync.md) | Entidades sensíveis não sincronizam | Aceito | 2026-10-16 |
+| [0014](0014-monorepo.md) | Monorepo | Aceito | 2026-10-16 |
+| [0015](0015-controllers-em-camadas.md) | Controllers em camadas, não vertical slices | Aceito | 2026-10-16 |
+| [0016](0016-local-first-tanstack-db-outbox.md) | Local-first com TanStack DB e outbox | Aceito | 2026-10-16 |
+| [0017](0017-contrato-via-openapi-commitado.md) | Contrato via openapi.json commitado | Aceito | 2026-10-16 |
+| [0018](0018-erros-pelo-type.md) | Erros decididos pelo type, nunca pelo status | Aceito | 2026-10-16 |

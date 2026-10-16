@@ -1,12 +1,10 @@
 # Arquitetura Backend — API .NET para app local-first
 
-Oct 15, 2026 · @Thiago
-
 ## Decisão e princípios
 
 A API evolui a estrutura do curso: controllers e camadas horizontais (Controller → Service → Repository), sem vertical slices nem Minimal APIs. O esforço de estudo vai para o que é novo de verdade (concorrência, idempotência e sync), não para uma arquitetura nova.
 
-Este documento é a **fonte única do contrato de sincronização**: rotas, cabeçalhos, catálogo de erros e todos os prazos. O documento do front (Arquitetura Frontend — App local-first) cumpre esse contrato e não redefine nenhum status, cabeçalho ou valor.
+Este documento é a **fonte única do contrato de sincronização**: rotas, cabeçalhos, catálogo de erros e todos os prazos. O documento do front ([Arquitetura Frontend — App local-first](frontend.md)) cumpre esse contrato e não redefine nenhum status, cabeçalho ou valor.
 
 **Por que essa escolha**
 
@@ -26,7 +24,7 @@ Este documento é a **fonte única do contrato de sincronização**: rotas, cabe
 
 ## Visão geral
 
-&#91;embedded content: camadas da API e peças transversais\]
+> Diagrama: camadas da API e peças transversais (disponível na versão original do documento)
 
 A espinha é a do curso. O que é novo fica à direita, como peças plugadas ao pipeline, e na camada de services, que passa a cuidar de versão, agregado e delta.
 
@@ -136,7 +134,7 @@ public abstract class SyncEntity
 
 **Regra do agregado (Inspection → Room → InspectionItem)**
 
-- `Inspection` é a raiz. Ambientes e itens só são escritos pelo `PUT` da vistoria, nunca por endpoint próprio. Campos e limites de cada entidade estão no Modelo de domínio do documento Visão do Projeto.
+- `Inspection` é a raiz. Ambientes e itens só são escritos pelo `PUT` da vistoria, nunca por endpoint próprio. Campos e limites de cada entidade estão no [Modelo de domínio](../vision.md#modelo-de-domínio) do documento [Visão do Projeto](../vision.md).
 - A versão do agregado é a da raiz. Toda mudança em ambiente ou item atualiza `Inspection.UpdatedAt`, o que força a linha da raiz a mudar e o rowversion a subir. ETag e delta só olham a raiz.
 - No `PUT`, `rooms` (e `items` dentro de cada ambiente) é a lista completa. Id novo é criado; existente que não veio é marcado com `DeletedAt`.
 - `Room` e `InspectionItem` não têm `version` própria.
@@ -242,7 +240,7 @@ O servidor faz duas coisas pelo front local-first. Aceita escritas que provam so
 
 ### Escrita
 
-&#91;embedded content: tratamento de um PUT no InspectionService · 7 decisões\]
+> Diagrama: tratamento de um PUT no InspectionService · 7 decisões (disponível na versão original do documento)
 
 A ordem importa: idempotência primeiro (um retry nunca reexecuta nada), depois exclusão e trava de conclusão, depois versão, e validação por último. A checagem no `SaveChanges` cobre a janela entre ler e gravar, quando duas requisições correm juntas. O `DELETE` segue o mesmo caminho, com uma diferença: registro inexistente ou já excluído responde 204 direto. Os outros recursos (`clients`, `properties`, `templates`) usam o mesmo fluxo, sem a trava de conclusão.
 
@@ -390,7 +388,7 @@ Nenhuma questão técnica fica em aberto. As decisões abaixo valem para os dois
 
 | Tema | Decisão | Motivo |
 | --- | --- | --- |
-| Domínio | Vistoria de imóveis para locação: `Client`, `Property`, `Template`, `Inspection` → `Room` → `InspectionItem` | Offline estrutural e formulário profundo por natureza; detalhes no documento Visão do Projeto |
+| Domínio | Vistoria de imóveis para locação: `Client`, `Property`, `Template`, `Inspection` → `Room` → `InspectionItem` | Offline estrutural e formulário profundo por natureza; detalhes no documento [Visão do Projeto](../vision.md) |
 | Fotos | Fora da V1; entram na V2 | Sincronizar arquivos offline é um tema inteiro; o modelo já reserva o lugar |
 | Quem edita | Um vistoriador, vários aparelhos; escopo por `OwnerId` | Equipes e portal da imobiliária ficam fora |
 | Cadastro de usuário | `signup` aberto com rate limit | Sem convite nem aprovação na V1 |

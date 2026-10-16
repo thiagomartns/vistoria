@@ -1,12 +1,10 @@
 # Arquitetura Frontend — App local-first
 
-Oct 15, 2026 · @Thiago
-
 ## Tese e princípios
 
 O front é um app **local-first** servido por um shell Next.js sem servidor em produção. O .NET é a única fonte de verdade e a única fronteira de segurança. A ousadia está na camada de dados e na UX de sincronização, não no framework.
 
-O contrato de sync (rotas, cabeçalhos, catálogo de erros, prazos e decisões) vive no documento do backend (Arquitetura Backend — API .NET para app local-first). Este documento descreve como o cliente cumpre esse contrato e **nunca redefine** um status, cabeçalho ou valor. Onde um número aparece aqui, ele vem da seção Parâmetros compartilhados de lá.
+O contrato de sync (rotas, cabeçalhos, catálogo de erros, prazos e decisões) vive no documento do backend ([Arquitetura Backend — API .NET para app local-first](backend.md)). Este documento descreve como o cliente cumpre esse contrato e **nunca redefine** um status, cabeçalho ou valor. Onde um número aparece aqui, ele vem da seção [Parâmetros compartilhados](backend.md#parâmetros-compartilhados) de lá.
 
 1. **Local antes de remoto.** Toda leitura e escrita da UI acontece contra o banco local. A rede é detalhe de sincronização.
 2. **Next como shell, não como backend.** Static export, sem Server Components com dados, Server Actions, rotas de API ou middleware.
@@ -19,7 +17,7 @@ O contrato de sync (rotas, cabeçalhos, catálogo de erros, prazos e decisões) 
 
 ## Visão geral
 
-&#91;embedded content: camadas do front até o .NET · leitura local, escrita via outbox\]
+> Diagrama: camadas do front até o .NET · leitura local, escrita via outbox (disponível na versão original do documento)
 
 A tela nunca espera a rede: lê do banco local e escreve na outbox. O sync empurra a outbox para o .NET e puxa de volta o que mudou, sempre pela camada de services.
 
@@ -74,7 +72,7 @@ O documento OpenAPI 3.1 do .NET (`/openapi/v1.json`) gera `models`, schemas Zod,
 
 Uma collection por entidade, persistida no aparelho, é a única fonte de leitura da UI. Escritas são aplicadas na hora (otimistas), gravadas na outbox e confirmadas ou revertidas pelo .NET.
 
-&#91;embedded content: caminho de uma escrita · 3 resultados principais\]
+> Diagrama: caminho de uma escrita · 3 resultados principais (disponível na versão original do documento)
 
 O caminho feliz é invisível para o usuário. A tabela de reações abaixo cobre todos os outros resultados.
 
@@ -98,7 +96,7 @@ O caminho feliz é invisível para o usuário. A tabela de reações abaixo cobr
 
 ### Reação aos erros
 
-A reação é escolhida pelo `type`, conforme o catálogo do backend. Falha de rede (sem resposta) entra no primeiro grupo.
+A reação é escolhida pelo `type`, conforme o [catálogo do backend](backend.md#catálogo-de-erros). Falha de rede (sem resposta) entra no primeiro grupo.
 
 | Grupo | `type` | O que a outbox faz |
 | --- | --- | --- |
@@ -128,7 +126,7 @@ Regras de negócio do agregado (como exigir condição em todos os itens para co
 
 Todo formulário profundo é um registro na collection `drafts`, salvo a cada alteração. Fechar a aba, perder a rede ou trocar de tela nunca perde input.
 
-&#91;embedded content: ciclo de vida do rascunho · 7 estados\]
+> Diagrama: ciclo de vida do rascunho · 7 estados (disponível na versão original do documento)
 
 Enquanto está na outbox, o formulário fica só leitura. Rejeição (`validation`) volta ao rascunho; conflito (`version-conflict`) e exclusão remota (`deleted`) pedem uma decisão e voltam à fila como transação nova.
 
@@ -210,13 +208,13 @@ As regras da tabela viram regras de lint (fronteiras de import), não convençã
 
 O app inteiro é um bundle estático que o service worker pré-cacheia. Depois da primeira visita, abrir o app não depende de rede: o shell vem do cache e os dados vêm do banco local.
 
-- **Static export.** `output: 'export'`. O static export não aceita segmentos dinâmicos sem `generateStaticParams`, e os IDs só existem em runtime. Por isso nenhuma rota tem `[id]`: o id vai na query string (`/inspections/edit?id=...`), lido com `useSearchParams` dentro de um `Suspense`. As rotas estão em Telas, no documento Visão do Projeto.
+- **Static export.** `output: 'export'`. O static export não aceita segmentos dinâmicos sem `generateStaticParams`, e os IDs só existem em runtime. Por isso nenhuma rota tem `[id]`: o id vai na query string (`/inspections/edit?id=...`), lido com `useSearchParams` dentro de um `Suspense`. As rotas estão em [Telas](../vision.md#telas-e-fluxo-principal), no documento [Visão do Projeto](../vision.md).
 - **Service worker (Serwist).** Pré-cache do shell, das fontes e dos ícones. Requisições à API nunca passam pelo cache do SW: quem cuida de dado é a camada de sync.
 - **Build.** `next build --webpack`, por exigência do Serwist. Em dev, Turbopack com o SW desligado.
 - **Atualização do app.** A versão nova do SW fica em espera; a UI mostra "Nova versão disponível" e só ativa com a outbox vazia.
 - **Schema local.** Como a atualização só ativa com a outbox vazia, nunca há escrita pendente para migrar. Mudança incompatível no schema local faz wipe-and-resync (rascunhos `draft` são preservados e convertidos pelo mapper da versão).
 - **Laudo.** `/inspections/report` é uma página com CSS `@media print`; o PDF sai do "Salvar como PDF" do navegador, inclusive offline.
-- **Hospedagem.** Em produção, arquivos servidos pelo Caddy na mesma origem da API; em dev, `next dev` na porta 3000 (detalhes em Ambientes, no documento do backend).
+- **Hospedagem.** Em produção, arquivos servidos pelo Caddy na mesma origem da API; em dev, `next dev` na porta 3000 (detalhes em [Ambientes](backend.md#ambientes-e-hospedagem), no documento do backend).
 - **Instalável.** Manifest + ícones; abre em janela própria no desktop e no Android.
 
 O que o static export proíbe e é aceito como custo: Server Components com dados, Server Actions, middleware, rotas de API, ISR, segmentos dinâmicos e otimização de imagem do `next/image` em runtime.
@@ -238,7 +236,7 @@ Sem servidor Next em produção, as CVEs de React Server Components não se apli
 
 - Banco local separado por `user.id`.
 - Logout (`signOut`) apaga dados, outbox e caches, com aviso quando há pendências.
-- Só existe no aparelho o que tem endpoint de sync. Entidades sensíveis simplesmente não têm sync (decisão registrada no backend), então o front não precisa classificar nada.
+- Só existe no aparelho o que tem endpoint de sync. Entidades sensíveis simplesmente não têm sync (decisão registrada no [backend](backend.md#decisões-tomadas)), então o front não precisa classificar nada.
 
 **Supply chain (vale para o app e para o Sanjou UI)**
 
@@ -272,11 +270,11 @@ A ousadia visual é tornar o sync legível sem torná-lo barulhento. O estado ap
 
 Os componentes recebem um `SyncState` genérico e não conhecem TanStack DB, então podem entrar no Sanjou UI como diferencial do design system.
 
-**Fonte do design.** As telas são desenhadas no Figma, num arquivo do app que usa a biblioteca publicada do Sanjou UI, e implementadas a partir do link da seleção pelo MCP do Figma no Claude Code. A tela de campo e os componentes de sync acima são desenhados no marco MD, antes de qualquer tela em código. O fluxo completo está em "Das telas no Figma para o código", no documento Visão do Projeto.
+**Fonte do design.** As telas são desenhadas no Figma, num arquivo do app que usa a biblioteca publicada do Sanjou UI, e implementadas a partir do link da seleção pelo MCP do Figma no Claude Code. A tela de campo e os componentes de sync acima são desenhados no marco MD, antes de qualquer tela em código. O fluxo completo está em ["Das telas no Figma para o código"](../vision.md#das-telas-no-figma-para-o-código), no documento [Visão do Projeto](../vision.md).
 
 ## Riscos e spikes
 
-Quatro spikes validam as apostas antes das telas. As decisões de produto e arquitetura estão fechadas na tabela Decisões tomadas do documento do backend; nenhuma fica em aberto aqui.
+Quatro spikes validam as apostas antes das telas. As decisões de produto e arquitetura estão fechadas na tabela [Decisões tomadas](backend.md#decisões-tomadas) do documento do backend; nenhuma fica em aberto aqui.
 
 **Riscos**
 
@@ -287,11 +285,11 @@ Quatro spikes validam as apostas antes das telas. As decisões de produto e arqu
 | Volume de dados local | App lento, quota do navegador | Escopo por dono; medido no spike 2 |
 | Sanjou UI depender de recurso de servidor do Next | Quebra no static export | Verificado cedo no marco MD (página de prova no static export) e confirmado no spike 4 |
 
-**Spikes** (as fases do backend de que cada um depende estão no Roteiro de estudo de lá)
+**Spikes** (as fases do backend de que cada um depende estão no [Roteiro de estudo](backend.md#roteiro-de-estudo) de lá)
 
 - [ ] **Spike 1 — Outbox:** collection de vistorias persistida; escrita offline, reload, volta da rede, envio com `If-Match` e `Idempotency-Key`; reenvio depois de derrubar a resposta.
 - [ ] **Spike 2 — Volume:** 10 mil vistorias (com ambientes e itens) via delta paginado; medir abertura do app e tempo de live query.
 - [ ] **Spike 3 — Conflito:** dois navegadores editam a mesma vistoria offline, inclusive o mesmo item; 412/409 `version-conflict` com `current`; merge automático, diff e reenvio com chave nova.
 - [ ] **Spike 4 — Shell:** static export + Serwist + Sanjou UI + rota `?id=`; abrir em modo avião depois da primeira visita; duas abas renovando a sessão ao mesmo tempo.
 
-Os spikes estão encaixados nos marcos do documento Visão do Projeto: spikes 1 e 4 no M2, spike 3 no M3, spike 2 no M4.
+Os spikes estão encaixados nos [marcos](../vision.md#marcos) do documento [Visão do Projeto](../vision.md): spikes 1 e 4 no M2, spike 3 no M3, spike 2 no M4.

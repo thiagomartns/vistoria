@@ -1,8 +1,6 @@
 # Visão do Projeto — App local-first
 
-Oct 16, 2026 · @Thiago
-
-Ponto de entrada do projeto. A arquitetura detalhada está em Doc e Doc; este documento diz o que construir, em que ordem e como trabalhar.
+Ponto de entrada do projeto. A arquitetura detalhada está em [Arquitetura Frontend](architecture/frontend.md) e [Arquitetura Backend](architecture/backend.md); este documento diz o que construir, em que ordem e como trabalhar.
 
 ## Produto
 
@@ -51,7 +49,7 @@ Um app de **vistoria de imóveis para locação** usado por vistoriadores autôn
 
 Quatro entidades sincronizáveis (`Client`, `Property`, `Template`, `Inspection`), todas herdando de `SyncEntity`. A vistoria é o agregado central: vistoria → ambientes → itens, escrita inteira num `PUT` e versionada só na raiz.
 
-&#91;embedded content: entidades da V1 · 4 sincronizáveis, 1 agregado de 3 níveis\]
+> Diagrama: entidades da V1 · 4 sincronizáveis, 1 agregado de 3 níveis (disponível na versão original do documento)
 
 Room e Item não têm versão própria; mudar qualquer item sobe a versão da vistoria. O roteiro é só um molde: depois de copiado, a vistoria não depende mais dele.
 
@@ -97,7 +95,7 @@ Room e Item não têm versão própria; mudar qualquer item sobe a versão da vi
 ### Regras de negócio
 
 - **Concluir** exige ao menos um ambiente, ao menos um item por ambiente e `condition` preenchida em todos os itens. O erro aponta o caminho exato: `rooms[2].items[4].condition`.
-- **Concluída é imutável.** `PUT` ou `DELETE` numa vistoria concluída responde 409 `locked` (tipo novo no catálogo do backend).
+- **Concluída é imutável.** `PUT` ou `DELETE` numa vistoria concluída responde 409 `locked` (tipo novo no [catálogo do backend](architecture/backend.md#catálogo-de-erros)).
 - **Saída a partir da entrada** é feita no front: copia ambientes e itens com Ids novos, preenche `referenceCondition` e `referenceNotes` e deixa `condition` nula.
 - **Exclusão:** só vistoria em andamento (soft delete). Cliente, imóvel e roteiro não são excluídos na V1.
 - **Escopo:** tudo pertence a um `OwnerId`; um vistoriador nunca vê dado de outro.
@@ -124,7 +122,7 @@ O fluxo que importa: **lista → nova vistoria → ambiente por ambiente → con
 
 Um roteiro único junta as fases do backend, os spikes do front e a fase de design. Cada marco termina numa entrega que você consegue **ver funcionando**, não numa lista de tarefas feitas. No ritmo de 5 h por semana, são 25 semanas de trabalho (cerca de 125 horas) e uma de pausa no fim do ano.
 
-&#91;embedded content: roteiro da V1 · 7 marcos, início em 19 out 2026\]
+> Diagrama: roteiro da V1 · 7 marcos, início em 19 out 2026 (disponível na versão original do documento)
 
 O M2 é o mais longo e o mais arriscado: é onde backend e front se encontram pela primeira vez offline.
 
@@ -144,7 +142,7 @@ O M2 é o mais longo e o mais arriscado: é onde backend e front se encontram pe
 
 - [ ] Criar o repositório `vistoria` com a estrutura, o workspace pnpm e a solution .NET
 - [ ] Exportar os três documentos para `docs/` e escrever os três `CLAUDE.md`
-- [ ] Criar os ADRs iniciais a partir das Decisões tomadas do backend
+- [ ] Criar os ADRs iniciais a partir das [Decisões tomadas](architecture/backend.md#decisões-tomadas) do backend
 - [ ] `docker-compose.dev.yml` com SQL Server e o comando `pnpm db:up`
 - [ ] CI com os jobs `api` e `web` (esqueleto) e `security`
 - [ ] GitHub Project, labels e modelo de issue
@@ -292,7 +290,7 @@ Arquivos prováveis, armadilhas conhecidas.
 
 ### ADRs
 
-Um arquivo por decisão, `docs/decisions/NNNN-titulo.md`, com três seções: Contexto, Decisão e Consequências. Os primeiros saem da tabela Decisões tomadas do backend, no M0. Um ADR nunca é editado depois de aceito; uma decisão nova o substitui e diz qual substituiu.
+Um arquivo por decisão, `docs/decisions/NNNN-titulo.md`, com três seções: Contexto, Decisão e Consequências. Os primeiros saem da tabela [Decisões tomadas](architecture/backend.md#decisões-tomadas) do backend, no M0. Um ADR nunca é editado depois de aceito; uma decisão nova o substitui e diz qual substituiu.
 
 **Componentes que faltam no Sanjou UI** (`SyncBadge`, `ConflictResolver` e os demais) viram issues no repositório do Sanjou, não neste.
 

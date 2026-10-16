@@ -1,0 +1,44 @@
+# apps/api
+
+API ASP.NET Core 10 com **controllers** (nada de Minimal APIs). É a autoridade: valida, autoriza e detecta
+conflito; o cliente só propõe. [backend.md](../../docs/architecture/backend.md) é a **fonte única do contrato**
+(rotas, cabeçalhos, catálogo de erros, prazos em "Parâmetros compartilhados").
+
+## Camadas
+
+Controller → Service → Repository, horizontais, como no curso (sem vertical slices).
+Pastas em [Estrutura de pastas](../../docs/architecture/backend.md#estrutura-de-pastas).
+
+- **Controllers** (`Controllers/V1/`): rota, binding e status; nenhuma regra de negócio.
+- **Services**: regras do agregado, versão, conclusão, delta.
+- **Repositories**: acesso ao EF Core, sempre async com `CancellationToken`.
+- **Configuração** em extensões `Add*`/`Use*` dentro de `Configurations/`; `Program.cs` só as chama.
+- DTOs em `Data/DTO/V1/`.
+
+## Regras
+
+- **Toda entidade herda de `SyncEntity`** (`Id` Guid do cliente, `Version` rowversion, `CreatedAt`,
+  `UpdatedAt`, `DeletedAt`, `OwnerId`). Sem exceção. `Room` e `InspectionItem` só são escritos pelo `PUT`
+  da vistoria e não têm versão própria.
+- **Erro só por exceção tipada do catálogo** (`Infrastructure/Errors/`), traduzida pelo
+  `GlobalExceptionHandler` em `ProblemDetails` com `type`. Nada de `BadRequest("...")` com string.
+- **Todo endpoint tem `[EndpointName]` em camelCase** (vira o `operationId` e o nome da função no front).
+- **Proibido `FromSqlRaw` com valor externo.** Use LINQ ou `FromSql($"...")` interpolado, que parametriza.
+- **Proibido `DateTime.Now`/`UtcNow`.** Use `TimeProvider` (injetado; nos testes, um falso).
+- **`apps/api/openapi.json` é regenerado no `dotnet build`** e vai commitado no mesmo PR que mudou a API.
+  A geração é incremental (cache em `obj/`): sem a DLL mudar, o arquivo não é reescrito.
+- Segredos fora do repositório: User Secrets em dev, variável de ambiente no container.
+- Pacotes estáveis apenas; nada de preview/rc.
+
+## Testes
+
+`Vistoria.Api.Tests` com xUnit, `WebApplicationFactory` e AwesomeAssertions (não FluentAssertions).
+Testes de integração ficam em `Integration/`; a partir do M1 usam Testcontainers com SQL Server real.
+Cenários esperados em [Testes de integração](../../docs/architecture/backend.md#testes-de-integração).
+
+## Comandos
+
+- `pnpm dev:api` (raiz): `dotnet watch` em `http://localhost:8080`, Swagger em `/swagger`.
+- `pnpm test:api` (raiz): `dotnet test` na `Vistoria.sln`.
+- `dotnet build` em `apps/api`: compila e regenera `openapi.json` (ou `/gen-api`).
+- EF Core, migrações e autenticação chegam no M1.
