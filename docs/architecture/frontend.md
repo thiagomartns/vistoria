@@ -272,6 +272,8 @@ A ousadia visual é tornar o sync legível sem torná-lo barulhento. O estado ap
 
 Os componentes recebem um `SyncState` genérico e não conhecem TanStack DB, então podem entrar no Sanjou UI como diferencial do design system.
 
+**Fonte do design.** As telas são desenhadas no Figma, num arquivo do app que usa a biblioteca publicada do Sanjou UI, e implementadas a partir do link da seleção pelo MCP do Figma no Claude Code. A tela de campo e os componentes de sync acima são desenhados no marco MD, antes de qualquer tela em código. O fluxo completo está em "Das telas no Figma para o código", no documento Visão do Projeto.
+
 ## Riscos e spikes
 
 Quatro spikes validam as apostas antes das telas. As decisões de produto e arquitetura estão fechadas na tabela Decisões tomadas do documento do backend; nenhuma fica em aberto aqui.
@@ -283,7 +285,7 @@ Quatro spikes validam as apostas antes das telas. As decisões de produto e arqu
 | TanStack DB mudar API antes da 1.0 | Retrabalho em `services` | Hooks e telas não importam TanStack DB direto. Plano B: TanStack Query com cache persistido e outbox própria em `shared/sync`; o contrato não muda |
 | Conflitos frequentes em formulários longos | Usuário perde confiança | Merge automático por campo e por item; diff só no que colidiu |
 | Volume de dados local | App lento, quota do navegador | Escopo por dono; medido no spike 2 |
-| Sanjou UI depender de recurso de servidor do Next | Quebra no static export | Spike 4 roda o Sanjou no shell exportado |
+| Sanjou UI depender de recurso de servidor do Next | Quebra no static export | Verificado cedo no marco MD (página de prova no static export) e confirmado no spike 4 |
 
 **Spikes** (as fases do backend de que cada um depende estão no Roteiro de estudo de lá)
 

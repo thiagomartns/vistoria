@@ -118,26 +118,27 @@ O fluxo que importa: **lista → nova vistoria → ambiente por ambiente → con
 | Imóveis | `/properties`, `/properties/edit?id=` | H2 | Cadastro com endereço; lista as vistorias do imóvel |
 | Roteiros | `/templates`, `/templates/edit?id=` | H3 | Editor de ambientes e itens (arrastar para ordenar) |
 
-**Prioridade de design.** A tela "Vistoria em campo" é a única que precisa de desenho cuidadoso no Figma antes de codar: é usada com uma mão, em pé, às vezes com pouca luz. Alvos de toque grandes, condição em chips (novo, bom, regular, ruim, ausente) e navegação entre ambientes sem rolar. As outras telas saem direto dos componentes do Sanjou UI.
+**Design antes do código.** Toda tela é desenhada primeiro no Figma, num arquivo do app que usa a biblioteca publicada do Sanjou UI (tokens validados contra o código na versão 0.2.0). A implementação parte do link da seleção, lido pelo MCP do Figma no Claude Code (ver "Das telas no Figma para o código"). A tela "Vistoria em campo" é a única que exige alta fidelidade antes de codar: é usada com uma mão, em pé, às vezes com pouca luz, então pede alvos de toque grandes, condição em chips (novo, bom, regular, ruim, ausente) e navegação entre ambientes sem rolar. As demais podem partir de wireframes, porque são composições diretas de componentes. O marco MD organiza esse trabalho.
 
 ## Marcos
 
-Um roteiro único junta as fases do backend e os spikes do front. Cada marco termina numa entrega que você consegue **ver funcionando**, não numa lista de tarefas feitas. No ritmo de 5 h por semana, são 22 semanas, cerca de 110 horas.
+Um roteiro único junta as fases do backend, os spikes do front e a fase de design. Cada marco termina numa entrega que você consegue **ver funcionando**, não numa lista de tarefas feitas. No ritmo de 5 h por semana, são 25 semanas de trabalho (cerca de 125 horas) e uma de pausa no fim do ano.
 
-&#91;embedded content: roteiro da V1 · 6 marcos, início em 19 out 2026\]
+&#91;embedded content: roteiro da V1 · 7 marcos, início em 19 out 2026\]
 
 O M2 é o mais longo e o mais arriscado: é onde backend e front se encontram pela primeira vez offline.
 
 | Marco | Entrega verificável | Backend (fases) | Front |
 | --- | --- | --- | --- |
 | M0 · Fundação | Repositório com CI verde, docs em `docs/`, `CLAUDE.md`, banco sobe com um comando, backlog do M1 pronto | — | Esqueleto Next com static export |
+| MD · Design | Arquivo do app no Figma com fluxos, shell, tela de campo em alta fidelidade (celular e desktop, todos os estados de sync) e demais telas em wireframe; Sanjou UI renderizando no static export | — | Sanjou no shell; mapa Figma → Sanjou; comando `/screen` |
 | M1 · Contrato e domínio | Swagger UI mostra as 4 entidades e o catálogo de erros; front gera tipos e `ProblemType` sem erro | 1 e 2 | `gen:api`, client, `handleProblem` |
-| M2 · Escrita confiável | Criar vistoria offline, recarregar a página, voltar a rede: ela chega ao SQL Server uma vez só | 3, 4 e 5 | Shell e PWA (spike 4), outbox (spike 1), tela de vistoria básica |
+| M2 · Escrita confiável | Criar vistoria offline, recarregar a página, voltar a rede: ela chega ao SQL Server uma vez só | 3, 4 e 5 | Shell e PWA (spike 4), outbox (spike 1), tela de campo básica a partir do Figma |
 | M3 · Conflito | Dois navegadores editam a mesma vistoria offline e convergem sem perder nada | — | Merge e `ConflictResolver` (spike 3) |
 | M4 · Leitura e sessão | Aparelho novo baixa tudo; 10 mil vistorias abrem rápido; duas abas renovam a sessão sem deslogar | 6 | Pull por delta, sessão offline, refresh em aba única (spike 2) |
-| M5 · Produto V1 | Vistoria real de entrada e saída, ponta a ponta, com laudo impresso, rodando no docker-compose de produção | Ajustes | Todas as telas, roteiros, saída a partir da entrada, concluir, laudo |
+| M5 · Produto V1 | Vistoria real de entrada e saída, ponta a ponta, com laudo impresso, rodando no docker-compose de produção | Ajustes | Todas as telas a partir do Figma, roteiros, saída a partir da entrada, concluir, laudo |
 
-**Se atrasar.** A estimativa é otimista. Se o M2 passar duas semanas do previsto, o corte vem do M5 (roteiros editáveis viram um roteiro fixo; filtros viram busca simples), nunca da arquitetura de sync, que é o objetivo do estudo.
+**Se atrasar.** As estimativas são otimistas. O MD tem prazo fechado de 3 semanas: o que não ficar pronto em alta fidelidade segue como wireframe e é refinado no M5. Se o M2 passar duas semanas do previsto, o corte vem do M5 (roteiros editáveis viram um roteiro fixo; filtros viram busca simples), nunca da arquitetura de sync, que é o objetivo do estudo.
 
 ### Backlog do M0
 
@@ -148,6 +149,17 @@ O M2 é o mais longo e o mais arriscado: é onde backend e front se encontram pe
 - [ ] CI com os jobs `api` e `web` (esqueleto) e `security`
 - [ ] GitHub Project, labels e modelo de issue
 - [ ] Escrever as issues do M1
+
+### Backlog do MD
+
+- [ ] Criar o arquivo "vistoria — app" no time do Figma, com a biblioteca Sanjou UI ativada e as páginas Fluxos, Wireframes, Telas e Componentes novos
+- [ ] Fluxos: login; lista → nova vistoria → campo → concluir → laudo; sessão expirada; conflito
+- [ ] Shell: navegação, header com `SyncStatus`, `OfflineBanner`, comportamento no celular e no desktop
+- [ ] Tela de campo em alta fidelidade, no celular e no desktop, com os estados vazio, offline, enviando, conflito, rejeitado e concluída
+- [ ] Wireframes das demais telas da tabela de Telas
+- [ ] Componentes que faltam no Sanjou (`SyncBadge`, `ConflictResolver` e os demais) desenhados na biblioteca e abertos como issues no repositório do Sanjou
+- [ ] Sanjou UI instalado em `apps/web`, com uma página de prova no static export (adianta a parte de risco do spike 4)
+- [ ] Mapa "componente no Figma → import do Sanjou" em `apps/web/CLAUDE.md` e o comando `/screen` no repositório
 
 ## Repositório e ambiente
 
@@ -260,7 +272,15 @@ Arquivos prováveis, armadilhas conhecidas.
 4. Ele implementa com testes, roda `pnpm check` e `pnpm test:api` e abre o PR ligado à issue.
 5. Você revisa e faz o merge.
 
-**Comandos do projeto** em `.claude/commands/`: `/issue <n>` (carrega a issue e os docs e propõe o plano), `/adr <título>` (cria um ADR no modelo), `/gen-api` (regenera o contrato e explica o diff).
+**Comandos do projeto** em `.claude/commands/`: `/issue <n>` (carrega a issue e os docs e propõe o plano), `/adr <título>` (cria um ADR no modelo), `/gen-api` (regenera o contrato e explica o diff) e, a partir do MD, `/screen <link> <issue>` (implementa uma tela a partir de um link do Figma).
+
+### Das telas no Figma para o código
+
+1. A tela está desenhada no arquivo do app no Figma, usando só componentes da biblioteca Sanjou UI.
+2. Você copia o link da seleção do frame (Copy link to selection) e chama `/screen <link> <issue>`.
+3. O Claude Code lê o frame pelo MCP do Figma e monta a tela **com os componentes do Sanjou**, nunca recriando com `div` e classes o que já existe no pacote. O mapa "componente no Figma → import do Sanjou" fica em `apps/web/CLAUDE.md`.
+4. A tela é ligada aos hooks da feature (dado nunca entra direto no componente); ele roda os checks e abre o PR com prints da tela renderizada no celular e no desktop.
+5. Componente que não existe no Sanjou não é improvisado no app: vira issue no repositório do Sanjou, e a tela usa um placeholder marcado até ele sair.
 
 ### Definição de pronto
 
@@ -301,5 +321,5 @@ Um termo, um significado, em todos os documentos, issues e prompts.
 | Merge de três vias | Compara base, local e servidor; só vai para o usuário o que os dois lados mudaram |
 | `ProblemType` | Lista fechada de tipos de erro do catálogo, gerada do contrato |
 | Static export | Build do Next.js em arquivos estáticos, sem servidor |
-| Marco (M0–M5) | Etapa do roteiro com uma entrega verificável |
+| Marco (M0–M5 e MD) | Etapa do roteiro com uma entrega verificável |
 | ADR | Registro curto de uma decisão de arquitetura |
