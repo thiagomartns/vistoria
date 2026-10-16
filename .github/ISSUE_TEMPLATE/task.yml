@@ -1,0 +1,41 @@
+name: Tarefa
+description: Uma tarefa que cabe em uma sessão de 1 a 2 horas (modelo de docs/vision.md)
+body:
+  - type: textarea
+    id: contexto
+    attributes:
+      label: Contexto
+      description: Link para a seção de docs/ que justifica a tarefa.
+      placeholder: "[Catálogo de erros](docs/architecture/backend.md#catálogo-de-erros)"
+    validations:
+      required: true
+  - type: textarea
+    id: escopo
+    attributes:
+      label: Escopo
+      description: O que entra.
+    validations:
+      required: true
+  - type: textarea
+    id: fora-de-escopo
+    attributes:
+      label: Fora de escopo
+      description: O que não entra (evita que a sessão se espalhe).
+    validations:
+      required: true
+  - type: textarea
+    id: criterios
+    attributes:
+      label: Critérios de aceite
+      description: Comportamento verificável por teste, em checklist.
+      value: |
+        - [ ] 
+    validations:
+      required: true
+  - type: textarea
+    id: notas
+    attributes:
+      label: Notas técnicas
+      description: Arquivos prováveis, armadilhas conhecidas, dependências ("Depende de #N").
+    validations:
+      required: false
