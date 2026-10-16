@@ -156,7 +156,7 @@ O M2 é o mais longo e o mais arriscado: é onde backend e front se encontram pe
 - [ ] Shell: navegação, header com `SyncStatus`, `OfflineBanner`, comportamento no celular e no desktop
 - [ ] Tela de campo em alta fidelidade, no celular e no desktop, com os estados vazio, offline, enviando, conflito, rejeitado e concluída
 - [ ] Wireframes das demais telas da tabela de Telas
-- [ ] Componentes que faltam no Sanjou (`SyncBadge`, `ConflictResolver` e os demais) desenhados na biblioteca e abertos como issues no repositório do Sanjou
+- [ ] Componentes que faltam no Sanjou (`SyncBadge`, `ConflictResolver` e os demais) desenhados como componentes locais no arquivo do app, com os genéricos marcados "Candidato ao Sanjou"
 - [ ] Sanjou UI instalado em `apps/web`, com uma página de prova no static export (adianta a parte de risco do spike 4)
 - [ ] Mapa "componente no Figma → import do Sanjou" em `apps/web/CLAUDE.md` e o comando `/screen` no repositório
 
@@ -279,7 +279,7 @@ Arquivos prováveis, armadilhas conhecidas.
 2. Você copia o link da seleção do frame (Copy link to selection) e chama `/screen <link> <issue>`.
 3. O Claude Code lê o frame pelo MCP do Figma e monta a tela **com os componentes do Sanjou**, nunca recriando com `div` e classes o que já existe no pacote. O mapa "componente no Figma → import do Sanjou" fica em `apps/web/CLAUDE.md`.
 4. A tela é ligada aos hooks da feature (dado nunca entra direto no componente); ele roda os checks e abre o PR com prints da tela renderizada no celular e no desktop.
-5. Componente que não existe no Sanjou não é improvisado no app: vira issue no repositório do Sanjou, e a tela usa um placeholder marcado até ele sair.
+5. Componente que não existe no Sanjou não é improvisado na tela: é desenhado como componente local na página "Componentes novos" do Figma e implementado em `shared/components/`, só com primitivos e tokens do Sanjou ([ADR 0020](decisions/0020-componentes-que-faltam-no-sanjou-ficam-no-app.md)).
 
 ### Definição de pronto
 
@@ -293,7 +293,7 @@ Arquivos prováveis, armadilhas conhecidas.
 
 Um arquivo por decisão, `docs/decisions/NNNN-titulo.md`, com três seções: Contexto, Decisão e Consequências. Os primeiros saem da tabela [Decisões tomadas](architecture/backend.md#decisões-tomadas) do backend, no M0. Um ADR nunca é editado depois de aceito; uma decisão nova o substitui e diz qual substituiu.
 
-**Componentes que faltam no Sanjou UI** (`SyncBadge`, `ConflictResolver` e os demais) viram issues no repositório do Sanjou, não neste.
+**Componentes que faltam no Sanjou UI** (`SyncBadge`, `ConflictResolver`, navegação, Sheet e os demais) são feitos neste repositório, com primitivos e tokens do Sanjou; os genéricos são marcados "Candidato ao Sanjou" e sobem em bloco numa release futura ([ADR 0020](decisions/0020-componentes-que-faltam-no-sanjou-ficam-no-app.md)).
 
 ## Glossário
 
