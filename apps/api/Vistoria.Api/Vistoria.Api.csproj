@@ -12,6 +12,15 @@
     <OpenApiGenerateDocumentsOptions>--file-name openapi</OpenApiGenerateDocumentsOptions>
   </PropertyGroup>
 
+  <!--
+    A geração é incremental (cache em obj/): sem a DLL mudar, apagar o openapi.json não o recria.
+    Se o arquivo sumiu, invalida o cache para o build gerá-lo de novo.
+  -->
+  <Target Name="RegenerateMissingOpenApiDocument" BeforeTargets="GenerateOpenApiDocuments"
+          Condition="!Exists('$(MSBuildProjectDirectory)/../openapi.json')">
+    <Delete Files="$(_OpenApiDocumentsCache)" />
+  </Target>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.13" />
     <PackageReference Include="Microsoft.Extensions.ApiDescription.Server" Version="10.0.13">
