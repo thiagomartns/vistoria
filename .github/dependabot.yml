@@ -1,0 +1,42 @@
+# Semanal, um PR agrupado por ecossistema. O cooldown de 7 dias acompanha o
+# minimumReleaseAge do pnpm (pnpm-workspace.yaml).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci
+      include: scope
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      npm:
+        patterns: ["*"]
+    commit-message:
+      prefix: chore
+      include: scope
+
+  - package-ecosystem: nuget
+    directory: /apps/api
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      nuget:
+        patterns: ["*"]
+    commit-message:
+      prefix: chore
+      include: scope
