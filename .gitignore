@@ -1,0 +1,32 @@
+# Node
+node_modules/
+.pnpm-store/
+npm-debug.log*
+pnpm-debug.log*
+*.tsbuildinfo
+coverage/
+
+# Next.js
+.next/
+out/
+next-env.d.ts
+
+# .NET
+bin/
+obj/
+*.user
+TestResults/
+
+# Segredos locais
+infra/.env
+.env
+.env.*
+!.env.example
+
+# IDE e SO
+.vs/
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+.DS_Store

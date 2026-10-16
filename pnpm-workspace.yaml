@@ -1,0 +1,6 @@
+packages:
+  - apps/web
+  - scripts/*
+
+# Só instala versões publicadas há pelo menos 7 dias (em minutos).
+minimumReleaseAge: 10080
