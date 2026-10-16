@@ -14,6 +14,7 @@ A API é a única fonte de verdade e de segurança. Detalhes em [docs/vision.md]
 | `apps/api/` | .NET 10, controllers + testes; `openapi.json` gerado no build ([CLAUDE.md](apps/api/CLAUDE.md)) |
 | `infra/` | `docker-compose.dev.yml` (SQL Server); senha em `infra/.env`, nunca commitado |
 | `docs/` | Visão, arquitetura e ADRs (`docs/decisions/`) — **o repositório manda** |
+| `.github/` | CI (`ci.yml`: jobs `api`, `web`, `security`, obrigatórios na `main`) e Dependabot semanal |
 | `.claude/commands/` | `/issue`, `/adr`, `/gen-api` |
 
 ## Comandos
