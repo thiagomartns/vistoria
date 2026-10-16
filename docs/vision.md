@@ -106,7 +106,8 @@ O fluxo que importa: **lista → nova vistoria → ambiente por ambiente → con
 
 | Tela | Rota | Histórias | O que faz |
 | --- | --- | --- | --- |
-| Login | `/login` | H1 | E-mail e senha; também é a tela de sessão expirada |
+| Login | `/login` | H1 | E-mail e senha, pelo pattern Auth do Sanjou sem "Lembrar-me" ([ADR 0019](decisions/0019-login-da-v1-com-o-pattern-auth-do-sanjou.md)); também é a tela de sessão expirada |
+| Criar conta | `/signup` | H1 | Nome, e-mail e senha; entra direto, sem verificação de e-mail na V1 |
 | Vistorias | `/inspections` | H10, H11 | Lista com busca e filtros locais; `SyncBadge` por linha; `SyncStatus` no header |
 | Nova vistoria | `/inspections/new` | H4, H5 | Escolhe imóvel e tipo; entrada parte de um roteiro, saída parte de uma entrada concluída |
 | Vistoria em campo | `/inspections/edit?id=` | H6, H7, H8 | O formulário profundo: um passo por ambiente, itens com condição em um toque e observação; na saída, o estado de entrada ao lado |
@@ -116,7 +117,7 @@ O fluxo que importa: **lista → nova vistoria → ambiente por ambiente → con
 | Imóveis | `/properties`, `/properties/edit?id=` | H2 | Cadastro com endereço; lista as vistorias do imóvel |
 | Roteiros | `/templates`, `/templates/edit?id=` | H3 | Editor de ambientes e itens (arrastar para ordenar) |
 
-**Design antes do código.** Toda tela é desenhada primeiro no Figma, num arquivo do app que usa a biblioteca publicada do Sanjou UI (tokens validados contra o código na versão 0.2.0). A implementação parte do link da seleção, lido pelo MCP do Figma no Claude Code (ver "Das telas no Figma para o código"). A tela "Vistoria em campo" é a única que exige alta fidelidade antes de codar: é usada com uma mão, em pé, às vezes com pouca luz, então pede alvos de toque grandes, condição em chips (novo, bom, regular, ruim, ausente) e navegação entre ambientes sem rolar. As demais podem partir de wireframes, porque são composições diretas de componentes. O marco MD organiza esse trabalho.
+**Design antes do código.** Toda tela é desenhada primeiro no Figma, num arquivo do app que usa a biblioteca publicada do Sanjou UI (tokens validados contra o código na versão 0.2.0). A implementação parte do link da seleção, lido pelo MCP do Figma no Claude Code (ver "Das telas no Figma para o código"). A tela "Vistoria em campo" é a única que exige alta fidelidade antes de codar: é usada com uma mão, em pé, às vezes com pouca luz, então pede alvos de toque grandes, condição em chips (novo, bom, regular, ruim, ausente) e navegação entre ambientes sem rolar. As demais podem partir de wireframes, porque são composições diretas de componentes. Quem desenha é o Claude Code, pelo MCP do Figma, com componentes, variáveis e estilos do Sanjou; você revisa como dono do produto (o fluxo faz sentido para quem está no imóvel? dá para usar com um polegar?) e testa a tela de campo no app do Figma no celular. O marco MD organiza esse trabalho.
 
 ## Marcos
 
@@ -239,7 +240,7 @@ Cada `CLAUDE.md` fica curto (uma tela) e aponta para `docs/` em vez de repetir o
 ### Backlog no GitHub
 
 - **Project** com colunas Backlog, Próximo, Em andamento, Em revisão e Feito, mais o campo **Marco** (M0, MD e M1 a M5).
-- **Labels:** `area:web`, `area:api`, `area:infra`, `area:docs`, `area:design` e `type:feat`, `type:fix`, `type:chore`, `type:spike`, `type:design` (as de design marcam o trabalho no Figma, feito fora do Claude Code).
+- **Labels:** `area:web`, `area:api`, `area:infra`, `area:docs`, `area:design` e `type:feat`, `type:fix`, `type:chore`, `type:spike`, `type:design` (as de design marcam o trabalho no Figma, feito pelo Claude Code via MCP e revisado por você; não geram PR, e o critério de aceite é o link do frame na issue).
 - **Uma issue cabe em uma sessão** (1 a 2 h). Se não cabe, vira duas.
 
 **Modelo de issue**
@@ -274,7 +275,7 @@ Arquivos prováveis, armadilhas conhecidas.
 
 ### Das telas no Figma para o código
 
-1. A tela está desenhada no arquivo do app no Figma, usando só componentes da biblioteca Sanjou UI.
+1. A tela está desenhada no arquivo do app no Figma ([vistoria — app](https://www.figma.com/design/BJDaQ12Mlx1YCdKwjETHmE/vistoria-%E2%80%94-app)), usando só componentes da biblioteca Sanjou UI, e foi aprovada por você.
 2. Você copia o link da seleção do frame (Copy link to selection) e chama `/screen <link> <issue>`.
 3. O Claude Code lê o frame pelo MCP do Figma e monta a tela **com os componentes do Sanjou**, nunca recriando com `div` e classes o que já existe no pacote. O mapa "componente no Figma → import do Sanjou" fica em `apps/web/CLAUDE.md`.
 4. A tela é ligada aos hooks da feature (dado nunca entra direto no componente); ele roda os checks e abre o PR com prints da tela renderizada no celular e no desktop.

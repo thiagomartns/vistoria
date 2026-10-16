@@ -23,3 +23,4 @@ uma decisão nova o substitui e diz qual substituiu. Novo ADR: `/adr <título>` 
 | [0016](0016-local-first-tanstack-db-outbox.md) | Local-first com TanStack DB e outbox | Aceito | 2026-10-16 |
 | [0017](0017-contrato-via-openapi-commitado.md) | Contrato via openapi.json commitado | Aceito | 2026-10-16 |
 | [0018](0018-erros-pelo-type.md) | Erros decididos pelo type, nunca pelo status | Aceito | 2026-10-16 |
+| [0019](0019-login-da-v1-com-o-pattern-auth-do-sanjou.md) | Login da V1 com o pattern Auth do Sanjou | Proposto | 2026-10-16 |
