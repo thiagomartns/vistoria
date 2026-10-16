@@ -238,8 +238,8 @@ Cada `CLAUDE.md` fica curto (uma tela) e aponta para `docs/` em vez de repetir o
 
 ### Backlog no GitHub
 
-- **Project** com colunas Backlog, Próximo, Em andamento, Em revisão e Feito, mais o campo **Marco** (M0 a M5).
-- **Labels:** `area:web`, `area:api`, `area:infra`, `area:docs` e `type:feat`, `type:fix`, `type:chore`, `type:spike`.
+- **Project** com colunas Backlog, Próximo, Em andamento, Em revisão e Feito, mais o campo **Marco** (M0, MD e M1 a M5).
+- **Labels:** `area:web`, `area:api`, `area:infra`, `area:docs`, `area:design` e `type:feat`, `type:fix`, `type:chore`, `type:spike`, `type:design` (as de design marcam o trabalho no Figma, feito fora do Claude Code).
 - **Uma issue cabe em uma sessão** (1 a 2 h). Se não cabe, vira duas.
 
 **Modelo de issue**
