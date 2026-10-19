@@ -1,1 +1,5 @@
 @import "tailwindcss";
+@import "@sanjou/tokens/sanjou.css";
+
+/* Deixa o Tailwind ver as classes dos componentes do Sanjou. Caminho relativo a este arquivo. */
+@source "../../node_modules/@sanjou/ui";
