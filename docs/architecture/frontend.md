@@ -28,7 +28,7 @@ O risco está concentrado numa peça: TanStack DB, ainda pré-1.0. Todo o resto 
 | Camada | Escolha | Risco | Observação |
 | --- | --- | --- | --- |
 | Shell / roteamento | Next.js 16, App Router, static export | Baixo | Sem servidor Next em produção |
-| UI | Sanjou UI sobre Base UI + Tailwind CSS 4 | Baixo | Componentes de sync são do app, feitos com primitivos do Sanjou ([ADR 0020](../decisions/0020-componentes-que-faltam-no-sanjou-ficam-no-app.md)) |
+| UI | Sanjou UI sobre Radix + Tailwind CSS 4 | Baixo | Componentes de sync são do app, feitos com primitivos do Sanjou ([ADR 0020](../decisions/0020-componentes-que-faltam-no-sanjou-ficam-no-app.md)) |
 | Dados locais | TanStack DB + `@tanstack/offline-transactions` | **Médio** | Pré-1.0; isolado em `services/` |
 | Sync | Delta + outbox sobre a REST do .NET | Médio | Sem infraestrutura extra |
 | Formulários | TanStack Form + Zod | Baixo | Zod gerado do contrato |
@@ -241,7 +241,7 @@ Sem servidor Next em produção, as CVEs de React Server Components não se apli
 
 **Supply chain (vale para o app e para o Sanjou UI)**
 
-- `minimumReleaseAge` no pnpm (7 dias), lockfile commitado e `--frozen-lockfile` no CI.
+- `minimumReleaseAge` no pnpm (7 dias), lockfile commitado e `--frozen-lockfile` no CI. O escopo `@sanjou/*` fica fora da janela, com versão fixada ([ADR 0022](../decisions/0022-sanjou-fora-do-minimum-release-age.md)).
 - Sanjou UI publicado via trusted publishing (OIDC) com provenance; nenhum workflow com `pull_request_target` que faça checkout de código de fork.
 - Workflows do GitHub Actions auditados com zizmor no CI.
 - CSP restritiva no shell: `connect-src 'self'` em produção (mesma origem); em dev, também `http://localhost:8080`.

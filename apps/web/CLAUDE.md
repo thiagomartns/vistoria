@@ -34,6 +34,8 @@ Essas fronteiras são regra, não convenção (viram regras de lint).
   ([ADR 0020](../../docs/decisions/0020-componentes-que-faltam-no-sanjou-ficam-no-app.md)); se for
   genérico, entra em "Candidatos ao Sanjou".
 - React Compiler ligado: sem `useMemo`/`useCallback` manuais.
+- **Next 16 muda APIs e convenções.** Antes de usar uma API do Next, consultar a documentação da versão
+  instalada em `node_modules/next/dist/docs/`, não a memória.
 
 ## Comandos (rodar dentro de `apps/web` ou com `pnpm --filter web`)
 
