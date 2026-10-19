@@ -33,7 +33,7 @@ Essas fronteiras são regra, não convenção (viram regras de lint).
   componente local em `src/shared/components/`, só com primitivos e tokens do Sanjou
   ([ADR 0020](../../docs/decisions/0020-componentes-que-faltam-no-sanjou-ficam-no-app.md)); se for
   genérico, entra em "Candidatos ao Sanjou".
-- React Compiler ligado: sem `useMemo`/`useCallback` manuais.
+- React Compiler ligado: sem `useMemo`/`useCallback` manuais; no react-hook-form, `useWatch`/`useFormState`, nunca `watch()`.
 - **Next 16 muda APIs e convenções.** Antes de usar uma API do Next, consultar a documentação da versão
   instalada em `node_modules/next/dist/docs/`, não a memória.
 
@@ -43,7 +43,18 @@ Essas fronteiras são regra, não convenção (viram regras de lint).
 
 ## Figma → Sanjou
 
-_Preenchida no MD_ (ver [Das telas no Figma para o código](../../docs/vision.md#das-telas-no-figma-para-o-código)).
+Instância da biblioteca Sanjou UI → subpath com o mesmo nome; mapa completo, com variantes e componentes
+locais, em [figma-sanjou.md](../../docs/architecture/figma-sanjou.md). Sem Code Connect.
+
+| No Figma | Import |
+| --- | --- |
+| Button, Badge, Input, Textarea, Label, Separator | `import { Button } from "@sanjou/ui/button"` (um subpath por nome) |
+| Alert, Avatar | `import { Alert, AlertTitle, AlertDescription } from "@sanjou/ui/alert"`, `import { Avatar, AvatarFallback } from "@sanjou/ui/avatar"` |
+| TableHead, TableCell | `import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@sanjou/ui/table"` |
+| DialogContent, SelectTrigger | `import { Dialog, DialogContent } from "@sanjou/ui/dialog"`, `import { Select, SelectTrigger } from "@sanjou/ui/select"` |
+| Form item | `import { FormField, FormItem, FormLabel, FormControl, FormMessage } from "@sanjou/ui/form"` (react-hook-form, ADR 0023) |
+| Icon/* | `import { Check } from "lucide-react"` (mesmo nome) |
+| Auth layout, Auth form, Componentes novos | Locais em `@/shared/components/` (ADR 0020) |
 
 ## Candidatos ao Sanjou
 
