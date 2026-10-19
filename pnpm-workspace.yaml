@@ -4,3 +4,6 @@ packages:
 
 # Só instala versões publicadas há pelo menos 7 dias (em minutos).
 minimumReleaseAge: 10080
+# Sanjou UI é do mesmo dono e publica com provenance (ADR 0022).
+minimumReleaseAgeExclude:
+  - "@sanjou/*"
