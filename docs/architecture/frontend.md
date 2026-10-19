@@ -128,7 +128,7 @@ Todo formulário profundo é um registro na collection `drafts`, salvo a cada al
 
 > Diagrama: ciclo de vida do rascunho · 7 estados (disponível na versão original do documento)
 
-Enquanto está na outbox, o formulário fica só leitura. Rejeição (`validation`) volta ao rascunho; conflito (`version-conflict`) e exclusão remota (`deleted`) pedem uma decisão e voltam à fila como transação nova.
+O formulário segue editável com transações na fila: cada edição vira transação pelas regras da [Escrita (push)](#escrita-push), compactada ou encadeada. Ele só fica só leitura enquanto uma requisição do registro está em voo e depois de concluir ([ADR 0021](../decisions/0021-formulario-editavel-com-transacao-na-fila.md)). Rejeição (`validation`) volta ao rascunho; conflito (`version-conflict`) e exclusão remota (`deleted`) pedem uma decisão e voltam à fila como transação nova.
 
 **Registro de rascunho**
 
