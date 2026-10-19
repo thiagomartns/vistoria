@@ -9,23 +9,30 @@ e o fluxo do [CLAUDE.md](../../CLAUDE.md). Argumentos: `$ARGUMENTS`.
 0. **Argumentos.** O primeiro é o link do frame (Copy link to selection), o segundo é o número da issue.
    Do link `figma.com/design/<fileKey>/...?node-id=<a>-<b>`, tire o `fileKey` e o nó `<a>:<b>`. Se faltar
    o link, o `node-id` ou a issue, pare e peça. O arquivo esperado é o "vistoria — app" (`BJDaQ12Mlx1YCdKwjETHmE`).
-1. **Ler.** Rode `gh issue view <issue> --comments` e confira que cada "Depende de #N" está fechada; se não
+1. **Ler.** Rode `gh issue view <issue>` e depois `gh issue view <issue> --comments` (sem comentários, o
+   `--comments` não imprime nem o corpo). Confira que cada "Depende de #N" está fechada; se não
    estiver, pare e avise. Leia as seções de `docs/` citadas, o [apps/web/CLAUDE.md](../../apps/web/CLAUDE.md)
    e o mapa completo em [figma-sanjou.md](../../docs/architecture/figma-sanjou.md).
 2. **Ler o frame** pelo MCP do Figma: `get_screenshot` e `get_design_context` do nó. Se o frame for grande
    e o contexto vier só como estrutura, use `get_metadata` e leia os filhos (desktop, celular, cada estado)
-   um a um. Monte o inventário de cada instância:
+   um a um. As ferramentas de leitura bastam; se o `create_session` for bloqueado (modo de planejamento),
+   siga sem ele. Leia também a **nota de texto** ao lado dos frames: estados não desenhados (Toast, Alert,
+   offline) ficam nela e entram no inventário como instâncias. Monte o inventário de cada instância:
    - **Sanjou UI:** import pelo mapa. Nunca recriar com `div` e classes o que existe no pacote.
    - **Componente local** (página "Componentes novos"): `@/shared/components/` pelo mapa. Se ainda não
      existe no código, entra no plano para ser implementado só com primitivos e tokens do Sanjou (ADR 0020).
    - **Fora do mapa ou não desenhado** em "Componentes novos": pare e pergunte. Componente que falta é
      desenhado no Figma antes, nunca improvisado na tela.
+   - **Placeholder** de pattern (Logo placeholder, Image placeholder): pergunte o que entra no lugar. Asset
+     temporário do MCP (URL de imagem do Figma) nunca vai para o código.
 3. **Planejar.** Entre em modo de planejamento e proponha:
    - a rota, sem segmento dinâmico (id na query string), e os arquivos a criar ou mudar;
    - a tabela "nó do Figma → import" e os componentes locais a criar;
    - os hooks da feature que entregam os dados (o dado nunca entra direto no componente; se o hook
      não existe, diga se entra nesta issue ou se ela depende de outra);
-   - cada estado do frame (vazio, offline, enviando, conflito...) e o teste que o prova;
+   - cada estado do frame e da nota (vazio, offline, enviando, conflito...) e o teste que o prova;
+   - os textos que o Figma não traz (mensagens de validação, rótulo enquanto envia, erro do contrato sem
+     reação desenhada), propostos para eu aprovar junto;
    - as rotas e os estados que terão print, e o que fica fora de escopo.
 
    **Espere minha aprovação** antes de editar qualquer arquivo.
