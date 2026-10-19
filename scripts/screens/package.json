@@ -1,0 +1,13 @@
+{
+  "name": "screens",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node screens.mjs",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "playwright-core": "1.64.0"
+  }
+}
