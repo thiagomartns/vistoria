@@ -10,7 +10,8 @@
     "db:down": "docker compose -f infra/docker-compose.dev.yml down",
     "dev:api": "cd apps/api && dotnet watch run --project Vistoria.Api",
     "dev:web": "pnpm --filter web dev",
-    "check": "pnpm --filter web check",
-    "test:api": "cd apps/api && dotnet test --solution Vistoria.sln"
+    "check": "pnpm --filter web check && pnpm --filter screens test",
+    "test:api": "cd apps/api && dotnet test --solution Vistoria.sln",
+    "screens": "pnpm --filter screens start"
   }
 }

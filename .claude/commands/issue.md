@@ -5,7 +5,8 @@ argument-hint: <número da issue>
 
 Trabalhe a issue #$ARGUMENTS seguindo o fluxo do [CLAUDE.md](../../CLAUDE.md).
 
-1. **Ler.** Rode `gh issue view $ARGUMENTS --comments`. Leia as seções de `docs/` citadas em Contexto e
+1. **Ler.** Rode `gh issue view $ARGUMENTS` e depois `gh issue view $ARGUMENTS --comments` (sem comentários,
+   o `--comments` não imprime nem o corpo). Leia as seções de `docs/` citadas em Contexto e
    Notas técnicas, e o `CLAUDE.md` da área afetada (`apps/web/` ou `apps/api/`). Se a issue diz
    "Depende de #N", confira com `gh issue view N` que a dependência está fechada; se não estiver, pare e avise.
 2. **Planejar.** Entre em modo de planejamento e proponha um plano: arquivos a criar ou mudar, testes que

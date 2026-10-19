@@ -15,7 +15,7 @@ A API é a única fonte de verdade e de segurança. Detalhes em [docs/vision.md]
 | `infra/` | `docker-compose.dev.yml` (SQL Server); senha em `infra/.env`, nunca commitado |
 | `docs/` | Visão, arquitetura e ADRs (`docs/decisions/`) — **o repositório manda** |
 | `.github/` | CI (`ci.yml`: jobs `api`, `web`, `security`, obrigatórios na `main`) e Dependabot semanal |
-| `.claude/commands/` | `/issue`, `/adr`, `/gen-api` |
+| `.claude/commands/` | `/issue`, `/adr`, `/gen-api`, `/screen` |
 | `.mcp.json` | Servidor remoto do MCP do Figma (OAuth, sem token) |
 
 ## Comandos
@@ -25,11 +25,12 @@ A API é a única fonte de verdade e de segurança. Detalhes em [docs/vision.md]
 | `pnpm db:up` / `pnpm db:down` | Sobe / derruba o SQL Server (exige `infra/.env`) |
 | `pnpm dev:api` | `dotnet watch` em `http://localhost:8080` (Swagger em `/swagger`) |
 | `pnpm dev:web` | `next dev` em `http://localhost:3000` |
-| `pnpm check` | Lint (Oxlint), typecheck e testes (Vitest) do web |
+| `pnpm check` | Lint (Oxlint), typecheck e testes (Vitest) do web, e testes do `scripts/screens` |
 | `pnpm --filter web build` | Static export em `apps/web/out/` |
 | `pnpm test:api` | `dotnet test` na solution da API |
+| `pnpm screens <rota…>` | Prints do static export no celular e no desktop; `--publish` grava na branch `screens` |
 
-`pnpm gen:api` e `pnpm seed` chegam no M1/M2; `/screen` chega no MD.
+`pnpm gen:api` e `pnpm seed` chegam no M1/M2. Uma tela do Figma vira código com `/screen <link> <issue>`.
 
 **MCP do Figma, na primeira sessão:** aprove o servidor `figma` do `.mcp.json` e rode `/mcp` → figma → Authenticate (OAuth no navegador; o token fica fora do repositório).
 
