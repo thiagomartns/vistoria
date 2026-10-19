@@ -25,3 +25,4 @@ uma decisão nova o substitui e diz qual substituiu. Novo ADR: `/adr <título>` 
 | [0018](0018-erros-pelo-type.md) | Erros decididos pelo type, nunca pelo status | Aceito | 2026-10-16 |
 | [0019](0019-login-da-v1-com-o-pattern-auth-do-sanjou.md) | Login da V1 com o pattern Auth do Sanjou | Aceito | 2026-10-16 |
 | [0020](0020-componentes-que-faltam-no-sanjou-ficam-no-app.md) | Componentes que faltam no Sanjou ficam no app | Aceito | 2026-10-16 |
+| [0021](0021-formulario-editavel-com-transacao-na-fila.md) | Formulário editável com transação na fila | Aceito | 2026-10-19 |
