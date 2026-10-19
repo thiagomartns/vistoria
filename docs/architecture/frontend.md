@@ -31,7 +31,7 @@ O risco está concentrado numa peça: TanStack DB, ainda pré-1.0. Todo o resto 
 | UI | Sanjou UI sobre Radix + Tailwind CSS 4 | Baixo | Componentes de sync são do app, feitos com primitivos do Sanjou ([ADR 0020](../decisions/0020-componentes-que-faltam-no-sanjou-ficam-no-app.md)) |
 | Dados locais | TanStack DB + `@tanstack/offline-transactions` | **Médio** | Pré-1.0; isolado em `services/` |
 | Sync | Delta + outbox sobre a REST do .NET | Médio | Sem infraestrutura extra |
-| Formulários | TanStack Form + Zod | Baixo | Zod gerado do contrato |
+| Formulários | react-hook-form + Zod, com o `Form` do Sanjou | Baixo | Zod gerado do contrato ([ADR 0023](../decisions/0023-formularios-com-react-hook-form.md)) |
 | Contrato | `@hey-api/openapi-ts` | Baixo | Tipos, client, Zod e `ProblemType` |
 | Coordenação entre abas | Web Locks API + `BroadcastChannel` | Baixo | Nativo do navegador |
 | PWA | Serwist | Baixo | Build de produção com `--webpack` |
@@ -50,7 +50,7 @@ O documento OpenAPI 3.1 do .NET (`/openapi/v1.json`) gera `models`, schemas Zod,
 - Funções com o nome do `operationId`: `getInspection`, `upsertInspection`, `deleteInspection`, `syncInspections`, os equivalentes de `clients`, `properties` e `templates`, e `signUp`, `signIn`, `refreshToken`, `signOut`.
 - `ProblemType` como union TypeScript. O tratamento de erro faz `switch` exaustivo sobre ela: um `type` novo no backend quebra o build até ganhar uma reação.
 - `version` em base64 nos DTOs, igual ao `ETag` sem aspas.
-- Erros por campo com o caminho JSON em camelCase (`rooms[2].items[4].condition`), igual aos nomes de campo do TanStack Form. Nenhuma tradução de chave é necessária.
+- Erros por campo com o caminho JSON em camelCase (`rooms[2].items[4].condition`). O react-hook-form usa `rooms.2.items.4.condition`: uma função única, com teste, converte entre os dois ([ADR 0023](../decisions/0023-formularios-com-react-hook-form.md)).
 
 **No front**
 
@@ -146,11 +146,11 @@ O formulário segue editável com transações na fila: cada edição vira trans
 
 **Regras**
 
-- TanStack Form é hidratado do rascunho; cada mudança persiste com debounce curto.
+- O formulário (react-hook-form) é hidratado do rascunho com `reset`; cada mudança, lida com `useWatch`, persiste com debounce curto. Nunca `watch()` no render (React Compiler).
 - Um passo do stepper por ambiente. Validação em duas camadas: `roomStepSchema` para avançar de ambiente, `completeInspectionSchema` para concluir.
 - Ambientes e itens têm `Id` UUID v7 do cliente. O que é removido no formulário é simplesmente omitido no `PUT`; o .NET marca como excluído.
 - Na saída, `referenceCondition` e `referenceNotes` aparecem ao lado de cada item, somente leitura.
-- As chaves de `errors` já são os nomes de campo do formulário (`rooms[2].items[4].condition`). A UI abre o ambiente onde está o primeiro erro.
+- As chaves de `errors` vêm no caminho do backend (`rooms[2].items[4].condition`) e passam pela conversão para o nome de campo do formulário antes do `setError`. A UI abre o ambiente onde está o primeiro erro.
 - "Cancelar envio" só existe enquanto a transação nunca foi tentada. Depois da primeira tentativa ela pode ter sido aplicada, então o caminho é editar de novo.
 - Rascunhos não expiram sozinhos. O `DraftResume` oferece continuar ou descartar; rascunho sincronizado é apagado.
 
@@ -271,7 +271,7 @@ A ousadia visual é tornar o sync legível sem torná-lo barulhento. O estado ap
 
 Os componentes ficam no app, em `shared/components/` ([ADR 0020](../decisions/0020-componentes-que-faltam-no-sanjou-ficam-no-app.md)). Recebem um `SyncState` genérico e não conhecem TanStack DB, então podem ir para o Sanjou UI se outro projeto precisar deles.
 
-**Fonte do design.** As telas são desenhadas no Figma, num arquivo do app que usa a biblioteca publicada do Sanjou UI, e implementadas a partir do link da seleção pelo MCP do Figma no Claude Code. A tela de campo e os componentes de sync acima são desenhados no marco MD, antes de qualquer tela em código. O fluxo completo está em ["Das telas no Figma para o código"](../vision.md#das-telas-no-figma-para-o-código), no documento [Visão do Projeto](../vision.md).
+**Fonte do design.** As telas são desenhadas no Figma, num arquivo do app que usa a biblioteca publicada do Sanjou UI, e implementadas a partir do link da seleção pelo MCP do Figma no Claude Code. A tela de campo e os componentes de sync acima são desenhados no marco MD, antes de qualquer tela em código. O fluxo completo está em ["Das telas no Figma para o código"](../vision.md#das-telas-no-figma-para-o-código), no documento [Visão do Projeto](../vision.md); o mapa de cada componente do Figma para o import está em [Figma → Sanjou](figma-sanjou.md).
 
 ## Riscos e spikes
 

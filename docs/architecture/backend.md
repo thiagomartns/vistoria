@@ -203,7 +203,7 @@ Todo erro traz `type` (um dos slugs abaixo), `title`, `status`, `detail` e `trac
 
 ### Erros por campo
 
-- As chaves de `errors` são o caminho JSON em camelCase relativo ao corpo, com índice da posição enviada: `rooms[2].items[4].condition`. É o mesmo nome de campo do TanStack Form no front.
+- As chaves de `errors` são o caminho JSON em camelCase relativo ao corpo, com índice da posição enviada: `rooms[2].items[4].condition`. O front converte para o nome de campo do react-hook-form (`rooms.2.items.4.condition`) numa função única ([ADR 0023](../decisions/0023-formularios-com-react-hook-form.md)).
 - Para isso: `options.ModelMetadataDetailsProviders.Add(new SystemTextJsonValidationMetadataProvider())` nos controllers, e o exception handler remove o prefixo `$.` dos erros de desserialização.
 
 ### OpenAPI
