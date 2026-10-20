@@ -11,14 +11,16 @@
     "format:check": "oxfmt --check",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
-    "check": "pnpm lint && pnpm typecheck && pnpm test"
+    "check": "pnpm lint && pnpm typecheck && pnpm test",
+    "gen:api": "pnpm --filter gen-api generate"
   },
   "dependencies": {
     "@sanjou/tokens": "0.2.0",
     "@sanjou/ui": "0.2.0",
     "next": "^16.4.0",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",

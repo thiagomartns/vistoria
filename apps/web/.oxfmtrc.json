@@ -1,5 +1,5 @@
 {
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
   "printWidth": 100,
-  "ignorePatterns": [".next/**", "out/**", "next-env.d.ts"]
+  "ignorePatterns": [".next/**", "out/**", "next-env.d.ts", "src/shared/api/generated/**"]
 }
