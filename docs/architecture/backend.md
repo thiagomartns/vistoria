@@ -163,7 +163,7 @@ Rotas no plural com a versão no prefixo (`/api/v1/...`). `operationId` explíci
 | `GET /api/v1/sync/inspections?cursor=&limit=` | `syncInspections` | 200 `SyncPageDto<InspectionDto>` | 400, 401, 410 |
 | `GET`, `PUT` e sync de `clients`, `properties` e `templates` | `getClient`, `upsertClient`, `syncClients` e equivalentes | Iguais aos de vistoria | Iguais, sem `DELETE` na V1 |
 | `POST /api/v1/auth/signup` | `signUp` | 201 `{ accessToken, expiresAt, user: { id, name } }` + cookie | 400 (inclusive e-mail já usado, em `errors.email`), 429 |
-| `POST /api/v1/auth/signin` | `signIn` | 200 `{ accessToken, expiresAt, user: { id, name } }` + cookie | 400, 401, 429 |
+| `POST /api/v1/auth/signin` | `signIn` | 200 `{ accessToken, expiresAt, user: { id, name } }` + cookie | 400, 401 (`invalid-credentials`), 429 |
 | `POST /api/v1/auth/refresh` | `refreshToken` | 200 `{ accessToken, expiresAt }` + cookie novo (exceto na tolerância) | 401, 429 |
 | `POST /api/v1/auth/signout` | `signOut` | 204, cookie apagado | — |
 
@@ -191,7 +191,8 @@ O `type` é uma URN: `urn:vistoria:problem:` seguido do slug da tabela (por exem
 | --- | --- | --- | --- | --- |
 | 400 | `validation` | Corpo inválido, inclusive conclusão incompleta e e-mail já cadastrado | `errors` por campo | Volta ao rascunho (ou ao formulário) com os erros |
 | 400 | `invalid-cursor` | Cursor ilegível | — | Resync completo da entidade |
-| 401 | `unauthorized` | Access token ausente ou expirado | — | Pausa a fila, refresh em aba única, retoma |
+| 401 | `unauthorized` | Access token ausente, inválido ou expirado | — | Pausa a fila, refresh em aba única, retoma |
+| 401 | `invalid-credentials` | E-mail ou senha errados no `signin`; a mesma resposta para os dois ([ADR 0027](../decisions/0027-credencial-invalida-com-type-proprio-invalid-credentials-complementando-o-adr-0018.md)) | — | Mostra "E-mail ou senha incorretos." no formulário; não tenta refresh |
 | 403 | `forbidden` | Registro de outro dono | — | Descarta a transação, reverte e avisa |
 | 404 | `not-found` | `GET` de id inexistente | — | Remove do banco local |
 | 405, 406, 415 | `unsupported-request` | Método, `Accept` ou `Content-Type` não suportado pela rota | — | Bug: registra e descarta |
@@ -288,6 +289,10 @@ O JWT do curso continua, com quatro mudanças. O refresh token sai do corpo e va
 | Teto | Família com mais de 30 dias desde o login não renova; exige `signin` |
 | Senha | `PasswordHasher<User>` (PBKDF2 com salt). De 8 a 128 caracteres, sem regra de composição nem trim; o teto limita o custo do hash por requisição |
 | E-mail | Único sem diferenciar maiúsculas: gravado com trim e em minúsculas, com índice único. Já usado → 400 `validation` em `errors.email` |
+| Validação do access token | JwtBearer: emissor, audiência, chave e só HS256. O prazo é conferido pelo `TimeProvider`, sem tolerância de relógio (quem emite e quem valida é a mesma API). Falha → 401 `unauthorized` com `WWW-Authenticate: Bearer` |
+| Rotas | Exigem access token por padrão (fallback policy). Só `/auth/*`, health e o documento OpenAPI levam `[AllowAnonymous]`; sem token, até rota inexistente responde 401 |
+| Credencial inválida | Senha errada e e-mail inexistente → o mesmo 401 `invalid-credentials`. O e-mail inexistente também roda o PBKDF2, contra um hash fixo, para o tempo não revelar quais e-mails têm conta |
+| Re-hash | Login com hash em formato ou custo antigo (`SuccessRehashNeeded`) regrava o hash no atual |
 | Chave do JWT | HS256, base64 de pelo menos 32 bytes. User Secrets em dev (`Jwt:SigningKey`, gravada pelo `pnpm db:init`), `Jwt__SigningKey` em produção; nunca no `appsettings.json`. Sem chave válida a API não sobe |
 | `signout` | Revoga a família e apaga o cookie |
 
@@ -306,13 +311,15 @@ Em produção, front e API ficam na **mesma origem**, atrás de um proxy. Isso e
 | Front | `next dev` em `localhost:3000` | Arquivos do static export servidos pelo Caddy |
 | API | `dotnet watch` em `localhost:8080` | Container `api` atrás do Caddy em `/api/*` |
 | Banco | SQL Server em container local | Container `db` com volume persistente |
-| CORS | Origem `http://localhost:3000` com `AllowCredentials()` | Desligado (mesma origem) |
+| CORS | Origem `http://localhost:3000` com `AllowCredentials()`, expondo `ETag` e `Retry-After` | Desligado (mesma origem) |
 | Cookie | `Secure` funciona em `localhost`; portas diferentes contam como mesmo site | Mesma origem |
 | Migrações | `Database.MigrateAsync()` no startup | Bundle `efbundle` executado como etapa do deploy |
 
 **docker-compose de produção:** `proxy` (Caddy, com TLS automático), `api` e `db`. O Caddy encaminha `/api/*` para `api:8080` e serve o resto como arquivos estáticos com `try_files {path} {path}.html {path}/index.html`. As rotas do front não têm segmentos dinâmicos (o id vai na query string), então não há reescrita por rota.
 
-**Ordem do pipeline:** `UseExceptionHandler` → `UseCors` (só em dev) → `UseRateLimiter` → `UseAuthentication` → `UseAuthorization` → `MapControllers`.
+**Ordem do pipeline:** `UseExceptionHandler` → `UseCors` (só em dev) → `UseRateLimiter` → `UseAuthentication` → `UseAuthorization` → `MapControllers`. Com o CORS antes, o preflight não gasta o rate limit; com o rate limit antes da autenticação, força bruta é cortada antes de qualquer PBKDF2.
+
+**IP do rate limit atrás do proxy.** O limite é por `RemoteIpAddress`. Atrás do Caddy esse é o IP do proxy, então a produção precisa do `ForwardedHeaders` (confiando só no proxy) para ler o IP real; entra com a hospedagem (M5).
 
 ## Correções obrigatórias no código do curso
 
@@ -360,6 +367,11 @@ O setup do curso (`WebApplicationFactory` + Testcontainers com SQL Server real) 
 | Delta | Cursor com `issuedAt` de 91 dias | 410 `cursor-expired` |
 | Delta | Registros de outro usuário | Nunca aparecem |
 | Auth | `signup` com e-mail já usado | 400 com `errors.email` |
+| Auth | `signin` com senha errada e com e-mail inexistente | O mesmo 401 `invalid-credentials` |
+| Auth | `signin` com hash em formato antigo | 200 e hash regravado no formato atual |
+| Auth | Rota protegida sem token, com token de outra chave ou vencido pelo `TimeProvider` falso | 401 `unauthorized` |
+| Auth | 6ª chamada de `signin` (ou `signup`) no mesmo minuto e IP | 429 `rate-limited` com `Retry-After`; o outro endpoint e outro IP seguem livres |
+| Auth | Preflight de `localhost:3000` | Permitido com credenciais só em Development |
 | Auth | Refresh reutilizado em menos de 30 s | 200 sem `Set-Cookie` |
 | Auth | Refresh reutilizado depois de 30 s | 401 e família revogada |
 | Auth | Família com mais de 30 dias | 401 |

@@ -25,6 +25,8 @@ Pastas em [Estrutura de pastas](../../docs/architecture/backend.md#estrutura-de-
   ficam fora ([ADR 0026](../../docs/decisions/0026-usuario-e-entidades-de-autenticacao-fora-do-syncentity-senha-de-8-a-128-caracteres-sem-regra-de-composicao.md)).
 - **Erro só por exceção tipada do catálogo** (`Infrastructure/Errors/`), traduzida pelo
   `GlobalExceptionHandler` em `ProblemDetails` com `type`. Nada de `BadRequest("...")` com string.
+- **Rota exige access token por padrão** (fallback policy). Só `/auth/*` e health levam `[AllowAnonymous]`,
+  além do documento OpenAPI de dev. Rate limit por política nomeada em `RateLimitConfig` (`[EnableRateLimiting]`).
 - **Todo endpoint tem `[EndpointName]` em camelCase** (vira o `operationId` e o nome da função no front).
 - **Endpoint que pode falhar declara `[ProblemResponses(...)]`** com os status da tabela de
   [Endpoints](../../docs/architecture/backend.md#endpoints); o OpenAPI os publica como `application/problem+json`.
