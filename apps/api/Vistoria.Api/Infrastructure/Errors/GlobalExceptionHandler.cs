@@ -9,7 +9,7 @@ namespace Vistoria.Api.Infrastructure.Errors;
 /// Exceção → <c>ProblemDetails</c> com <c>type</c> do catálogo. Exceção fora do catálogo vira 500
 /// <c>internal</c> sem mensagem nem stack trace; o detalhe fica só no log.
 /// </summary>
-public sealed class GlobalExceptionHandler(
+public sealed partial class GlobalExceptionHandler(
     IProblemDetailsService problemDetailsService,
     ILogger<GlobalExceptionHandler> logger) : IExceptionHandler
 {
@@ -21,13 +21,12 @@ public sealed class GlobalExceptionHandler(
         var problem = exception as AppException;
         if (problem is null)
         {
-            logger.LogError(exception, "Exceção não tratada em {Method} {Path}",
-                httpContext.Request.Method, httpContext.Request.Path);
+            LogUnhandled(logger, exception, httpContext.Request.Method, httpContext.Request.Path);
         }
         else
         {
-            logger.LogInformation("Erro {Type} ({Status}) em {Method} {Path}: {Detail}",
-                problem.Type, problem.Status, httpContext.Request.Method, httpContext.Request.Path, problem.Detail);
+            LogAppError(logger, problem.Type, problem.Status, httpContext.Request.Method, httpContext.Request.Path,
+                problem.Detail);
         }
 
         problem ??= new InternalException();
@@ -58,4 +57,11 @@ public sealed class GlobalExceptionHandler(
             ProblemDetails = problemDetails,
         });
     }
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Exceção não tratada em {Method} {Path}")]
+    private static partial void LogUnhandled(ILogger logger, Exception exception, string method, PathString path);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Erro {Type} ({Status}) em {Method} {Path}: {Detail}")]
+    private static partial void LogAppError(
+        ILogger logger, string type, int status, string method, PathString path, string detail);
 }

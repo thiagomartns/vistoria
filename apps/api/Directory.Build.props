@@ -1,0 +1,21 @@
+<Project>
+
+  <!-- Vale para todos os projetos de apps/api. Cada .csproj fica só com o que é dele. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <!--
+    Aviso é erro. Exceção: vulnerabilidade baixa ou moderada em pacote (NU1901/NU1902) continua aviso;
+    alta e crítica (NU1903/NU1904) quebram o build.
+  -->
+  <PropertyGroup>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1901;NU1902</WarningsNotAsErrors>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+
+</Project>

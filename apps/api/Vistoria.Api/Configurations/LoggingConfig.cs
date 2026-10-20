@@ -1,3 +1,4 @@
+using System.Globalization;
 using Serilog;
 
 namespace Vistoria.Api.Configurations;
@@ -10,7 +11,7 @@ public static class LoggingConfig
             .ReadFrom.Configuration(builder.Configuration)
             .ReadFrom.Services(services)
             .Enrich.FromLogContext()
-            .WriteTo.Console());
+            .WriteTo.Console(formatProvider: CultureInfo.InvariantCulture));
 
         return builder;
     }
