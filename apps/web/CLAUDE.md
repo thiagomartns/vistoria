@@ -24,7 +24,7 @@ Essas fronteiras são regra, não convenção (viram regras de lint).
 
 - **Erro se decide pelo `ProblemType`, nunca pelo status HTTP.** `handleProblem` em `shared/api/problems.ts`
   faz `switch` exaustivo; um `type` novo tem de quebrar o build até ganhar reação.
-- **Nunca editar `src/shared/api/generated/`.** É saída do gerador OpenAPI; muda via `pnpm gen:api` (M1).
+- **Nunca editar `src/shared/api/generated/`.** É saída do gerador OpenAPI; muda via `pnpm gen:api`.
 - **`If-Match` e `Idempotency-Key` só na outbox** (`shared/sync/outbox.ts`), nunca em componente ou hook.
 - **Rotas sem segmento dinâmico.** Nada de `[id]`: o id vai na query string (`/inspections/edit?id=`),
   lido com `useSearchParams` dentro de `Suspense`. Static export não aceita rota dinâmica com id de runtime.

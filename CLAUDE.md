@@ -12,6 +12,7 @@ A API é a única fonte de verdade e de segurança. Detalhes em [docs/vision.md]
 | --- | --- |
 | `apps/web/` | Next.js 16, static export ([CLAUDE.md](apps/web/CLAUDE.md)) |
 | `apps/api/` | .NET 10, controllers + testes; `openapi.json` gerado no build ([CLAUDE.md](apps/api/CLAUDE.md)) |
+| `scripts/` | `screens` (prints do static export) e `gen-api` (gerador do contrato, com TypeScript 6) |
 | `infra/` | `docker-compose.dev.yml` (SQL Server); senha em `infra/.env`, nunca commitado |
 | `docs/` | Visão, arquitetura e ADRs (`docs/decisions/`) — **o repositório manda** |
 | `.github/` | CI (`ci.yml`: jobs `api`, `web`, `security`, obrigatórios na `main`) e Dependabot semanal |
@@ -26,11 +27,12 @@ A API é a única fonte de verdade e de segurança. Detalhes em [docs/vision.md]
 | `pnpm dev:api` | `dotnet watch` em `http://localhost:8080` (Swagger em `/swagger`) |
 | `pnpm dev:web` | `next dev` em `http://localhost:3000` |
 | `pnpm check` | Lint (Oxlint), typecheck e testes (Vitest) do web, e testes do `scripts/screens` |
+| `pnpm gen:api` | Gera tipos, client, Zod e `ProblemType` em `apps/web/src/shared/api/generated/` a partir de `apps/api/openapi.json` |
 | `pnpm --filter web build` | Static export em `apps/web/out/` |
 | `pnpm test:api` | `dotnet test` na solution da API |
 | `pnpm screens <rota…>` | Prints do static export no celular e no desktop; `--publish` grava na branch `screens` |
 
-`pnpm gen:api` e `pnpm seed` chegam no M1/M2. Uma tela do Figma vira código com `/screen <link> <issue>`.
+`pnpm seed` chega no M2. Uma tela do Figma vira código com `/screen <link> <issue>`.
 
 **MCP do Figma, na primeira sessão:** aprove o servidor `figma` do `.mcp.json` e rode `/mcp` → figma → Authenticate (OAuth no navegador; o token fica fora do repositório).
 

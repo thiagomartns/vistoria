@@ -43,7 +43,7 @@ Um sync engine dedicado (PowerSync) está fora do escopo; só volta à mesa se o
 
 ## Contrato .NET → TypeScript
 
-O documento OpenAPI 3.1 do .NET (`/openapi/v1.json`) gera `models`, schemas Zod, o client HTTP e a union `ProblemType`. Nenhum DTO ou tipo de erro é escrito à mão no front.
+O documento OpenAPI 3.1 do .NET (`apps/api/openapi.json`, o mesmo servido em `/openapi/v1.json`) gera `models`, schemas Zod, o client HTTP e a union `ProblemType`. Nenhum DTO ou tipo de erro é escrito à mão no front.
 
 **O que o front recebe do contrato**
 
@@ -54,7 +54,8 @@ O documento OpenAPI 3.1 do .NET (`/openapi/v1.json`) gera `models`, schemas Zod,
 
 **No front**
 
-- `pnpm gen:api` baixa o documento e roda o gerador. A saída (`src/shared/api/generated/`) é commitada, para o diff do contrato aparecer no PR. O CI falha se ela estiver desatualizada.
+- `pnpm gen:api` lê o `apps/api/openapi.json` commitado e roda o gerador, sem precisar da API rodando (nem no CI). A saída (`src/shared/api/generated/`) é commitada, para o diff do contrato aparecer no PR. O CI falha se ela estiver desatualizada.
+- O gerador fica em `scripts/gen-api/`, com `@hey-api/openapi-ts` e TypeScript 6 fixados: ele usa a API JS do compilador, que o TypeScript 7 do web não expõe. O código gerado passa pelo `tsc` do web, mas não pelo Oxlint nem pelo Oxfmt.
 - `shared/api/client.ts` põe `Authorization` em toda chamada e `credentials: 'include'` nas chamadas a `/auth/*` (necessário em dev, onde front e API estão em portas diferentes).
 - `If-Match` e `Idempotency-Key` são definidos só pela outbox, nunca por componente ou hook.
 

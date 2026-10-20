@@ -61,6 +61,16 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Contrato gerado igual ao commitado
+        run: |
+          pnpm gen:api
+          if [ -n "$(git status --porcelain -- apps/web/src/shared/api/generated)" ]; then
+            git status --short -- apps/web/src/shared/api/generated
+            git diff -- apps/web/src/shared/api/generated
+            echo "::error file=apps/web/src/shared/api/generated::Código gerado desatualizado: rode pnpm gen:api e commite a saída."
+            exit 1
+          fi
+
       - name: Lint, typecheck e testes
         run: pnpm check
 

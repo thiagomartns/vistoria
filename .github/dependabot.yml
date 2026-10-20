@@ -22,8 +22,12 @@ updates:
     cooldown:
       default-days: 7
     # A major do @types/node acompanha a do runtime (.node-version) e sobe junto com ele.
+    # O typescript 6 do scripts/gen-api fica na major: o @hey-api/openapi-ts usa a API JS do compilador,
+    # que o TypeScript 7 não expõe. A regra vale também para o web, cuja próxima major sobe à mão.
     ignore:
       - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
     groups:
       npm:
