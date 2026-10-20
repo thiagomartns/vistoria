@@ -26,5 +26,5 @@ public class DatabaseModelTests
     }
 
     private static AppDbContext CreateContext() =>
-        new(new DbContextOptionsBuilder<AppDbContext>().UseSqlServer().Options);
+        new(new DbContextOptionsBuilder<AppDbContext>().UseSqlServer().Options, TimeProvider.System);
 }

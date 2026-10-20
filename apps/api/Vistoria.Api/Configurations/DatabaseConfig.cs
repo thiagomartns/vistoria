@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Vistoria.Api.Model.Context;
+using Vistoria.Api.Repositories;
+using Vistoria.Api.Repositories.Impl;
 
 namespace Vistoria.Api.Configurations;
 
@@ -13,6 +15,7 @@ public static class DatabaseConfig
     {
         services.AddDbContext<AppDbContext>(options =>
             options.UseSqlServer(configuration.GetConnectionString(ConnectionStringName)));
+        services.AddScoped(typeof(IRepository<>), typeof(GenericRepository<>));
         return services;
     }
 
