@@ -19,12 +19,13 @@ cp infra/.env.example infra/.env   # senha do SA do SQL Server local
 pnpm db:up
 ```
 
-Uma vez por máquina, grave a connection string da API nos User Secrets (fora do repositório), com a senha
-de `MSSQL_SA_PASSWORD` do `infra/.env`:
+Uma vez por máquina (e de novo se mudar a senha), grave a connection string da API nos User Secrets, fora do
+repositório. O comando lê a senha de `MSSQL_SA_PASSWORD` no `infra/.env`; não digite a senha à mão (o `!` da
+senha de exemplo dispara a expansão de histórico do zsh e do bash):
 
 ```bash
 dotnet user-secrets set ConnectionStrings:Default \
-  "Server=localhost,1433;Database=vistoria;User Id=sa;Password=<MSSQL_SA_PASSWORD>;TrustServerCertificate=True" \
+  "Server=localhost,1433;Database=vistoria;User Id=sa;Password=$(sed -n 's/^MSSQL_SA_PASSWORD=//p' infra/.env);TrustServerCertificate=True" \
   --project apps/api/Vistoria.Api
 ```
 
