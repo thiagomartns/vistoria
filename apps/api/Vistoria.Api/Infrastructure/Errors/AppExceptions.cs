@@ -15,9 +15,19 @@ public abstract class AppException(string type, int status, string? detail = nul
     public virtual TimeSpan? RetryAfter => null;
 }
 
+/// <summary>
+/// <c>errors</c> por caminho JSON do campo, relativo ao corpo e com o índice enviado
+/// (<c>rooms[2].items[4].condition</c>); <c>""</c> é erro do corpo inteiro.
+/// </summary>
 public sealed class ValidationException(IDictionary<string, string[]> errors, string? detail = null)
     : AppException(ProblemTypes.Validation, StatusCodes.Status400BadRequest, detail)
 {
+    /// <summary>Um campo só, o caso comum de uma regra do service.</summary>
+    public ValidationException(string path, string message, string? detail = null)
+        : this(new Dictionary<string, string[]> { [path] = [message] }, detail)
+    {
+    }
+
     public override IReadOnlyDictionary<string, object?> Extensions { get; } =
         new Dictionary<string, object?> { ["errors"] = errors };
 }

@@ -209,7 +209,9 @@ O `type` é uma URN: `urn:vistoria:problem:` seguido do slug da tabela (por exem
 ### Erros por campo
 
 - As chaves de `errors` são o caminho JSON em camelCase relativo ao corpo, com índice da posição enviada: `rooms[2].items[4].condition`. O front converte para o nome de campo do react-hook-form (`rooms.2.items.4.condition`) numa função única ([ADR 0023](../decisions/0023-formularios-com-react-hook-form.md)).
-- Para isso: `options.ModelMetadataDetailsProviders.Add(new SystemTextJsonValidationMetadataProvider())` nos controllers, e o exception handler remove o prefixo `$.` dos erros de desserialização.
+- Para isso: `options.ModelMetadataDetailsProviders.Add(new SystemTextJsonValidationMetadataProvider())` nos controllers. O model state inválido vira `ValidationException` (`ModelStateErrors`), então sai no mesmo formato de uma regra do service.
+- Erros de desserialização (tipo errado, JSON malformado) perdem o prefixo `$.` (`$` sozinho vira `""`, erro do corpo inteiro) e trocam a mensagem do System.Text.Json, que cita tipo .NET, linha e byte, por "Valor ausente ou com formato inválido.". O erro "campo obrigatório" do próprio parâmetro de corpo é descartado.
+- DTO de entrada usa propriedades `{ get; init; }`, sem record posicional nem `required` do C#: o provider não atua nos parâmetros do construtor, e o `required` falha na desserialização, antes da validação.
 
 ### OpenAPI
 
