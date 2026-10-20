@@ -15,7 +15,7 @@ Este documento é a **fonte única do contrato de sincronização**: rotas, cabe
 **Princípios**
 
 1. **O .NET é a autoridade.** Valida, autoriza e detecta conflito. O cliente só propõe.
-2. **Toda entidade do app é sincronizável** e herda de `SyncEntity`. Sem exceção.
+2. **Toda entidade do domínio é sincronizável** e herda de `SyncEntity`. Só as de autenticação e infraestrutura (`User`, `RefreshToken`, `IdempotencyRecord`) ficam fora ([ADR 0026](../decisions/0026-usuario-e-entidades-de-autenticacao-fora-do-syncentity-senha-de-8-a-128-caracteres-sem-regra-de-composicao.md)).
 3. **O contrato é o produto.** O OpenAPI 3.1 gerado alimenta o front, inclusive a lista de tipos de erro.
 4. **Erro se identifica pelo `type`, nunca só pelo status.** Cada `type` tem exatamente uma reação no front.
 5. **Toda escrita é idempotente e versionada:** `Idempotency-Key` sempre; `If-Match` sempre que o registro já existe.
@@ -110,7 +110,7 @@ Vistoria.Api.Tests/
 
 ## Entidade sincronizável
 
-Toda entidade herda de `SyncEntity`, que substitui o `BaseEntity` do curso (só um `long` identity) e carrega o que o sync precisa.
+Toda entidade do domínio herda de `SyncEntity`, que substitui o `BaseEntity` do curso (só um `long` identity) e carrega o que o sync precisa. `User`, `RefreshToken` e `IdempotencyRecord` não sincronizam e não herdam dele: não têm dono, soft delete nem delta, e o hash da senha nunca vai ao aparelho ([ADR 0013](../decisions/0013-entidades-sensiveis-sem-sync.md)). O `Id` de `User` também é UUID v7, gerado no servidor no `signup`.
 
 ```csharp
 public abstract class SyncEntity
@@ -286,8 +286,9 @@ O JWT do curso continua, com quatro mudanças. O refresh token sai do corpo e va
 | Tolerância | Token substituído há menos de 30 s: aceita, devolve só um access token novo e **não** envia cookie (o navegador já recebeu o sucessor) |
 | Reuso | Token substituído há mais de 30 s, ou revogado: revoga a família inteira e responde 401 |
 | Teto | Família com mais de 30 dias desde o login não renova; exige `signin` |
-| Senha | `PasswordHasher<User>` (PBKDF2 com salt) |
-| Chave do JWT | User Secrets em dev, variável de ambiente em produção; nunca no `appsettings.json` |
+| Senha | `PasswordHasher<User>` (PBKDF2 com salt). De 8 a 128 caracteres, sem regra de composição nem trim; o teto limita o custo do hash por requisição |
+| E-mail | Único sem diferenciar maiúsculas: gravado com trim e em minúsculas, com índice único. Já usado → 400 `validation` em `errors.email` |
+| Chave do JWT | HS256, base64 de pelo menos 32 bytes. User Secrets em dev (`Jwt:SigningKey`, gravada pelo `pnpm db:init`), `Jwt__SigningKey` em produção; nunca no `appsettings.json`. Sem chave válida a API não sobe |
 | `signout` | Revoga a família e apaga o cookie |
 
 **Por que a tolerância existe.** Num PWA com várias abas, duas podem pedir refresh com o mesmo cookie quase juntas. Sem a tolerância, a segunda seria lida como roubo e deslogaria o usuário. O front já coordena o refresh numa aba só; a tolerância cobre a corrida que sobrar.

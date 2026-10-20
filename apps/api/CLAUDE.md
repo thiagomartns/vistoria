@@ -19,9 +19,10 @@ Pastas em [Estrutura de pastas](../../docs/architecture/backend.md#estrutura-de-
 
 ## Regras
 
-- **Toda entidade herda de `SyncEntity`** (`Id` Guid do cliente, `Version` rowversion, `CreatedAt`,
-  `UpdatedAt`, `DeletedAt`, `OwnerId`). Sem exceção. `Room` e `InspectionItem` só são escritos pelo `PUT`
-  da vistoria e não têm versão própria.
+- **Toda entidade do domínio herda de `SyncEntity`** (`Id` Guid do cliente, `Version` rowversion, `CreatedAt`,
+  `UpdatedAt`, `DeletedAt`, `OwnerId`). `Room` e `InspectionItem` só são escritos pelo `PUT` da vistoria e não
+  têm versão própria. Só as de autenticação e infraestrutura (`User`, `RefreshToken`, `IdempotencyRecord`)
+  ficam fora ([ADR 0026](../../docs/decisions/0026-usuario-e-entidades-de-autenticacao-fora-do-syncentity-senha-de-8-a-128-caracteres-sem-regra-de-composicao.md)).
 - **Erro só por exceção tipada do catálogo** (`Infrastructure/Errors/`), traduzida pelo
   `GlobalExceptionHandler` em `ProblemDetails` com `type`. Nada de `BadRequest("...")` com string.
 - **Todo endpoint tem `[EndpointName]` em camelCase** (vira o `operationId` e o nome da função no front).
@@ -42,6 +43,7 @@ Testes de integração ficam em `Integration/` e usam `ApiFactory` (`Support/`):
 um SQL Server real do Testcontainers, um container por execução, compartilhado e com a mesma imagem do
 `infra/docker-compose.dev.yml`. O startup aplica as migrações como no `pnpm dev:api`. Sem `PriorityOrderer`:
 cada teste cria os próprios dados com IDs novos. Testes unitários não sobem o container. Exige Docker.
+Cada `ApiFactory` tem a própria chave do JWT e um `ManualTimeProvider` no lugar do `TimeProvider` (`factory.Time`).
 Cenários esperados em [Testes de integração](../../docs/architecture/backend.md#testes-de-integração).
 
 ## Comandos
@@ -52,5 +54,7 @@ Cenários esperados em [Testes de integração](../../docs/architecture/backend.
 - Migrações (em `apps/api`, depois de `dotnet tool restore`): `dotnet ef migrations add <Nome> --project Vistoria.Api`.
   Em Development o startup aplica as pendentes (`MigrateAsync`); em produção, o `efbundle` no deploy (M5).
   `DatabaseModelTests` falha se o modelo mudou sem migração.
-- Connection string `ConnectionStrings:Default`: User Secrets em dev, gravada pelo `pnpm db:init` (raiz),
-  `ConnectionStrings__Default` no container. Nunca em `appsettings*.json` (`SecretsTests` cobra).
+- Connection string `ConnectionStrings:Default` e chave do JWT `Jwt:SigningKey`: User Secrets em dev, gravadas
+  pelo `pnpm db:init` (raiz), `ConnectionStrings__Default` e `Jwt__SigningKey` no container. Nunca em
+  `appsettings*.json` (`SecretsTests` cobra). Sem chave válida a API não sobe (`JwtOptionsValidator`), exceto
+  na geração do `openapi.json` no build (`OpenApiConfig.IsBuildTimeGeneration`).
