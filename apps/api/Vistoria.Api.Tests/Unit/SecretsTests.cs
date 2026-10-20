@@ -4,7 +4,7 @@ using Vistoria.Api.Tests.Support;
 
 namespace Vistoria.Api.Tests.Unit;
 
-// Connection string e senhas ficam fora do repositório: User Secrets em dev, variável de ambiente no container.
+// Connection string, senhas e a chave do JWT ficam fora do repositório: User Secrets em dev, variável de ambiente no container.
 public class SecretsTests
 {
     private static readonly string ApiDir = Path.Combine(RepoRoot.Path, "apps", "api", "Vistoria.Api");
@@ -20,7 +20,8 @@ public class SecretsTests
 
         content.Should().NotContainEquivalentOf("ConnectionStrings")
             .And.NotContainEquivalentOf("Password")
-            .And.NotContainEquivalentOf("Pwd=");
+            .And.NotContainEquivalentOf("Pwd=")
+            .And.NotContainEquivalentOf("SigningKey");
     }
 
     [Fact]

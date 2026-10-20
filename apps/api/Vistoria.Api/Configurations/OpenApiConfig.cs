@@ -1,3 +1,4 @@
+using System.Reflection;
 using Vistoria.Api.Infrastructure.OpenApi;
 
 namespace Vistoria.Api.Configurations;
@@ -5,6 +6,13 @@ namespace Vistoria.Api.Configurations;
 public static class OpenApiConfig
 {
     private const string DocumentName = "v1";
+
+    /// <summary>
+    /// O <c>dotnet build</c> gera o <c>openapi.json</c> subindo o host pela ferramenta <c>GetDocument.Insider</c>,
+    /// sem segredo nenhum configurado. Só a validação de segredos no start olha isto.
+    /// </summary>
+    public static bool IsBuildTimeGeneration { get; } =
+        Assembly.GetEntryAssembly()?.GetName().Name == "GetDocument.Insider";
 
     public static IServiceCollection AddOpenApiDocs(this IServiceCollection services)
     {

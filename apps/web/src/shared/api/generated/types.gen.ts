@@ -4,6 +4,17 @@ export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
 };
 
+export type AuthDto = {
+    accessToken: string;
+    expiresAt: string;
+    user: AuthUserDto;
+};
+
+export type AuthUserDto = {
+    id: string;
+    name: string;
+};
+
 export type HealthDto = {
     status: string;
 };
@@ -41,6 +52,37 @@ export type ProblemDetails = {
  * type de erro do catálogo (backend.md, "Catálogo de erros"). O front reage por ele.
  */
 export type ProblemType = 'urn:vistoria:problem:validation' | 'urn:vistoria:problem:invalid-cursor' | 'urn:vistoria:problem:unauthorized' | 'urn:vistoria:problem:forbidden' | 'urn:vistoria:problem:not-found' | 'urn:vistoria:problem:unsupported-request' | 'urn:vistoria:problem:version-conflict' | 'urn:vistoria:problem:idempotency-in-progress' | 'urn:vistoria:problem:locked' | 'urn:vistoria:problem:deleted' | 'urn:vistoria:problem:cursor-expired' | 'urn:vistoria:problem:idempotency-key-reused' | 'urn:vistoria:problem:precondition-required' | 'urn:vistoria:problem:rate-limited' | 'urn:vistoria:problem:internal';
+
+export type SignUpDto = {
+    name: string;
+    email: string;
+    password: string;
+};
+
+export type SignUpData = {
+    body: SignUpDto;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/signup';
+};
+
+export type SignUpErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+};
+
+export type SignUpError = SignUpErrors[keyof SignUpErrors];
+
+export type SignUpResponses = {
+    /**
+     * Created
+     */
+    201: AuthDto;
+};
+
+export type SignUpResponse = SignUpResponses[keyof SignUpResponses];
 
 export type GetHealthData = {
     body?: never;
