@@ -24,12 +24,12 @@ A API é a única fonte de verdade e de segurança. Detalhes em [docs/vision.md]
 | Comando | O que faz |
 | --- | --- |
 | `pnpm db:up` / `pnpm db:down` | Sobe / derruba o SQL Server (exige `infra/.env`) |
-| `pnpm dev:api` | `dotnet watch` em `http://localhost:8080` (Swagger em `/swagger`) |
+| `pnpm dev:api` | `dotnet watch` em `http://localhost:8080` (Swagger em `/swagger`); aplica as migrações (connection string nos User Secrets, ver README) |
 | `pnpm dev:web` | `next dev` em `http://localhost:3000` |
 | `pnpm check` | Lint (Oxlint), typecheck e testes (Vitest) do web, e testes do `scripts/screens` |
 | `pnpm gen:api` | Gera tipos, client, Zod e `ProblemType` em `apps/web/src/shared/api/generated/` a partir de `apps/api/openapi.json` |
 | `pnpm --filter web build` | Static export em `apps/web/out/` |
-| `pnpm test:api` | `dotnet test` na solution da API |
+| `pnpm test:api` | `dotnet test` na solution da API (integração com Testcontainers: exige Docker) |
 | `pnpm screens <rota…>` | Prints do static export no celular e no desktop; `--publish` grava na branch `screens` |
 
 `pnpm seed` chega no M2. Uma tela do Figma vira código com `/screen <link> <issue>`.

@@ -37,7 +37,10 @@ Pastas em [Estrutura de pastas](../../docs/architecture/backend.md#estrutura-de-
 ## Testes
 
 `Vistoria.Api.Tests` com xUnit, `WebApplicationFactory` e AwesomeAssertions (não FluentAssertions).
-Testes de integração ficam em `Integration/`; a partir do M1 usam Testcontainers com SQL Server real.
+Testes de integração ficam em `Integration/` e usam `ApiFactory` (`Support/`): a API em Development contra
+um SQL Server real do Testcontainers, um container por execução, compartilhado e com a mesma imagem do
+`infra/docker-compose.dev.yml`. O startup aplica as migrações como no `pnpm dev:api`. Sem `PriorityOrderer`:
+cada teste cria os próprios dados com IDs novos. Testes unitários não sobem o container. Exige Docker.
 Cenários esperados em [Testes de integração](../../docs/architecture/backend.md#testes-de-integração).
 
 ## Comandos
@@ -45,4 +48,8 @@ Cenários esperados em [Testes de integração](../../docs/architecture/backend.
 - `pnpm dev:api` (raiz): `dotnet watch` em `http://localhost:8080`, Swagger em `/swagger`.
 - `pnpm test:api` (raiz): `dotnet test` na `Vistoria.sln`.
 - `dotnet build` em `apps/api`: compila e regenera `openapi.json` (ou `/gen-api`).
-- EF Core, migrações e autenticação chegam no M1.
+- Migrações (em `apps/api`, depois de `dotnet tool restore`): `dotnet ef migrations add <Nome> --project Vistoria.Api`.
+  Em Development o startup aplica as pendentes (`MigrateAsync`); em produção, o `efbundle` no deploy (M5).
+  `DatabaseModelTests` falha se o modelo mudou sem migração.
+- Connection string `ConnectionStrings:Default`: User Secrets em dev (comando no [README](../../README.md)),
+  `ConnectionStrings__Default` no container. Nunca em `appsettings*.json` (`SecretsTests` cobra).

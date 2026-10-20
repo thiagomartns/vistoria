@@ -19,6 +19,17 @@ cp infra/.env.example infra/.env   # senha do SA do SQL Server local
 pnpm db:up
 ```
 
+Uma vez por máquina, grave a connection string da API nos User Secrets (fora do repositório), com a senha
+de `MSSQL_SA_PASSWORD` do `infra/.env`:
+
+```bash
+dotnet user-secrets set ConnectionStrings:Default \
+  "Server=localhost,1433;Database=vistoria;User Id=sa;Password=<MSSQL_SA_PASSWORD>;TrustServerCertificate=True" \
+  --project apps/api/Vistoria.Api
+```
+
+Depois disso, `pnpm dev:api` aplica as migrações pendentes no startup (só em Development).
+
 ## Comandos
 
 | Comando | O que faz |
@@ -28,6 +39,6 @@ pnpm db:up
 | `pnpm dev:api` | API com `dotnet watch` em http://localhost:8080 (Swagger UI em `/swagger`) |
 | `pnpm dev:web` | Front com `next dev` em http://localhost:3000 |
 | `pnpm check` | Lint, typecheck e testes do front |
-| `pnpm test:api` | Testes da API (`dotnet test`) |
+| `pnpm test:api` | Testes da API (`dotnet test`); os de integração sobem o SQL Server via Testcontainers e exigem Docker |
 
 O contrato da API fica em `apps/api/openapi.json`, regenerado a cada `dotnet build` e commitado.
