@@ -34,6 +34,16 @@ export function connectionString(password) {
   return `Server=localhost,1433;Database=vistoria;User Id=sa;Password=${password};TrustServerCertificate=True`;
 }
 
+// Chave do JWT (HS256): 64 bytes aleatórios em base64; a API exige pelo menos 32 (JwtOptions).
+export function generateJwtKey() {
+  return randomBytes(64).toString("base64");
+}
+
+// O que vai para os User Secrets da API, num único `dotnet user-secrets set` por stdin.
+export function userSecrets(password, jwtKey) {
+  return { ConnectionStrings: { Default: connectionString(password) }, Jwt: { SigningKey: jwtKey } };
+}
+
 export function parseArgs(argv) {
   const unknown = argv.filter((a) => a !== "--rotate");
   if (unknown.length > 0) {

@@ -6,7 +6,7 @@
     <OpenApiGenerateDocumentsOptions>--file-name openapi</OpenApiGenerateDocumentsOptions>
   </PropertyGroup>
 
-  <!-- Segredos de dev (connection string) ficam nos User Secrets, fora do repositório. -->
+  <!-- Segredos de dev (connection string e chave do JWT) ficam nos User Secrets, fora do repositório. -->
   <PropertyGroup>
     <UserSecretsId>8c0c1a11-386b-45c1-b771-b55eec0369d5</UserSecretsId>
   </PropertyGroup>
@@ -31,6 +31,7 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="Swashbuckle.AspNetCore.SwaggerUI" />
   </ItemGroup>

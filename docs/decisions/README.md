@@ -30,3 +30,4 @@ uma decisão nova o substitui e diz qual substituiu. Novo ADR: `/adr <título>` 
 | [0023](0023-formularios-com-react-hook-form.md) | Formulários com react-hook-form para usar o Form do Sanjou | Aceito | 2026-10-19 |
 | [0024](0024-type-de-erro-como-urn.md) | type de erro como URN | Aceito | 2026-10-20 |
 | [0025](0025-senha-local-gerada-nunca-de-exemplo.md) | Senha local gerada, nunca de exemplo | Aceito | 2026-10-20 |
+| [0026](0026-usuario-e-entidades-de-autenticacao-fora-do-syncentity-senha-de-8-a-128-caracteres-sem-regra-de-composicao.md) | Usuário e entidades de autenticação fora do SyncEntity; senha de 8 a 128 caracteres sem regra de composição | Proposto | 2026-10-20 |

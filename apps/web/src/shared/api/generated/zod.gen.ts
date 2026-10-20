@@ -2,6 +2,17 @@
 
 import * as z from 'zod';
 
+export const zAuthUserDto = z.object({
+    id: z.uuid(),
+    name: z.string()
+});
+
+export const zAuthDto = z.object({
+    accessToken: z.string(),
+    expiresAt: z.iso.datetime(),
+    user: zAuthUserDto
+});
+
 export const zHealthDto = z.object({
     status: z.string()
 });
@@ -41,6 +52,19 @@ export const zProblemDetails = z.object({
     deletedAt: z.iso.datetime().optional(),
     missingHeader: z.string().optional()
 });
+
+export const zSignUpDto = z.object({
+    name: z.string().min(2).max(120),
+    email: z.string().max(254),
+    password: z.string().min(8).max(128)
+});
+
+export const zSignUpBody = zSignUpDto;
+
+/**
+ * Created
+ */
+export const zSignUpResponse = zAuthDto;
 
 /**
  * OK
