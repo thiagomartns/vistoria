@@ -6,6 +6,7 @@ builder.AddSerilogLogging();
 builder.Services.AddErrorHandling();
 builder.Services.AddOpenApiDocs();
 builder.Services.AddApiControllers();
+builder.Services.AddDatabase(builder.Configuration);
 
 var app = builder.Build();
 
@@ -14,4 +15,5 @@ app.UseSerilogLogging();
 app.UseOpenApiDocs();
 app.MapControllers();
 
-app.Run();
+await app.MigrateDatabaseAsync();
+await app.RunAsync();

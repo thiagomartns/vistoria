@@ -16,7 +16,8 @@ jobs:
   api:
     name: api
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # Os testes de integração baixam a imagem do SQL Server (Testcontainers usa o Docker do runner).
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: apps/api

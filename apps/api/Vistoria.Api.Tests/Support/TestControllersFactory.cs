@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Vistoria.Api.Tests.Support;
@@ -8,9 +7,12 @@ namespace Vistoria.Api.Tests.Support;
 /// API com os controllers do projeto de testes (<c>ThrowingController</c>, <c>ContractController</c>) como
 /// application part. Eles ficam fora do <c>openapi.json</c> commitado, que só enxerga o projeto da API.
 /// </summary>
-public class TestControllersFactory : WebApplicationFactory<Program>
+public class TestControllersFactory : ApiFactory
 {
-    protected override void ConfigureWebHost(IWebHostBuilder builder) =>
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        base.ConfigureWebHost(builder);
         builder.ConfigureServices(services =>
             services.AddControllers().AddApplicationPart(typeof(TestControllersFactory).Assembly));
+    }
 }

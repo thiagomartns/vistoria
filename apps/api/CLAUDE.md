@@ -31,13 +31,17 @@ Pastas em [Estrutura de pastas](../../docs/architecture/backend.md#estrutura-de-
 - **Proibido `DateTime.Now`/`UtcNow`.** Use `TimeProvider` (injetado; nos testes, um falso).
 - **`apps/api/openapi.json` é regenerado no `dotnet build`** e vai commitado no mesmo PR que mudou a API.
   A geração é incremental (cache em `obj/`): sem a DLL mudar, o arquivo não é reescrito.
-- Segredos fora do repositório: User Secrets em dev, variável de ambiente no container.
+- Segredos fora do repositório, nem de exemplo: User Secrets em dev (`pnpm db:init`), variável de ambiente no
+  container ([ADR 0025](../../docs/decisions/0025-senha-local-gerada-nunca-de-exemplo.md)).
 - Pacotes estáveis apenas; nada de preview/rc.
 
 ## Testes
 
 `Vistoria.Api.Tests` com xUnit, `WebApplicationFactory` e AwesomeAssertions (não FluentAssertions).
-Testes de integração ficam em `Integration/`; a partir do M1 usam Testcontainers com SQL Server real.
+Testes de integração ficam em `Integration/` e usam `ApiFactory` (`Support/`): a API em Development contra
+um SQL Server real do Testcontainers, um container por execução, compartilhado e com a mesma imagem do
+`infra/docker-compose.dev.yml`. O startup aplica as migrações como no `pnpm dev:api`. Sem `PriorityOrderer`:
+cada teste cria os próprios dados com IDs novos. Testes unitários não sobem o container. Exige Docker.
 Cenários esperados em [Testes de integração](../../docs/architecture/backend.md#testes-de-integração).
 
 ## Comandos
@@ -45,4 +49,8 @@ Cenários esperados em [Testes de integração](../../docs/architecture/backend.
 - `pnpm dev:api` (raiz): `dotnet watch` em `http://localhost:8080`, Swagger em `/swagger`.
 - `pnpm test:api` (raiz): `dotnet test` na `Vistoria.sln`.
 - `dotnet build` em `apps/api`: compila e regenera `openapi.json` (ou `/gen-api`).
-- EF Core, migrações e autenticação chegam no M1.
+- Migrações (em `apps/api`, depois de `dotnet tool restore`): `dotnet ef migrations add <Nome> --project Vistoria.Api`.
+  Em Development o startup aplica as pendentes (`MigrateAsync`); em produção, o `efbundle` no deploy (M5).
+  `DatabaseModelTests` falha se o modelo mudou sem migração.
+- Connection string `ConnectionStrings:Default`: User Secrets em dev, gravada pelo `pnpm db:init` (raiz),
+  `ConnectionStrings__Default` no container. Nunca em `appsettings*.json` (`SecretsTests` cobra).

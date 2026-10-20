@@ -7,9 +7,9 @@ services:
     environment:
       ACCEPT_EULA: "Y"
       MSSQL_PID: Developer
-      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?defina MSSQL_SA_PASSWORD em infra/.env (cp infra/.env.example infra/.env)}
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?rode pnpm db:init para gerar a senha em infra/.env}
     ports:
-      - "127.0.0.1:1433:1433" # só localhost: a senha de exemplo é pública
+      - "127.0.0.1:1433:1433" # só localhost: o banco de dev nunca fica exposto na rede
     volumes:
       - sqldata:/var/opt/mssql
     healthcheck:

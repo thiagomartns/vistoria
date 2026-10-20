@@ -6,12 +6,13 @@
     "node": ">=24"
   },
   "scripts": {
+    "db:init": "pnpm --filter db-init start",
     "db:up": "docker compose -f infra/docker-compose.dev.yml up -d --wait",
     "db:down": "docker compose -f infra/docker-compose.dev.yml down",
     "dev:api": "cd apps/api && dotnet watch run --project Vistoria.Api",
     "dev:web": "pnpm --filter web dev",
     "gen:api": "pnpm --filter gen-api generate",
-    "check": "pnpm --filter web check && pnpm --filter screens test",
+    "check": "pnpm --filter web check && pnpm --filter screens test && pnpm --filter db-init test",
     "test:api": "cd apps/api && dotnet test --solution Vistoria.sln",
     "screens": "pnpm --filter screens start"
   }
