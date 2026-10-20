@@ -38,6 +38,78 @@
             "type": "string"
           }
         }
+      },
+      "ProblemDetails": {
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail",
+          "traceId"
+        ],
+        "type": "object",
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/ProblemType"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "traceId": {
+            "type": "string"
+          },
+          "errors": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "description": "Só em validation: mensagens por caminho JSON do campo (rooms[2].items[4].condition)."
+          },
+          "current": {
+            "description": "Só em version-conflict e locked: o registro como está no servidor (DTO da rota)."
+          },
+          "deletedAt": {
+            "type": "string",
+            "description": "Só em deleted: quando o registro foi excluído.",
+            "format": "date-time"
+          },
+          "missingHeader": {
+            "type": "string",
+            "description": "Só em precondition-required: o cabeçalho que faltou (If-Match ou Idempotency-Key)."
+          }
+        },
+        "description": "Erro da API (RFC 9457). Decida pelo type, nunca só pelo status."
+      },
+      "ProblemType": {
+        "enum": [
+          "urn:vistoria:problem:validation",
+          "urn:vistoria:problem:invalid-cursor",
+          "urn:vistoria:problem:unauthorized",
+          "urn:vistoria:problem:forbidden",
+          "urn:vistoria:problem:not-found",
+          "urn:vistoria:problem:unsupported-request",
+          "urn:vistoria:problem:version-conflict",
+          "urn:vistoria:problem:idempotency-in-progress",
+          "urn:vistoria:problem:locked",
+          "urn:vistoria:problem:deleted",
+          "urn:vistoria:problem:cursor-expired",
+          "urn:vistoria:problem:idempotency-key-reused",
+          "urn:vistoria:problem:precondition-required",
+          "urn:vistoria:problem:rate-limited",
+          "urn:vistoria:problem:internal"
+        ],
+        "type": "string",
+        "description": "type de erro do catálogo (backend.md, \"Catálogo de erros\"). O front reage por ele."
       }
     }
   },

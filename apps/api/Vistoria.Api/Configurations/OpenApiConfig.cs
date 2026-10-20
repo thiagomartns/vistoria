@@ -1,3 +1,5 @@
+using Vistoria.Api.Infrastructure.OpenApi;
+
 namespace Vistoria.Api.Configurations;
 
 public static class OpenApiConfig
@@ -6,7 +8,11 @@ public static class OpenApiConfig
 
     public static IServiceCollection AddOpenApiDocs(this IServiceCollection services)
     {
-        services.AddOpenApi(DocumentName);
+        services.AddOpenApi(DocumentName, options =>
+        {
+            options.AddDocumentTransformer<ProblemSchemasTransformer>();
+            options.AddOperationTransformer<ContractOperationTransformer>();
+        });
         return services;
     }
 

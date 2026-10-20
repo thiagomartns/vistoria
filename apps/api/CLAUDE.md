@@ -23,6 +23,8 @@ Pastas em [Estrutura de pastas](../../docs/architecture/backend.md#estrutura-de-
 - **Erro só por exceção tipada do catálogo** (`Infrastructure/Errors/`), traduzida pelo
   `GlobalExceptionHandler` em `ProblemDetails` com `type`. Nada de `BadRequest("...")` com string.
 - **Todo endpoint tem `[EndpointName]` em camelCase** (vira o `operationId` e o nome da função no front).
+- **Endpoint que pode falhar declara `[ProblemResponses(...)]`** com os status da tabela de
+  [Endpoints](../../docs/architecture/backend.md#endpoints); o OpenAPI os publica como `application/problem+json`.
 - **Proibido `FromSqlRaw` com valor externo.** Use LINQ ou `FromSql($"...")` interpolado, que parametriza.
 - **Proibido `DateTime.Now`/`UtcNow`.** Use `TimeProvider` (injetado; nos testes, um falso).
 - **`apps/api/openapi.json` é regenerado no `dotnet build`** e vai commitado no mesmo PR que mudou a API.
