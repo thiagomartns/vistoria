@@ -214,8 +214,10 @@ O `type` é uma URN: `urn:vistoria:problem:` seguido do slug da tabela (por exem
 ### OpenAPI
 
 - `AddOpenApi()` + `MapOpenApi()` (documento em `/openapi/v1.json`) + `UseSwaggerUI(o => o.SwaggerEndpoint("/openapi/v1.json", "v1"))`.
-- Um *operation transformer* documenta `If-Match`, `Idempotency-Key` e as respostas de erro de cada endpoint.
-- Um *document transformer* publica o schema `ProblemType`: um enum com todos os `type` do catálogo, lido de `ProblemTypes.cs`. O front recebe isso como union TypeScript. Um `type` novo no backend quebra o build do front até ganhar uma reação.
+- Um *operation transformer* (`Infrastructure/OpenApi/ContractTransformers.cs`) documenta `If-Match` e `Idempotency-Key` em todo `PUT` e `DELETE`, e as respostas de erro de cada endpoint em `application/problem+json`, com `Retry-After` em 429 e 409.
+- Os erros de cada action são declarados com `[ProblemResponses(...)]`, com os status da coluna "Erros possíveis" da tabela de Endpoints. No controller vale para todas as actions; controller e action se somam.
+- `If-Match` sai com `required: false` e `Idempotency-Key` com `required: true`. `If-Match` é exigido só quando o registro existe (428 se faltar), e marcá-lo obrigatório faria o client gerado exigi-lo também no upsert que cria.
+- Um *document transformer* publica o schema `ProblemType`: um enum com todos os `type` do catálogo, lido de `ProblemTypes.cs`. O front recebe isso como union TypeScript. Um `type` novo no backend quebra o build do front até ganhar uma reação. O mesmo transformer publica `ProblemDetails`, com `type` apontando para `ProblemType` e as extensões do catálogo como campos opcionais (`current` sem schema fixo: é o DTO da rota).
 
 ## Parâmetros compartilhados
 
