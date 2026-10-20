@@ -12,6 +12,7 @@ public static class ProblemTypes
     public const string Validation = Prefix + "validation";
     public const string InvalidCursor = Prefix + "invalid-cursor";
     public const string Unauthorized = Prefix + "unauthorized";
+    public const string InvalidCredentials = Prefix + "invalid-credentials";
     public const string Forbidden = Prefix + "forbidden";
     public const string NotFound = Prefix + "not-found";
     public const string UnsupportedRequest = Prefix + "unsupported-request";
@@ -29,7 +30,8 @@ public static class ProblemTypes
     {
         [Validation] = ("Dados inválidos", "Um ou mais campos não passaram na validação."),
         [InvalidCursor] = ("Cursor inválido", "O cursor de sincronização não pôde ser lido."),
-        [Unauthorized] = ("Não autenticado", "O token de acesso está ausente ou expirado."),
+        [Unauthorized] = ("Não autenticado", "O token de acesso está ausente, inválido ou expirado."),
+        [InvalidCredentials] = ("Credenciais inválidas", "E-mail ou senha incorretos."),
         [Forbidden] = ("Acesso negado", "O registro pertence a outro usuário."),
         [NotFound] = ("Não encontrado", "O recurso pedido não existe."),
         [UnsupportedRequest] = ("Requisição não suportada", "O método, o Accept ou o Content-Type não é suportado nesta rota."),
@@ -54,7 +56,8 @@ public static class ProblemTypes
 
     /// <summary>
     /// <c>type</c> de uma resposta que o pipeline gerou sem passar por exceção do catálogo
-    /// (rota inexistente, 405, 400 automático do <c>[ApiController]</c>, 401/403 do auth).
+    /// (rota inexistente, 405, 400 automático do <c>[ApiController]</c>, 401/403 do auth). O 401 do pipeline é
+    /// sempre token, nunca <see cref="InvalidCredentials"/>, que só o <c>signin</c> lança.
     /// </summary>
     public static string FromStatus(int status) => status switch
     {
