@@ -13,7 +13,9 @@ Pastas em [Estrutura de pastas](../../docs/architecture/backend.md#estrutura-de-
 - **Services**: regras do agregado, versão, conclusão, delta.
 - **Repositories**: acesso ao EF Core, sempre async com `CancellationToken`.
 - **Configuração** em extensões `Add*`/`Use*` dentro de `Configurations/`; `Program.cs` só as chama.
-- DTOs em `Data/DTO/V1/`.
+- DTOs em `Data/DTO/V1/`. **DTO de entrada** é record ou classe com propriedades `{ get; init; }` e Data
+  Annotations; nada de record posicional (a chave do erro sairia em PascalCase) nem do modificador `required`
+  (o System.Text.Json falharia antes da validação, sem o caminho do campo). `RequestDtoConventionTests` cobra isso.
 
 ## Regras
 
