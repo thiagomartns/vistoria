@@ -6,7 +6,7 @@ using Vistoria.Api.Infrastructure.Errors;
 namespace Vistoria.Api.Tests.Integration;
 
 /// <summary>
-/// Lança cada exceção do catálogo. Fica só no projeto de testes (via <c>ErrorsApiFactory</c>) para não
+/// Lança cada exceção do catálogo. Fica só no projeto de testes (via <c>TestControllersFactory</c>) para não
 /// entrar no contrato.
 /// </summary>
 [ApiController]

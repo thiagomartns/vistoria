@@ -1,21 +1,12 @@
 using System.Net;
 using System.Text.Json;
 using AwesomeAssertions;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.DependencyInjection;
 using Vistoria.Api.Infrastructure.Errors;
+using Vistoria.Api.Tests.Support;
 
 namespace Vistoria.Api.Tests.Integration;
 
-public class ErrorsApiFactory : WebApplicationFactory<Program>
-{
-    protected override void ConfigureWebHost(IWebHostBuilder builder) =>
-        builder.ConfigureServices(services =>
-            services.AddControllers().AddApplicationPart(typeof(ThrowingController).Assembly));
-}
-
-public class ErrorHandlingTests(ErrorsApiFactory factory) : IClassFixture<ErrorsApiFactory>
+public class ErrorHandlingTests(TestControllersFactory factory) : IClassFixture<TestControllersFactory>
 {
     private static readonly string[] BaseMembers = ["type", "title", "status", "detail", "traceId"];
 

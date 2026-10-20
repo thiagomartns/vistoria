@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Http;
 using Vistoria.Api.Infrastructure.Errors;
+using Vistoria.Api.Tests.Support;
 
 namespace Vistoria.Api.Tests.Unit;
 
@@ -105,7 +106,7 @@ public partial class ProblemTypesTests
     // Slugs da coluna `type` da tabela "Catálogo de erros" em docs/architecture/backend.md.
     private static HashSet<string> ReadDocCatalog()
     {
-        var lines = File.ReadAllLines(Path.Combine(FindRepoRoot(), "docs", "architecture", "backend.md"));
+        var lines = File.ReadAllLines(Path.Combine(RepoRoot.Path, "docs", "architecture", "backend.md"));
         var table = lines
             .SkipWhile(l => l.Trim() != "### Catálogo de erros")
             .Skip(1)
@@ -121,17 +122,6 @@ public partial class ProblemTypesTests
 
         slugs.Should().NotBeEmpty("a tabela do catálogo precisa existir em backend.md");
         return slugs;
-    }
-
-    private static string FindRepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, "docs", "architecture")))
-        {
-            dir = dir.Parent;
-        }
-
-        return dir?.FullName ?? throw new DirectoryNotFoundException("Raiz do repositório não encontrada.");
     }
 
     [GeneratedRegex(@"`([a-z-]+)`")]
