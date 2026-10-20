@@ -103,6 +103,7 @@ public class ErrorHandlingTests(ErrorsApiFactory factory) : IClassFixture<Errors
         var (response, body) = await GetProblem("/api/v1/rota-que-nao-existe");
 
         AssertProblem(response, body, 404, ProblemTypes.NotFound);
+        body.GetProperty("type").GetString().Should().Be("urn:vistoria:problem:not-found");
     }
 
     [Fact]
