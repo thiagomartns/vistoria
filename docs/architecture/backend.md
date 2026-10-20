@@ -190,6 +190,7 @@ Todo erro traz `type` (um dos slugs abaixo), `title`, `status`, `detail` e `trac
 | 401 | `unauthorized` | Access token ausente ou expirado | — | Pausa a fila, refresh em aba única, retoma |
 | 403 | `forbidden` | Registro de outro dono | — | Descarta a transação, reverte e avisa |
 | 404 | `not-found` | `GET` de id inexistente | — | Remove do banco local |
+| 405, 406, 415 | `unsupported-request` | Método, `Accept` ou `Content-Type` não suportado pela rota | — | Bug: registra e descarta |
 | 409 | `version-conflict` | Corrida detectada no `SaveChanges` | `current` | Merge |
 | 409 | `idempotency-in-progress` | Mesma chave ainda em processamento | — | Retry após `Retry-After`, mesma chave |
 | 409 | `locked` | `PUT` ou `DELETE` em vistoria concluída | `current` | Descarta a transação, adota `current` e avisa que foi concluída em outro aparelho |

@@ -106,7 +106,7 @@ A reação é escolhida pelo `type`, conforme o [catálogo do backend](backend.m
 | Aceitar o servidor | `locked` | Descarta a transação, adota `current` e avisa que a vistoria foi concluída em outro aparelho |
 | Voltar ao rascunho | `validation` | Status `rejected`, erros nos campos |
 | Descartar e avisar | `forbidden` | Remove a transação, reverte o otimista, avisa |
-| Bug | `idempotency-key-reused`, `precondition-required` | Registra, descarta, mostra erro genérico |
+| Bug | `idempotency-key-reused`, `precondition-required`, `unsupported-request` | Registra, descarta, mostra erro genérico |
 | Resync | `cursor-expired`, `invalid-cursor` | Resync completo da entidade (pull) |
 | Remover local | `not-found` | Remove o registro do banco local (só ocorre em `GET`) |
 
