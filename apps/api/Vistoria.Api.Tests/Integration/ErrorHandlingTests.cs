@@ -12,11 +12,15 @@ public class ErrorHandlingTests(TestControllersFactory factory) : IClassFixture<
 
     private readonly HttpClient _client = factory.CreateClient();
 
+    // Fora das rotas públicas, sem token a resposta é 401 antes de o roteamento dizer 404 ou 405.
+    private readonly HttpClient _authenticated = factory.CreateAuthenticatedClient();
+
     public static TheoryData<string, int, string, string[]> Cases => new()
     {
         { "validation", 400, ProblemTypes.Validation, ["errors"] },
         { "invalid-cursor", 400, ProblemTypes.InvalidCursor, [] },
         { "unauthorized", 401, ProblemTypes.Unauthorized, [] },
+        { "invalid-credentials", 401, ProblemTypes.InvalidCredentials, [] },
         { "forbidden", 403, ProblemTypes.Forbidden, [] },
         { "not-found", 404, ProblemTypes.NotFound, [] },
         { "unsupported-request", 415, ProblemTypes.UnsupportedRequest, [] },
@@ -91,7 +95,8 @@ public class ErrorHandlingTests(TestControllersFactory factory) : IClassFixture<
     [Fact]
     public async Task UnknownRoute_Returns404NotFound()
     {
-        var (response, body) = await GetProblem("/api/v1/rota-que-nao-existe");
+        var response = await _authenticated.GetAsync("/api/v1/rota-que-nao-existe", TestContext.Current.CancellationToken);
+        var body = await ReadBody(response);
 
         AssertProblem(response, body, 404, ProblemTypes.NotFound);
         body.GetProperty("type").GetString().Should().Be("urn:vistoria:problem:not-found");
@@ -100,7 +105,7 @@ public class ErrorHandlingTests(TestControllersFactory factory) : IClassFixture<
     [Fact]
     public async Task WrongMethod_Returns405UnsupportedRequest()
     {
-        var response = await _client.PostAsync("/api/v1/health", null, TestContext.Current.CancellationToken);
+        var response = await _authenticated.PostAsync("/api/v1/health", null, TestContext.Current.CancellationToken);
         var body = await ReadBody(response);
 
         AssertProblem(response, body, 405, ProblemTypes.UnsupportedRequest);

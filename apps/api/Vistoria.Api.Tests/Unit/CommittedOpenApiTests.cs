@@ -18,18 +18,28 @@ public class CommittedOpenApiTests
             .Should().BeEquivalentTo(ProblemTypes.All);
     }
 
-    [Fact]
-    public void SignUp_Returns201AuthDto_And400Problem()
+    // Status da tabela de Endpoints do backend.md.
+    [Theory]
+    [InlineData("/api/v1/auth/signup", "signUp", "201", new[] { "400", "429" })]
+    [InlineData("/api/v1/auth/signin", "signIn", "200", new[] { "400", "401", "429" })]
+    public void AuthOperations_ReturnAuthDto_AndTheirProblems(string path, string operationId, string success,
+        string[] problems)
     {
-        var operation = Document().GetProperty("paths").GetProperty("/api/v1/auth/signup").GetProperty("post");
+        var operation = Document().GetProperty("paths").GetProperty(path).GetProperty("post");
         var responses = operation.GetProperty("responses");
 
-        operation.GetProperty("operationId").GetString().Should().Be("signUp");
-        responses.EnumerateObject().Select(r => r.Name).Should().BeEquivalentTo("201", "400");
-        responses.GetProperty("201").GetProperty("content").GetProperty("application/json").GetProperty("schema")
+        operation.GetProperty("operationId").GetString().Should().Be(operationId);
+        responses.EnumerateObject().Select(r => r.Name).Should().BeEquivalentTo([success, .. problems]);
+        responses.GetProperty(success).GetProperty("content").GetProperty("application/json").GetProperty("schema")
             .GetProperty("$ref").GetString().Should().Be("#/components/schemas/AuthDto");
-        responses.GetProperty("400").GetProperty("content").GetProperty("application/problem+json")
-            .GetProperty("schema").GetProperty("$ref").GetString().Should().Be("#/components/schemas/ProblemDetails");
+        foreach (var status in problems)
+        {
+            responses.GetProperty(status).GetProperty("content").GetProperty("application/problem+json")
+                .GetProperty("schema").GetProperty("$ref").GetString()
+                .Should().Be("#/components/schemas/ProblemDetails");
+        }
+
+        responses.GetProperty("429").GetProperty("headers").TryGetProperty("Retry-After", out _).Should().BeTrue();
     }
 
     private static JsonElement Document() =>

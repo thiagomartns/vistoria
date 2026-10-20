@@ -31,8 +31,8 @@ public static class OpenApiConfig
             return app;
         }
 
-        // Documento nativo em /openapi/v1.json; o Swagger UI (em /swagger) só lê esse documento.
-        app.MapOpenApi();
+        // Documento nativo em /openapi/v1.json, público como o Swagger UI (em /swagger), que só lê esse documento.
+        app.MapOpenApi().AllowAnonymous();
         app.UseSwaggerUI(options => options.SwaggerEndpoint($"/openapi/{DocumentName}.json", DocumentName));
         return app;
     }

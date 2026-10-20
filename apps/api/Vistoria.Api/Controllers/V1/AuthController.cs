@@ -1,19 +1,35 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Vistoria.Api.Configurations;
 using Vistoria.Api.Data.DTO.V1;
 using Vistoria.Api.Infrastructure.OpenApi;
 using Vistoria.Api.Services;
 
 namespace Vistoria.Api.Controllers.V1;
 
+// Público: é aqui que o token nasce. O rate limit por IP é a proteção contra força bruta e cadastro em massa.
 [ApiController]
 [Route("api/v1/auth")]
+[AllowAnonymous]
+[ProblemResponses(StatusCodes.Status429TooManyRequests)]
 public class AuthController(IAuthService auth) : ControllerBase
 {
     // Sem Location: a conta não tem rota própria de leitura.
     [HttpPost("signup")]
     [EndpointName("signUp")]
+    [EnableRateLimiting(RateLimitConfig.SignUpPolicy)]
     [ProducesResponseType<AuthDto>(StatusCodes.Status201Created)]
     [ProblemResponses(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<AuthDto>> SignUp(SignUpDto body, CancellationToken cancellationToken) =>
         StatusCode(StatusCodes.Status201Created, await auth.SignUpAsync(body, cancellationToken));
+
+    // 401 é sempre invalid-credentials: senha errada e e-mail inexistente respondem igual.
+    [HttpPost("signin")]
+    [EndpointName("signIn")]
+    [EnableRateLimiting(RateLimitConfig.SignInPolicy)]
+    [ProducesResponseType<AuthDto>(StatusCodes.Status200OK)]
+    [ProblemResponses(StatusCodes.Status400BadRequest, StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<AuthDto>> SignIn(SignInDto body, CancellationToken cancellationToken) =>
+        Ok(await auth.SignInAsync(body, cancellationToken));
 }

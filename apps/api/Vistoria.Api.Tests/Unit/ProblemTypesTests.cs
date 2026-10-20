@@ -14,6 +14,7 @@ public partial class ProblemTypesTests
         new ValidationException(new Dictionary<string, string[]> { ["name"] = ["Obrigatório."] }),
         new InvalidCursorException(),
         new UnauthorizedException(),
+        new InvalidCredentialsException(),
         new ForbiddenException(),
         new NotFoundException(),
         new UnsupportedRequestException(StatusCodes.Status405MethodNotAllowed),

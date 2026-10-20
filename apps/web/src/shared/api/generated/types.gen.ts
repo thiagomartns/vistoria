@@ -51,7 +51,12 @@ export type ProblemDetails = {
 /**
  * type de erro do catálogo (backend.md, "Catálogo de erros"). O front reage por ele.
  */
-export type ProblemType = 'urn:vistoria:problem:validation' | 'urn:vistoria:problem:invalid-cursor' | 'urn:vistoria:problem:unauthorized' | 'urn:vistoria:problem:forbidden' | 'urn:vistoria:problem:not-found' | 'urn:vistoria:problem:unsupported-request' | 'urn:vistoria:problem:version-conflict' | 'urn:vistoria:problem:idempotency-in-progress' | 'urn:vistoria:problem:locked' | 'urn:vistoria:problem:deleted' | 'urn:vistoria:problem:cursor-expired' | 'urn:vistoria:problem:idempotency-key-reused' | 'urn:vistoria:problem:precondition-required' | 'urn:vistoria:problem:rate-limited' | 'urn:vistoria:problem:internal';
+export type ProblemType = 'urn:vistoria:problem:validation' | 'urn:vistoria:problem:invalid-cursor' | 'urn:vistoria:problem:unauthorized' | 'urn:vistoria:problem:invalid-credentials' | 'urn:vistoria:problem:forbidden' | 'urn:vistoria:problem:not-found' | 'urn:vistoria:problem:unsupported-request' | 'urn:vistoria:problem:version-conflict' | 'urn:vistoria:problem:idempotency-in-progress' | 'urn:vistoria:problem:locked' | 'urn:vistoria:problem:deleted' | 'urn:vistoria:problem:cursor-expired' | 'urn:vistoria:problem:idempotency-key-reused' | 'urn:vistoria:problem:precondition-required' | 'urn:vistoria:problem:rate-limited' | 'urn:vistoria:problem:internal';
+
+export type SignInDto = {
+    email: string;
+    password: string;
+};
 
 export type SignUpDto = {
     name: string;
@@ -71,6 +76,10 @@ export type SignUpErrors = {
      * Bad Request
      */
     400: ProblemDetails;
+    /**
+     * Too Many Requests
+     */
+    429: ProblemDetails;
 };
 
 export type SignUpError = SignUpErrors[keyof SignUpErrors];
@@ -83,6 +92,39 @@ export type SignUpResponses = {
 };
 
 export type SignUpResponse = SignUpResponses[keyof SignUpResponses];
+
+export type SignInData = {
+    body: SignInDto;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/signin';
+};
+
+export type SignInErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Unauthorized
+     */
+    401: ProblemDetails;
+    /**
+     * Too Many Requests
+     */
+    429: ProblemDetails;
+};
+
+export type SignInError = SignInErrors[keyof SignInErrors];
+
+export type SignInResponses = {
+    /**
+     * OK
+     */
+    200: AuthDto;
+};
+
+export type SignInResponse = SignInResponses[keyof SignInResponses];
 
 export type GetHealthData = {
     body?: never;

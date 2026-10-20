@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Vistoria.Api.Infrastructure.Errors;
@@ -30,6 +31,7 @@ public sealed record ValidationDto
 /// de testes (via <c>TestControllersFactory</c>).
 /// </summary>
 [ApiController]
+[AllowAnonymous]
 [Route("test/validation")]
 [SuppressMessage("Performance", "CA1822", Justification = "Ação MVC precisa ser método de instância.")]
 public class ValidationController : ControllerBase

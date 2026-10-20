@@ -25,6 +25,18 @@ public sealed record SignUpDto
     public string Password { get; init; } = "";
 }
 
+// Só presença e teto: formato e mínimo não importam para conferir uma senha, e o teto limita o custo do PBKDF2.
+public sealed record SignInDto
+{
+    [Required(ErrorMessage = "Informe o e-mail.")]
+    [MaxLength(UserConfiguration.EmailMaxLength, ErrorMessage = "O e-mail pode ter até {1} caracteres.")]
+    public string Email { get; init; } = "";
+
+    [Required(ErrorMessage = "Informe a senha.")]
+    [MaxLength(SignUpDto.PasswordMaxLength, ErrorMessage = "A senha pode ter até {1} caracteres.")]
+    public string Password { get; init; } = "";
+}
+
 public sealed record AuthUserDto(Guid Id, string Name);
 
 public sealed record AuthDto(string AccessToken, DateTimeOffset ExpiresAt, AuthUserDto User);

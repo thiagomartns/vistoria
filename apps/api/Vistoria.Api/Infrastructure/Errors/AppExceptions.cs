@@ -38,6 +38,13 @@ public sealed class InvalidCursorException(string? detail = null)
 public sealed class UnauthorizedException(string? detail = null)
     : AppException(ProblemTypes.Unauthorized, StatusCodes.Status401Unauthorized, detail);
 
+/// <summary>
+/// E-mail ou senha errados no <c>signin</c>. A mesma resposta para os dois casos, para não revelar quais e-mails
+/// têm conta (ADR 0027).
+/// </summary>
+public sealed class InvalidCredentialsException(string? detail = null)
+    : AppException(ProblemTypes.InvalidCredentials, StatusCodes.Status401Unauthorized, detail);
+
 public sealed class ForbiddenException(string? detail = null)
     : AppException(ProblemTypes.Forbidden, StatusCodes.Status403Forbidden, detail);
 

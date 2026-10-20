@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Vistoria.Api.Infrastructure.Errors;
 
@@ -10,6 +11,7 @@ namespace Vistoria.Api.Tests.Integration;
 /// entrar no contrato.
 /// </summary>
 [ApiController]
+[AllowAnonymous]
 [Route("test/errors")]
 public class ThrowingController : ControllerBase
 {
@@ -22,6 +24,7 @@ public class ThrowingController : ControllerBase
         "validation" => new ValidationException(new Dictionary<string, string[]> { ["name"] = ["Obrigatório."] }),
         "invalid-cursor" => new InvalidCursorException(),
         "unauthorized" => new UnauthorizedException(),
+        "invalid-credentials" => new InvalidCredentialsException(),
         "forbidden" => new ForbiddenException(),
         "not-found" => new NotFoundException(),
         "unsupported-request" => new UnsupportedRequestException(StatusCodes.Status415UnsupportedMediaType),

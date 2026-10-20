@@ -24,6 +24,7 @@ export const zProblemType = z.enum([
     'urn:vistoria:problem:validation',
     'urn:vistoria:problem:invalid-cursor',
     'urn:vistoria:problem:unauthorized',
+    'urn:vistoria:problem:invalid-credentials',
     'urn:vistoria:problem:forbidden',
     'urn:vistoria:problem:not-found',
     'urn:vistoria:problem:unsupported-request',
@@ -53,6 +54,11 @@ export const zProblemDetails = z.object({
     missingHeader: z.string().optional()
 });
 
+export const zSignInDto = z.object({
+    email: z.string().max(254),
+    password: z.string().max(128)
+});
+
 export const zSignUpDto = z.object({
     name: z.string().min(2).max(120),
     email: z.string().max(254),
@@ -65,6 +71,13 @@ export const zSignUpBody = zSignUpDto;
  * Created
  */
 export const zSignUpResponse = zAuthDto;
+
+export const zSignInBody = zSignInDto;
+
+/**
+ * OK
+ */
+export const zSignInResponse = zAuthDto;
 
 /**
  * OK
