@@ -1,18 +1,20 @@
-// Gera a senha do SQL Server local em infra/.env e grava a connection string nos User Secrets da API.
-// A senha nunca é impressa nem passa por argumento de processo: vai por arquivo (0600) e por stdin.
+// Gera a senha do SQL Server local em infra/.env e grava a connection string e a chave do JWT nos User Secrets
+// da API. Nenhum segredo é impresso nem passa por argumento de processo: vai por arquivo (0600) e por stdin.
 //
-//   pnpm db:init            cria a senha se infra/.env não tiver uma; sempre regrava o User Secret
+//   pnpm db:init            cria a senha se infra/.env não tiver uma; sempre regrava os User Secrets, com uma
+//                           chave do JWT nova (só invalida access tokens, que duram 15 min)
 //   pnpm db:init --rotate   troca a senha; com o banco rodando, aplica no SQL Server sem perder dados
 import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
   PASSWORD_KEY,
-  connectionString,
+  generateJwtKey,
   generatePassword,
   parseArgs,
   readEnvValue,
   upsertEnvValue,
+  userSecrets,
 } from "./lib.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
@@ -60,8 +62,8 @@ function alterSaPassword(password) {
   );
 }
 
-function setUserSecret(password) {
-  const secrets = { ConnectionStrings: { Default: connectionString(password) } };
+function setUserSecrets(password) {
+  const secrets = userSecrets(password, generateJwtKey());
   execFileSync("dotnet", ["user-secrets", "set", "--project", apiProject], {
     input: JSON.stringify(secrets),
     stdio: ["pipe", "ignore", "inherit"],
@@ -105,5 +107,5 @@ if (password === "" || rotate) {
   console.log(`db:init: senha ${running ? "trocada no SQL Server e " : ""}gravada em infra/.env.`);
 }
 
-setUserSecret(password);
-console.log("db:init: ConnectionStrings:Default gravada nos User Secrets da API.");
+setUserSecrets(password);
+console.log("db:init: ConnectionStrings:Default e Jwt:SigningKey gravadas nos User Secrets da API.");

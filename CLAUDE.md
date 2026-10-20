@@ -12,7 +12,7 @@ A API é a única fonte de verdade e de segurança. Detalhes em [docs/vision.md]
 | --- | --- |
 | `apps/web/` | Next.js 16, static export ([CLAUDE.md](apps/web/CLAUDE.md)) |
 | `apps/api/` | .NET 10, controllers + testes; `openapi.json` gerado no build ([CLAUDE.md](apps/api/CLAUDE.md)) |
-| `scripts/` | `screens` (prints do static export), `gen-api` (gerador do contrato, com TypeScript 6) e `db-init` (senha local) |
+| `scripts/` | `screens` (prints do static export), `gen-api` (gerador do contrato, com TypeScript 6) e `db-init` (senha local e chave do JWT) |
 | `infra/` | `docker-compose.dev.yml` (SQL Server); senha em `infra/.env`, gerada pelo `pnpm db:init` e nunca commitada |
 | `docs/` | Visão, arquitetura e ADRs (`docs/decisions/`) — **o repositório manda** |
 | `.github/` | CI (`ci.yml`: jobs `api`, `web`, `security`, obrigatórios na `main`) e Dependabot semanal |
@@ -23,9 +23,9 @@ A API é a única fonte de verdade e de segurança. Detalhes em [docs/vision.md]
 
 | Comando | O que faz |
 | --- | --- |
-| `pnpm db:init` | Gera a senha local em `infra/.env` e a connection string nos User Secrets; `--rotate` troca a senha sem perder dados |
+| `pnpm db:init` | Gera a senha local em `infra/.env` e grava a connection string e uma chave do JWT nova nos User Secrets; `--rotate` troca a senha sem perder dados |
 | `pnpm db:up` / `pnpm db:down` | Sobe / derruba o SQL Server (exige `infra/.env`) |
-| `pnpm dev:api` | `dotnet watch` em `http://localhost:8080` (Swagger em `/swagger`); aplica as migrações (connection string nos User Secrets, via `pnpm db:init`) |
+| `pnpm dev:api` | `dotnet watch` em `http://localhost:8080` (Swagger em `/swagger`); aplica as migrações (connection string e chave do JWT nos User Secrets, via `pnpm db:init`) |
 | `pnpm dev:web` | `next dev` em `http://localhost:3000` |
 | `pnpm check` | Lint (Oxlint), typecheck e testes (Vitest) do web, e testes de `scripts/screens` e `scripts/db-init` |
 | `pnpm gen:api` | Gera tipos, client, Zod e `ProblemType` em `apps/web/src/shared/api/generated/` a partir de `apps/api/openapi.json` |

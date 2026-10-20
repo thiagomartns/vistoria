@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   connectionString,
+  generateJwtKey,
   generatePassword,
   parseArgs,
   readEnvValue,
   upsertEnvValue,
+  userSecrets,
 } from "./lib.mjs";
 
 describe("generatePassword", () => {
@@ -53,6 +55,24 @@ describe("connectionString", () => {
       connectionString("Abc123"),
       "Server=localhost,1433;Database=vistoria;User Id=sa;Password=Abc123;TrustServerCertificate=True",
     );
+  });
+});
+
+describe("generateJwtKey", () => {
+  it("é base64 de 64 bytes aleatórios", () => {
+    const key = generateJwtKey();
+    assert.equal(Buffer.from(key, "base64").length, 64);
+    assert.equal(Buffer.from(key, "base64").toString("base64"), key);
+    assert.notEqual(generateJwtKey(), key);
+  });
+});
+
+describe("userSecrets", () => {
+  it("grava a connection string e a chave do JWT nas chaves que a API lê", () => {
+    assert.deepEqual(userSecrets("Abc123", "chave"), {
+      ConnectionStrings: { Default: connectionString("Abc123") },
+      Jwt: { SigningKey: "chave" },
+    });
   });
 });
 
