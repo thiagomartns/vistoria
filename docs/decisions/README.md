@@ -29,3 +29,4 @@ uma decisão nova o substitui e diz qual substituiu. Novo ADR: `/adr <título>` 
 | [0022](0022-sanjou-fora-do-minimum-release-age.md) | Sanjou fora do minimumReleaseAge | Aceito | 2026-10-19 |
 | [0023](0023-formularios-com-react-hook-form.md) | Formulários com react-hook-form para usar o Form do Sanjou | Aceito | 2026-10-19 |
 | [0024](0024-type-de-erro-como-urn.md) | type de erro como URN | Aceito | 2026-10-20 |
+| [0025](0025-senha-local-gerada-nunca-de-exemplo.md) | Senha local gerada, nunca de exemplo | Aceito | 2026-10-20 |

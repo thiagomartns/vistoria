@@ -12,8 +12,8 @@ A API é a única fonte de verdade e de segurança. Detalhes em [docs/vision.md]
 | --- | --- |
 | `apps/web/` | Next.js 16, static export ([CLAUDE.md](apps/web/CLAUDE.md)) |
 | `apps/api/` | .NET 10, controllers + testes; `openapi.json` gerado no build ([CLAUDE.md](apps/api/CLAUDE.md)) |
-| `scripts/` | `screens` (prints do static export) e `gen-api` (gerador do contrato, com TypeScript 6) |
-| `infra/` | `docker-compose.dev.yml` (SQL Server); senha em `infra/.env`, nunca commitado |
+| `scripts/` | `screens` (prints do static export), `gen-api` (gerador do contrato, com TypeScript 6) e `db-init` (senha local) |
+| `infra/` | `docker-compose.dev.yml` (SQL Server); senha em `infra/.env`, gerada pelo `pnpm db:init` e nunca commitada |
 | `docs/` | Visão, arquitetura e ADRs (`docs/decisions/`) — **o repositório manda** |
 | `.github/` | CI (`ci.yml`: jobs `api`, `web`, `security`, obrigatórios na `main`) e Dependabot semanal |
 | `.claude/commands/` | `/issue`, `/adr`, `/gen-api`, `/screen` |
@@ -23,10 +23,11 @@ A API é a única fonte de verdade e de segurança. Detalhes em [docs/vision.md]
 
 | Comando | O que faz |
 | --- | --- |
+| `pnpm db:init` | Gera a senha local em `infra/.env` e a connection string nos User Secrets; `--rotate` troca a senha sem perder dados |
 | `pnpm db:up` / `pnpm db:down` | Sobe / derruba o SQL Server (exige `infra/.env`) |
-| `pnpm dev:api` | `dotnet watch` em `http://localhost:8080` (Swagger em `/swagger`); aplica as migrações (connection string nos User Secrets, ver README) |
+| `pnpm dev:api` | `dotnet watch` em `http://localhost:8080` (Swagger em `/swagger`); aplica as migrações (connection string nos User Secrets, via `pnpm db:init`) |
 | `pnpm dev:web` | `next dev` em `http://localhost:3000` |
-| `pnpm check` | Lint (Oxlint), typecheck e testes (Vitest) do web, e testes do `scripts/screens` |
+| `pnpm check` | Lint (Oxlint), typecheck e testes (Vitest) do web, e testes de `scripts/screens` e `scripts/db-init` |
 | `pnpm gen:api` | Gera tipos, client, Zod e `ProblemType` em `apps/web/src/shared/api/generated/` a partir de `apps/api/openapi.json` |
 | `pnpm --filter web build` | Static export em `apps/web/out/` |
 | `pnpm test:api` | `dotnet test` na solution da API (integração com Testcontainers: exige Docker) |
@@ -35,6 +36,16 @@ A API é a única fonte de verdade e de segurança. Detalhes em [docs/vision.md]
 `pnpm seed` chega no M2. Uma tela do Figma vira código com `/screen <link> <issue>`.
 
 **MCP do Figma, na primeira sessão:** aprove o servidor `figma` do `.mcp.json` e rode `/mcp` → figma → Authenticate (OAuth no navegador; o token fica fora do repositório).
+
+## Segredos
+
+Nenhum segredo em arquivo versionado, **nem de exemplo** ([ADR 0025](docs/decisions/0025-senha-local-gerada-nunca-de-exemplo.md)).
+
+- `.env.example` só lista nomes (`NOME=`); o valor é gerado pelo `pnpm db:init`. Nunca `cp` do exemplo.
+- Nunca imprimir, logar ou pôr em argumento de comando uma senha: compare por hash, passe por stdin ou arquivo.
+- Senha exibida ou copiada de algum lugar conta como vazada: `pnpm db:init --rotate`.
+- O `SecretsTests` (API) quebra o CI com valor em `.env.example`, senha literal no compose ou connection
+  string em `appsettings*.json`.
 
 ## Fluxo de uma issue
 
