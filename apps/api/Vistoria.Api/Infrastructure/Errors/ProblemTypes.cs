@@ -2,25 +2,28 @@ namespace Vistoria.Api.Infrastructure.Errors;
 
 /// <summary>
 /// Catálogo fechado dos <c>type</c> de erro (backend.md, "Catálogo de erros"). Fonte única: o OpenAPI
-/// publica estes slugs como o enum <c>ProblemType</c>, e o front reage a cada um.
+/// publica estes valores como o enum <c>ProblemType</c>, e o front reage a cada um.
+/// Cada <c>type</c> é a URN <c>urn:vistoria:problem:&lt;slug&gt;</c> (ADR 0024).
 /// </summary>
 public static class ProblemTypes
 {
-    public const string Validation = "validation";
-    public const string InvalidCursor = "invalid-cursor";
-    public const string Unauthorized = "unauthorized";
-    public const string Forbidden = "forbidden";
-    public const string NotFound = "not-found";
-    public const string UnsupportedRequest = "unsupported-request";
-    public const string VersionConflict = "version-conflict";
-    public const string IdempotencyInProgress = "idempotency-in-progress";
-    public const string Locked = "locked";
-    public const string Deleted = "deleted";
-    public const string CursorExpired = "cursor-expired";
-    public const string IdempotencyKeyReused = "idempotency-key-reused";
-    public const string PreconditionRequired = "precondition-required";
-    public const string RateLimited = "rate-limited";
-    public const string Internal = "internal";
+    public const string Prefix = "urn:vistoria:problem:";
+
+    public const string Validation = Prefix + "validation";
+    public const string InvalidCursor = Prefix + "invalid-cursor";
+    public const string Unauthorized = Prefix + "unauthorized";
+    public const string Forbidden = Prefix + "forbidden";
+    public const string NotFound = Prefix + "not-found";
+    public const string UnsupportedRequest = Prefix + "unsupported-request";
+    public const string VersionConflict = Prefix + "version-conflict";
+    public const string IdempotencyInProgress = Prefix + "idempotency-in-progress";
+    public const string Locked = Prefix + "locked";
+    public const string Deleted = Prefix + "deleted";
+    public const string CursorExpired = Prefix + "cursor-expired";
+    public const string IdempotencyKeyReused = Prefix + "idempotency-key-reused";
+    public const string PreconditionRequired = Prefix + "precondition-required";
+    public const string RateLimited = Prefix + "rate-limited";
+    public const string Internal = Prefix + "internal";
 
     private static readonly Dictionary<string, (string Title, string Detail)> Catalog = new()
     {

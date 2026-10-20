@@ -16,3 +16,7 @@ indent_style = tab
 
 [*.md]
 trim_trailing_whitespace = false
+
+# Testes nomeados como Metodo_Cenario: o sublinhado é a convenção, não um erro.
+[apps/api/Vistoria.Api.Tests/**.cs]
+dotnet_diagnostic.CA1707.severity = none

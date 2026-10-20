@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Vistoria.Api.Infrastructure.Errors;
@@ -15,6 +16,7 @@ public class ThrowingController : ControllerBase
     public static readonly object Current = new { id = "0199f0a0-0000-7000-8000-000000000000", version = "AAAAAAAAB9E=" };
 
     [HttpGet("{name}")]
+    [SuppressMessage("Performance", "CA1822", Justification = "Ação MVC precisa ser método de instância.")]
     public IActionResult Throw(string name) => throw name switch
     {
         "validation" => new ValidationException(new Dictionary<string, string[]> { ["name"] = ["Obrigatório."] }),

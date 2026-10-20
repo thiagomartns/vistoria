@@ -31,7 +31,13 @@ public partial class ProblemTypesTests
     [Fact]
     public void Catalog_MatchesBackendDoc()
     {
-        ProblemTypes.All.Should().BeEquivalentTo(ReadDocCatalog());
+        ProblemTypes.All.Select(t => t[ProblemTypes.Prefix.Length..]).Should().BeEquivalentTo(ReadDocCatalog());
+    }
+
+    [Fact]
+    public void EveryType_IsAnUrnWithASlug()
+    {
+        ProblemTypes.All.Should().AllSatisfy(t => t.Should().MatchRegex("^urn:vistoria:problem:[a-z]+(-[a-z]+)*$"));
     }
 
     [Fact]

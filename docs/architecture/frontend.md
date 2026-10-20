@@ -96,7 +96,7 @@ O caminho feliz é invisível para o usuário. A tabela de reações abaixo cobr
 
 ### Reação aos erros
 
-A reação é escolhida pelo `type`, conforme o [catálogo do backend](backend.md#catálogo-de-erros). Falha de rede (sem resposta) entra no primeiro grupo.
+A reação é escolhida pelo `type`, conforme o [catálogo do backend](backend.md#catálogo-de-erros). O `type` chega como URN (`urn:vistoria:problem:locked`); as tabelas abaixo usam só o slug. Falha de rede (sem resposta) entra no primeiro grupo.
 
 | Grupo | `type` | O que a outbox faz |
 | --- | --- | --- |

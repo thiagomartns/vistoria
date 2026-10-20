@@ -179,9 +179,13 @@ Rotas no plural com a versão no prefixo (`/api/v1/...`). `operationId` explíci
 | `Retry-After` | 429 e 409 `idempotency-in-progress` | Segundos |
 | `Authorization` | Todas as rotas, exceto `/auth/*` | `Bearer <accessToken>` |
 
+**Por que 428 para `Idempotency-Key` ausente.** O rascunho da IETF para o cabeçalho pede 400. Mantemos 428 de propósito: é um cabeçalho exigido antes de processar, como o `If-Match`, e o front decide pelo `type` (`precondition-required`, com `missingHeader`), não pelo status. Trocar para 400 não mudaria nenhuma reação.
+
 ### Catálogo de erros
 
-Todo erro traz `type` (um dos slugs abaixo), `title`, `status`, `detail` e `traceId`. O front decide **pelo `type`**: 409 e 412 compartilham `version-conflict` de propósito, porque a reação é a mesma; o status só diz onde o conflito foi detectado.
+Todo erro traz `type`, `title`, `status`, `detail` e `traceId`. O front decide **pelo `type`**: 409 e 412 compartilham `version-conflict` de propósito, porque a reação é a mesma; o status só diz onde o conflito foi detectado.
+
+O `type` é uma URN: `urn:vistoria:problem:` seguido do slug da tabela (por exemplo, `urn:vistoria:problem:not-found`), conforme o [ADR 0024](../decisions/0024-type-de-erro-como-urn.md). A tabela e o resto dos docs usam só o slug.
 
 | Status | `type` | Quando | Extensões | Reação do front |
 | --- | --- | --- | --- | --- |
@@ -341,8 +345,10 @@ O setup do curso (`WebApplicationFactory` + Testcontainers com SQL Server real) 
 | Idempotência | Sem `Idempotency-Key` | 428 `precondition-required` |
 | Idempotência | Mesma chave duas vezes | Mesma resposta; um único efeito no banco |
 | Idempotência | Mesma chave em paralelo | Um processa; o outro recebe 409 `idempotency-in-progress` |
+| Idempotência | Mesma chave em paralelo em duas instâncias da API (dois hosts, mesmo banco) | Um processa; o outro recebe 409 `idempotency-in-progress` |
 | Idempotência | Mesma chave, corpo diferente | 422 `idempotency-key-reused` |
 | Idempotência | Chave vencida reenviada | 412 com `current` igual ao corpo |
+| Limpeza | `CleanupService` rodando em duas instâncias ao mesmo tempo | Sem erro; cada registro vencido é removido uma vez |
 | Delta | Paginação com `limit` pequeno | Nenhum registro pulado ou repetido |
 | Delta | Transação aberta durante a leitura | Linha aparece na página seguinte, não é pulada |
 | Delta | `DELETE` e depois delta | Id em `deletedIds` |
@@ -363,6 +369,7 @@ Seis fases, cada uma com um conceito novo e um teste que prova que ele funciona.
 2. **Entidades e agregado.** `SyncEntity`; `Client`, `Property`, `Template`; `Inspection` → `Room` → `InspectionItem`; migrações; filtro de soft delete; regra de versão da raiz.
    - Aprende: rowversion, query filters, configuração fluente do EF, agregado com dois níveis de filhos.
    - Pronto quando: mudar um item muda o `ETag` da vistoria.
+   - Várias instâncias: filtro de dono (`OwnerId`) e de soft delete como filtros globais nomeados do EF Core 10, para nenhuma query esquecer o escopo.
 3. **Upsert com ID do cliente.** `PUT` criando ou atualizando; `DELETE` idempotente; 410 `deleted`; conclusão e 409 `locked`.
    - Aprende: por que ID no cliente simplifica o offline; regras de negócio no agregado.
    - Pronto quando: o mesmo `PUT` repetido não duplica e uma vistoria concluída não muda mais.
@@ -372,9 +379,11 @@ Seis fases, cada uma com um conceito novo e um teste que prova que ele funciona.
 5. **Idempotência.** Filtro, tabela, 409 `idempotency-in-progress`, 422, `CleanupService`.
    - Aprende: por que retry de rede exige idempotência explícita.
    - Pronto quando: os testes de idempotência passam.
+   - Várias instâncias: `idempotency-in-progress` é uma linha no banco com constraint única, nunca um lock em memória; o `CleanupService` pode rodar em mais de uma instância (exclusão idempotente ou trava).
 6. **Delta, auth final e produção.** Endpoints de sync com cursor e teto; refresh em cookie com rotação e tolerância; docker-compose com Caddy.
    - Aprende: cursores, tombstones, sessão segura em SPA, proxy reverso.
    - Pronto quando: o front abre offline, edita, volta online e converge com o servidor.
+   - Várias instâncias: a página do delta é limitada por `MIN_ACTIVE_ROWVERSION()`, não pelo maior rowversion lido, para uma transação sem commit não ser pulada. O `AddRateLimiter` conta por instância, o que é aceitável enquanto a hospedagem é uma instância só ([ADR 0011](../decisions/0011-hospedagem-docker-compose-mesma-origem.md)).
 
 | Spike do front | Depende das fases | Por quê |
 | --- | --- | --- |
