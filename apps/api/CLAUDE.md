@@ -46,6 +46,8 @@ um SQL Server real do Testcontainers, um container por execução, compartilhado
 `infra/docker-compose.dev.yml`. O startup aplica as migrações como no `pnpm dev:api`. Sem `PriorityOrderer`:
 cada teste cria os próprios dados com IDs novos. Testes unitários não sobem o container. Exige Docker.
 Cada `ApiFactory` tem a própria chave do JWT e um `ManualTimeProvider` no lugar do `TimeProvider` (`factory.Time`).
+A base comum (`SyncEntity`, `GenericRepository`) é testada sem a API: `SyncDatabase` cria um banco com o
+`SyncTestDbContext`, que soma ao `AppDbContext` a entidade só de teste `SyncProbe` (fora das migrações).
 Cenários esperados em [Testes de integração](../../docs/architecture/backend.md#testes-de-integração).
 
 ## Comandos
