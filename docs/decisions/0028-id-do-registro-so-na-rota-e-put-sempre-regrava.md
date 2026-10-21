@@ -1,6 +1,6 @@
 # 0028 — Id do registro só na rota, e PUT sempre regrava
 
-- **Status:** Proposto
+- **Status:** Aceito
 - **Data:** 2026-10-21
 
 ## Contexto

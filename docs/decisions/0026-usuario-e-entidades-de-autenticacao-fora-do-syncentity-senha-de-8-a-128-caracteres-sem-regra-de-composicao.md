@@ -1,6 +1,6 @@
 # 0026 — Usuário e entidades de autenticação fora do SyncEntity; senha de 8 a 128 caracteres sem regra de composição
 
-- **Status:** Proposto
+- **Status:** Aceito
 - **Data:** 2026-10-20
 
 ## Contexto

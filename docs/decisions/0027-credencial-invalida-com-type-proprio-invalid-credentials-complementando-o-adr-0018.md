@@ -1,6 +1,6 @@
 # 0027 — Credencial inválida com type próprio (invalid-credentials), complementando o ADR 0018
 
-- **Status:** Proposto
+- **Status:** Aceito
 - **Data:** 2026-10-20
 
 ## Contexto

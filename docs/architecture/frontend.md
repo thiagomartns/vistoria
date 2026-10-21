@@ -151,6 +151,8 @@ O formulário segue editável com transações na fila: cada edição vira trans
 - Um passo do stepper por ambiente. Validação em duas camadas: `roomStepSchema` para avançar de ambiente, `completeInspectionSchema` para concluir.
 - Ambientes e itens têm `Id` UUID v7 do cliente. O que é removido no formulário é simplesmente omitido no `PUT`; o .NET marca como excluído.
 - Na saída, `referenceCondition` e `referenceNotes` aparecem ao lado de cada item, somente leitura.
+- Formulário sem mudança não gera transação: só um formulário sujo (`formState.isDirty`) vai para a fila. Todo `PUT` aceito sobe a versão, mesmo com os valores iguais ([ADR 0028](../decisions/0028-id-do-registro-so-na-rota-e-put-sempre-regrava.md)), então um envio sem mudança criaria uma versão nova e uma entrada no delta dos outros aparelhos.
+- O Zod gerado traz o que o OpenAPI expressa (obrigatório, tamanhos, e-mail), mas não os dígitos verificadores de CPF/CNPJ. O schema da UI soma um `refine` com o mesmo cálculo do `CpfCnpjAttribute` do .NET (CPF com 11 dígitos; CNPJ com 14, alfanumérico nas 12 primeiras posições), com o valor sem máscara e `null` quando vazio. O .NET confere de novo, e o 400 em `errors.document` continua sendo tratado como qualquer erro por campo.
 - As chaves de `errors` vêm no caminho do backend (`rooms[2].items[4].condition`) e passam pela conversão para o nome de campo do formulário antes do `setError`. A UI abre o ambiente onde está o primeiro erro.
 - "Cancelar envio" só existe enquanto a transação nunca foi tentada. Depois da primeira tentativa ela pode ter sido aplicada, então o caminho é editar de novo.
 - Rascunhos não expiram sozinhos. O `DraftResume` oferece continuar ou descartar; rascunho sincronizado é apagado.
