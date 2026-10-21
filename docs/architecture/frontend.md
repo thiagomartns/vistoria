@@ -56,7 +56,7 @@ O documento OpenAPI 3.1 do .NET (`apps/api/openapi.json`, o mesmo servido em `/o
 
 - `pnpm gen:api` lê o `apps/api/openapi.json` commitado e roda o gerador, sem precisar da API rodando (nem no CI). A saída (`src/shared/api/generated/`) é commitada, para o diff do contrato aparecer no PR. O CI falha se ela estiver desatualizada.
 - O gerador fica em `scripts/gen-api/`, com `@hey-api/openapi-ts` e TypeScript 6 fixados: ele usa a API JS do compilador, que o TypeScript 7 do web não expõe. O código gerado passa pelo `tsc` do web, mas não pelo Oxlint nem pelo Oxfmt.
-- `shared/api/client.ts` põe `Authorization` em toda chamada e `credentials: 'include'` nas chamadas a `/auth/*` (necessário em dev, onde front e API estão em portas diferentes).
+- `shared/api/client.ts` configura o client gerado: URL da API em `NEXT_PUBLIC_API_URL` (vazia em produção, mesma origem; `http://localhost:8080` por padrão no `next dev`), `Authorization` em toda chamada, com o access token lido da memória, e `credentials: 'include'` só nas chamadas a `/auth/*` (necessário em dev, onde front e API estão em portas diferentes). `readFailure` transforma a falha de uma chamada em `ProblemDetails` validado pelo Zod gerado, falha de rede ou resposta ilegível.
 - `If-Match` e `Idempotency-Key` são definidos só pela outbox, nunca por componente ou hook.
 
 **Fronteira entre gerado e escrito à mão**
@@ -97,11 +97,11 @@ O caminho feliz é invisível para o usuário. A tabela de reações abaixo cobr
 
 ### Reação aos erros
 
-A reação é escolhida pelo `type`, conforme o [catálogo do backend](backend.md#catálogo-de-erros). O `type` chega como URN (`urn:vistoria:problem:locked`); as tabelas abaixo usam só o slug. Falha de rede (sem resposta) entra no primeiro grupo.
+A reação é escolhida pelo `type`, conforme o [catálogo do backend](backend.md#catálogo-de-erros), por `handleProblem` (`shared/api/problems.ts`). O `type` chega como URN (`urn:vistoria:problem:locked`); as tabelas abaixo usam só o slug. Falha de rede (sem resposta) e resposta que não é um `ProblemDetails` do contrato (como o HTML de um 502 do proxy) entram no primeiro grupo: a API não chegou a decidir nada, e descartar perderia o registro.
 
 | Grupo | `type` | O que a outbox faz |
 | --- | --- | --- |
-| Tentar de novo | `internal`, `rate-limited`, `idempotency-in-progress`, falha de rede | Backoff (ou `Retry-After`) com a **mesma** chave |
+| Tentar de novo | `internal`, `rate-limited`, `idempotency-in-progress`, falha de rede, resposta sem `ProblemDetails` | Backoff (ou `Retry-After`) com a **mesma** chave |
 | Renovar sessão | `unauthorized` | Pausa a fila, refresh em aba única, retoma |
 | Decisão do usuário | `version-conflict` (409 ou 412), `deleted` | Marca conflito e abre o `ConflictResolver` |
 | Aceitar o servidor | `locked` | Descarta a transação, adota `current` e avisa que a vistoria foi concluída em outro aparelho |
@@ -110,6 +110,7 @@ A reação é escolhida pelo `type`, conforme o [catálogo do backend](backend.m
 | Bug | `idempotency-key-reused`, `precondition-required`, `unsupported-request` | Registra, descarta, mostra erro genérico |
 | Resync | `cursor-expired`, `invalid-cursor` | Resync completo da entidade (pull) |
 | Remover local | `not-found` | Remove o registro do banco local (só ocorre em `GET`) |
+| Credencial inválida | `invalid-credentials` | Não passa pela outbox (só ocorre no `signIn`): o formulário mostra "E-mail ou senha incorretos." e não tenta refresh ([ADR 0027](../decisions/0027-credencial-invalida-com-type-proprio-invalid-credentials-complementando-o-adr-0018.md)) |
 
 Transação que falha sem sucesso além do prazo de "travada" ganha destaque no `OutboxPanel`, mas continua tentando.
 
