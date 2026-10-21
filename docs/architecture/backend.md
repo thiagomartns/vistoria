@@ -346,6 +346,7 @@ O setup do curso (`WebApplicationFactory` + Testcontainers com SQL Server real) 
 | --- | --- | --- |
 | Upsert | `PUT` de vistoria nova sem `If-Match` | 201 + `ETag` |
 | Upsert | `PUT` com `If-Match` correto | 200 + `ETag` novo |
+| Upsert | Dois `PUT` simultâneos criando o mesmo id, com chaves de idempotência diferentes | Um 201; o outro 409 `version-conflict` com `current`, nunca 500 |
 | Versão | `PUT` com `If-Match` antigo | 412 `version-conflict` com `current` |
 | Versão | Dois `PUT` simultâneos com a mesma versão | Um 200, outro 409 `version-conflict` |
 | Versão | `PUT` em registro existente sem `If-Match` | 428 `precondition-required` |
