@@ -145,7 +145,7 @@ public abstract class SyncEntity
 **Regras gerais**
 
 - `CreatedAt` e `UpdatedAt` saem do `TimeProvider` num override de `SaveChangesAsync`, nunca do cliente.
-- Exclusão é sempre `DeletedAt = now`. O filtro global esconde o registro; o delta usa `IgnoreQueryFilters()` para devolver o tombstone.
+- Exclusão é sempre `DeletedAt = now`: o `SaveChangesAsync` transforma o `Remove` de uma `SyncEntity` em update, então a linha muda de versão. O filtro global nomeado `SoftDelete` esconde o registro; o delta usa `IgnoreQueryFilters()` para devolver o tombstone.
 - Tombstones com mais de 90 dias são apagados fisicamente pelo `CleanupService`.
 - UUID v7 é ordenável no tempo no cliente e em logs (`Guid.CreateVersion7()` no .NET). O SQL Server ordena `uniqueidentifier` pelos últimos bytes, então lá dentro ele não é sequencial; no volume de estudo isso não pesa. Se pesar: PK *nonclustered* em `Id` + índice clusterizado em `CreatedAt`.
 

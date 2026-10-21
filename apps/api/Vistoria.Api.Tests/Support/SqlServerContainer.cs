@@ -33,7 +33,7 @@ public static partial class SqlServerContainer
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseSqlServer(WithDatabase(container, SharedDatabase))
             .Options;
-        await using var db = new AppDbContext(options);
+        await using var db = new AppDbContext(options, TimeProvider.System);
         await db.Database.MigrateAsync();
 
         return container;
