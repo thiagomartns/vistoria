@@ -169,6 +169,8 @@ Rotas no plural com a versão no prefixo (`/api/v1/...`). `operationId` explíci
 
 **Por que `PUT` com ID do cliente em vez de `POST`.** O cliente já sabe o ID, então criar e atualizar viram a mesma operação (upsert), e reenviar é naturalmente seguro.
 
+**Id só na rota; todo `PUT` regrava** ([ADR 0028](../decisions/0028-id-do-registro-so-na-rota-e-put-sempre-regrava.md)). O DTO de entrada não tem `id` nem `version`: o id vem da rota, a versão-base do `If-Match`, e um `id` no corpo é ignorado como qualquer campo desconhecido (na vistoria, só o da raiz; `rooms[].id` e `items[].id` vão no corpo). Um `PUT` aceito sempre sobe a versão, mesmo com os valores iguais aos gravados.
+
 ### Cabeçalhos
 
 | Cabeçalho | Onde | Regra |

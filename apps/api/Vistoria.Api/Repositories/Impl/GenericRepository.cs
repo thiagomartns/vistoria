@@ -31,6 +31,9 @@ public class GenericRepository<T>(AppDbContext db) : IRepository<T> where T : Sy
         var entry = db.Entry(current);
         entry.CurrentValues.SetValues(entity);
         entry.Property(e => e.Version).OriginalValue = entity.Version;
+        // Regrava mesmo sem diferença: todo PUT aceito sobe a versão (ADR 0028). Sem isso, valores iguais deixariam
+        // a entrada Unchanged, o SaveChanges não emitiria UPDATE e a versão-base nem seria conferida.
+        entry.State = EntityState.Modified;
         await db.SaveChangesAsync(cancellationToken);
         return current;
     }

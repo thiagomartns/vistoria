@@ -20,3 +20,7 @@ trim_trailing_whitespace = false
 # Testes nomeados como Metodo_Cenario: o sublinhado é a convenção, não um erro.
 [apps/api/Vistoria.Api.Tests/**.cs]
 dotnet_diagnostic.CA1707.severity = none
+
+# Saída do `dotnet ef migrations add`: os analisadores não opinam em código gerado (CA1861 nos índices compostos).
+[apps/api/Vistoria.Api/Migrations/**.cs]
+generated_code = true

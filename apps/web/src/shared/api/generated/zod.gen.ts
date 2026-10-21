@@ -13,6 +13,17 @@ export const zAuthDto = z.object({
     user: zAuthUserDto
 });
 
+export const zClientDto = z.object({
+    id: z.uuid(),
+    name: z.string(),
+    document: z.string().nullable(),
+    email: z.string().nullable(),
+    phone: z.string().nullable(),
+    version: z.string(),
+    createdAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime()
+});
+
 export const zHealthDto = z.object({
     status: z.string()
 });
@@ -65,6 +76,13 @@ export const zSignUpDto = z.object({
     password: z.string().min(8).max(128)
 });
 
+export const zUpsertClientDto = z.object({
+    name: z.string().min(2).max(120),
+    document: z.string().nullish(),
+    email: z.string().max(254).nullish(),
+    phone: z.string().max(20).nullish()
+});
+
 export const zSignUpBody = zSignUpDto;
 
 /**
@@ -78,6 +96,31 @@ export const zSignInBody = zSignInDto;
  * OK
  */
 export const zSignInResponse = zAuthDto;
+
+export const zGetClientPath = z.object({
+    id: z.uuid()
+});
+
+/**
+ * OK
+ */
+export const zGetClientResponse = zClientDto;
+
+export const zUpsertClientBody = zUpsertClientDto;
+
+export const zUpsertClientHeaders = z.object({
+    'If-Match': z.string().optional(),
+    'Idempotency-Key': z.uuid()
+});
+
+export const zUpsertClientPath = z.object({
+    id: z.uuid()
+});
+
+/**
+ * OK
+ */
+export const zUpsertClientResponse = zClientDto;
 
 /**
  * OK
