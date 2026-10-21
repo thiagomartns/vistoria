@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <style>
+    .frame { stroke: #1E232D; }
+    .light { fill: #385DCA; }
+    @media (prefers-color-scheme: dark) {
+      .frame { stroke: #EBEDEF; }
+      .light { fill: #9BB9FE; }
+    }
+  </style>
+  <path class="light" d="M28 14 47 45.67V57H27.2L17 31.5V28A15 15 0 0 1 26.61 14Z"/>
+  <path class="frame" d="M14 60V28a18 18 0 0 1 36 0v32Z" stroke-width="6"/>
+</svg>

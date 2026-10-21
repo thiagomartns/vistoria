@@ -1,9 +1,11 @@
-import { APP_NAME } from "@/shared/app";
+import { AvisLockup } from "@/shared/components/avis-lockup";
 
 export default function HomePage() {
   return (
     <main className="flex min-h-dvh items-center justify-center">
-      <h1 className="text-4xl font-semibold tracking-tight">{APP_NAME}</h1>
+      <h1>
+        <AvisLockup layout="vertical" caption />
+      </h1>
     </main>
   );
 }

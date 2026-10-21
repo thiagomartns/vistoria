@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import type { ReactNode } from "react";
 
-import { APP_NAME } from "@/shared/app";
+import { APP_TITLE } from "@/shared/app";
 
 import "./globals.css";
 
@@ -11,7 +11,7 @@ const geistSans = Geist({ subsets: ["latin"], variable: "--font-geist-sans" });
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono" });
 
 export const metadata: Metadata = {
-  title: APP_NAME,
+  title: APP_TITLE,
   description: "Vistoria de imóveis para locação, local-first.",
 };
 
