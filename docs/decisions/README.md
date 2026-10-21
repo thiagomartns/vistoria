@@ -32,3 +32,4 @@ uma decisão nova o substitui e diz qual substituiu. Novo ADR: `/adr <título>` 
 | [0025](0025-senha-local-gerada-nunca-de-exemplo.md) | Senha local gerada, nunca de exemplo | Aceito | 2026-10-20 |
 | [0026](0026-usuario-e-entidades-de-autenticacao-fora-do-syncentity-senha-de-8-a-128-caracteres-sem-regra-de-composicao.md) | Usuário e entidades de autenticação fora do SyncEntity; senha de 8 a 128 caracteres sem regra de composição | Proposto | 2026-10-20 |
 | [0027](0027-credencial-invalida-com-type-proprio-invalid-credentials-complementando-o-adr-0018.md) | Credencial inválida com type próprio (invalid-credentials), complementando o ADR 0018 | Proposto | 2026-10-20 |
+| [0028](0028-id-do-registro-so-na-rota-e-put-sempre-regrava.md) | Id do registro só na rota, e PUT sempre regrava | Proposto | 2026-10-21 |

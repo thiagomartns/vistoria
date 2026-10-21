@@ -88,7 +88,7 @@ Room e Item não têm versão própria; mudar qualquer item sobe a versão da vi
 
 | Entidade | Campos | Regras |
 | --- | --- | --- |
-| Client | `name`, `document`, `email`, `phone` | Nome de 2 a 120 caracteres; CPF ou CNPJ opcional e validado |
+| Client | `name`, `document`, `email`, `phone` | Nome de 2 a 120 caracteres; CPF ou CNPJ opcional, sem máscara e com os dígitos verificadores (CNPJ também alfanumérico, como a Receita emite desde julho de 2026) |
 | Property | `clientId`, `street`, `number`, `complement`, `district`, `city`, `state`, `zipCode`, `type`, `notes` | UF com 2 letras; CEP com 8 dígitos; `type`: `apartment` \| `house` \| `commercial` \| `other` |
 | Template | `name`, `rooms[{ id, name, position, items[{ id, name, position }] }]` | Mesmos limites de Room e Item; um roteiro padrão "Apartamento" vem no seed |
 
