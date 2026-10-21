@@ -14,6 +14,7 @@
     "gen:api": "pnpm --filter gen-api generate",
     "check": "pnpm --filter web check && pnpm --filter screens test && pnpm --filter db-init test",
     "test:api": "cd apps/api && dotnet test --solution Vistoria.sln",
-    "screens": "pnpm --filter screens start"
+    "screens": "pnpm --filter screens start",
+    "spike:outbox": "pnpm --filter outbox-spike start"
   }
 }

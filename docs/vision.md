@@ -132,7 +132,7 @@ O M2 é o mais longo e o mais arriscado: é onde backend e front se encontram pe
 | M0 · Fundação | Repositório com CI verde, docs em `docs/`, `CLAUDE.md`, banco sobe com um comando, backlog do M1 pronto | — | Esqueleto Next com static export |
 | MD · Design | Arquivo do app no Figma com fluxos, shell, tela de campo em alta fidelidade (celular e desktop, todos os estados de sync) e demais telas em wireframe; Sanjou UI renderizando no static export | — | Sanjou no shell; mapa Figma → Sanjou; comando `/screen` |
 | M1 · Contrato e domínio | Swagger UI mostra as 4 entidades e o catálogo de erros; front gera tipos e `ProblemType` sem erro | 1 e 2 | `gen:api`, client, `handleProblem` |
-| M2 · Escrita confiável | Criar vistoria offline, recarregar a página, voltar a rede: ela chega ao SQL Server uma vez só | 3, 4 e 5 | Shell e PWA (spike 4), outbox (spike 1), tela de campo básica a partir do Figma |
+| M2 · Escrita confiável | Criar vistoria offline, recarregar a página, voltar a rede: ela chega ao SQL Server uma vez só | 3, 4 e 5 | Shell e PWA (spike 4), outbox (spikes 1a e 1b), tela de campo básica a partir do Figma |
 | M3 · Conflito | Dois navegadores editam a mesma vistoria offline e convergem sem perder nada | — | Merge e `ConflictResolver` (spike 3) |
 | M4 · Leitura e sessão | Aparelho novo baixa tudo; 10 mil vistorias abrem rápido; duas abas renovam a sessão sem deslogar | 6 | Pull por delta, sessão offline, refresh em aba única (spike 2) |
 | M5 · Produto V1 | Vistoria real de entrada e saída, ponta a ponta, com laudo impresso, rodando no docker-compose de produção | Ajustes | Todas as telas a partir do Figma, roteiros, saída a partir da entrada, concluir, laudo |

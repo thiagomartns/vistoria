@@ -4,8 +4,11 @@ Shell Next.js 16 em **static export**, sem servidor em produção. A UI lê e es
 a rede é detalhe da camada de sync. Arquitetura completa em [frontend.md](../../docs/architecture/frontend.md);
 o contrato (status, cabeçalhos, `type` de erro, prazos) vem só de [backend.md](../../docs/architecture/backend.md).
 
-Hoje existem só `src/app/` e `src/shared/`; a árvore de `features/` e `shared/` descrita em
-[Estrutura de pastas](../../docs/architecture/frontend.md#estrutura-de-pastas) é o alvo.
+Hoje existem `src/app/`, `src/shared/` (`api/`, `auth/`, `db/`, `sync/`, `components/`) e `src/features/clients/`,
+começo da outbox vinda do spike 1a ([ADR 0030](../../docs/decisions/0030-tanstack-db-mantido-apos-o-spike-1a-outbox-persistida-contra-o-upsertclient.md));
+a árvore descrita em [Estrutura de pastas](../../docs/architecture/frontend.md#estrutura-de-pastas) é o alvo.
+TanStack DB e `@tanstack/offline-transactions` têm versão exata: antes de mudar, ler a documentação da versão
+instalada (`node_modules/@tanstack/*/skills/`), não a memória.
 
 ## Camadas e fronteiras de import
 

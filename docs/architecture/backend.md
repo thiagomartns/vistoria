@@ -407,7 +407,8 @@ Seis fases, cada uma com um conceito novo e um teste que prova que ele funciona.
 
 | Spike do front | Depende das fases | Por quê |
 | --- | --- | --- |
-| 1 — Outbox | 1 a 5 | Envia `PUT` com `If-Match` e `Idempotency-Key` e reenvia após reload |
+| 1a — Outbox no aparelho | 1 a 3 (só o `PUT` de clients) | Persiste a outbox, envia com `Idempotency-Key` e reenvia após reload ([ADR 0030](../decisions/0030-tanstack-db-mantido-apos-o-spike-1a-outbox-persistida-contra-o-upsertclient.md)) |
+| 1b — Outbox no servidor | 4 e 5 | Envia com `If-Match`, trata 412/428 e prova a idempotência no servidor |
 | 2 — Volume | 6 | Precisa do delta para carregar 10 mil registros |
 | 3 — Conflito | 1 a 4 | Precisa de 412/409 com `current` |
 | 4 — Shell | 6 (só o teste de duas abas) | O resto é só front; duas abas renovando juntas exercitam a tolerância de rotação |
