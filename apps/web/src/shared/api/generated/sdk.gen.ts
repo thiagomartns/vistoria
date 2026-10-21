@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GetHealthData, GetHealthResponses, SignInData, SignInErrors, SignInResponses, SignUpData, SignUpErrors, SignUpResponses } from './types.gen';
+import type { GetClientData, GetClientErrors, GetClientResponses, GetHealthData, GetHealthResponses, SignInData, SignInErrors, SignInResponses, SignUpData, SignUpErrors, SignUpResponses, UpsertClientData, UpsertClientErrors, UpsertClientResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -29,6 +29,17 @@ export const signUp = <ThrowOnError extends boolean = false>(options: Options<Si
 
 export const signIn = <ThrowOnError extends boolean = false>(options: Options<SignInData, ThrowOnError>): RequestResult<SignInResponses, SignInErrors, ThrowOnError> => (options.client ?? client).post<SignInResponses, SignInErrors, ThrowOnError>({
     url: '/api/v1/auth/signin',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const getClient = <ThrowOnError extends boolean = false>(options: Options<GetClientData, ThrowOnError>): RequestResult<GetClientResponses, GetClientErrors, ThrowOnError> => (options.client ?? client).get<GetClientResponses, GetClientErrors, ThrowOnError>({ url: '/api/v1/clients/{id}', ...options });
+
+export const upsertClient = <ThrowOnError extends boolean = false>(options: Options<UpsertClientData, ThrowOnError>): RequestResult<UpsertClientResponses, UpsertClientErrors, ThrowOnError> => (options.client ?? client).put<UpsertClientResponses, UpsertClientErrors, ThrowOnError>({
+    url: '/api/v1/clients/{id}',
     ...options,
     headers: {
         'Content-Type': 'application/json',

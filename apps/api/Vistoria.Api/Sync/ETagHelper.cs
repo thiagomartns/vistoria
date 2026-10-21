@@ -9,7 +9,10 @@ public static class ETagHelper
     /// <summary>Tamanho do <c>rowversion</c> do SQL Server.</summary>
     public const int VersionLength = 8;
 
-    public static string ToETag(byte[] version) => $"\"{Convert.ToBase64String(version)}\"";
+    public static string ToETag(byte[] version) => ToETag(Convert.ToBase64String(version));
+
+    /// <summary>A partir do <c>version</c> de um DTO, que já é o base64.</summary>
+    public static string ToETag(string version) => $"\"{version}\"";
 
     /// <summary>
     /// Só aceita ETag forte, entre aspas, com o base64 de um rowversion. ETag fraca (<c>W/"..."</c>), sem aspas,

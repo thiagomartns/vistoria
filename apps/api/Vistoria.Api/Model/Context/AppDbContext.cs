@@ -10,6 +10,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, TimeProvider t
     public const string SoftDeleteFilter = "SoftDelete";
 
     public DbSet<User> Users => Set<User>();
+    public DbSet<Client> Clients => Set<Client>();
 
     // Cada entidade traz seu IEntityTypeConfiguration em Model/Configurations/; o que é comum a toda SyncEntity
     // vem depois, para nenhum derivado ficar sem.

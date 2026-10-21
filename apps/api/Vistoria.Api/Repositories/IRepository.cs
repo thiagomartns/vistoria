@@ -12,9 +12,9 @@ public interface IRepository<T> where T : SyncEntity
     Task<T> AddAsync(T entity, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Regrava o registro a partir da versão em <paramref name="entity"/>.<see cref="SyncEntity.Version"/>. Se ela
-    /// não for mais a do banco, lança <see cref="DbUpdateConcurrencyException"/>. Devolve <c>null</c> se o registro
-    /// não existe ou foi excluído.
+    /// Regrava o registro a partir da versão em <paramref name="entity"/>.<see cref="SyncEntity.Version"/>, mesmo
+    /// sem diferença, então a versão sempre sobe (ADR 0028). Se ela não for mais a do banco, lança
+    /// <see cref="DbUpdateConcurrencyException"/>. Devolve <c>null</c> se o registro não existe ou foi excluído.
     /// </summary>
     Task<T?> UpdateAsync(T entity, CancellationToken cancellationToken);
 

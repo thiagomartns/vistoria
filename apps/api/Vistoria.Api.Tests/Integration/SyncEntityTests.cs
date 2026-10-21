@@ -70,6 +70,18 @@ public class SyncEntityTests(SyncDatabase database) : IClassFixture<SyncDatabase
         v4.Should().NotEqual(v3);
     }
 
+    // Todo PUT aceito sobe a versão, mesmo sem mudar nada (ADR 0028).
+    [Fact]
+    public async Task Update_WithTheSameValues_StillChangesTheVersion()
+    {
+        var created = await Add(NewProbe());
+
+        var updated = (await Update(Changed(created, name: created.Name)))!;
+
+        updated.Version.Should().NotEqual(created.Version);
+        (await Read(created.Id)).Version.Should().Equal(updated.Version);
+    }
+
     [Fact]
     public async Task Update_WithStaleVersion_ThrowsConcurrencyExceptionAndKeepsRecord()
     {

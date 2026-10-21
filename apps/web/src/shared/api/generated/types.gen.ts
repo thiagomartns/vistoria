@@ -15,6 +15,17 @@ export type AuthUserDto = {
     name: string;
 };
 
+export type ClientDto = {
+    id: string;
+    name: string;
+    document: null | string;
+    email: null | string;
+    phone: null | string;
+    version: string;
+    createdAt: string;
+    updatedAt: string;
+};
+
 export type HealthDto = {
     status: string;
 };
@@ -62,6 +73,13 @@ export type SignUpDto = {
     name: string;
     email: string;
     password: string;
+};
+
+export type UpsertClientDto = {
+    name: string;
+    document?: null | string;
+    email?: null | string;
+    phone?: null | string;
 };
 
 export type SignUpData = {
@@ -125,6 +143,110 @@ export type SignInResponses = {
 };
 
 export type SignInResponse = SignInResponses[keyof SignInResponses];
+
+export type GetClientData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/clients/{id}';
+};
+
+export type GetClientErrors = {
+    /**
+     * Unauthorized
+     */
+    401: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+};
+
+export type GetClientError = GetClientErrors[keyof GetClientErrors];
+
+export type GetClientResponses = {
+    /**
+     * OK
+     */
+    200: ClientDto;
+};
+
+export type GetClientResponse = GetClientResponses[keyof GetClientResponses];
+
+export type UpsertClientData = {
+    body: UpsertClientDto;
+    headers: {
+        /**
+         * ETag da versão-base. Obrigatório quando o registro já existe (ausente → 428 precondition-required); omitido na criação.
+         */
+        'If-Match'?: string;
+        /**
+         * UUID v7, um por corpo: o mesmo corpo reenviado usa a mesma chave.
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/clients/{id}';
+};
+
+export type UpsertClientErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Unauthorized
+     */
+    401: ProblemDetails;
+    /**
+     * Forbidden
+     */
+    403: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Gone
+     */
+    410: ProblemDetails;
+    /**
+     * Precondition Failed
+     */
+    412: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Precondition Required
+     */
+    428: ProblemDetails;
+    /**
+     * Too Many Requests
+     */
+    429: ProblemDetails;
+};
+
+export type UpsertClientError = UpsertClientErrors[keyof UpsertClientErrors];
+
+export type UpsertClientResponses = {
+    /**
+     * OK
+     */
+    200: ClientDto;
+    /**
+     * Created
+     */
+    201: ClientDto;
+};
+
+export type UpsertClientResponse = UpsertClientResponses[keyof UpsertClientResponses];
 
 export type GetHealthData = {
     body?: never;
