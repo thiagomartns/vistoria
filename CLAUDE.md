@@ -12,7 +12,7 @@ A API é a única fonte de verdade e de segurança. Detalhes em [docs/vision.md]
 | --- | --- |
 | `apps/web/` | Next.js 16, static export ([CLAUDE.md](apps/web/CLAUDE.md)) |
 | `apps/api/` | .NET 10, controllers + testes; `openapi.json` gerado no build ([CLAUDE.md](apps/api/CLAUDE.md)) |
-| `scripts/` | `screens` (prints do static export), `gen-api` (gerador do contrato, com TypeScript 6) e `db-init` (senha local e chave do JWT) |
+| `scripts/` | `screens` (prints do static export), `gen-api` (gerador do contrato, com TypeScript 6), `db-init` (senha local e chave do JWT) e `outbox-spike` (roteiro do spike 1a) |
 | `infra/` | `docker-compose.dev.yml` (SQL Server); senha em `infra/.env`, gerada pelo `pnpm db:init` e nunca commitada |
 | `docs/` | Visão, arquitetura e ADRs (`docs/decisions/`) — **o repositório manda** |
 | `.github/` | CI (`ci.yml`: jobs `api`, `web`, `security`, obrigatórios na `main`) e Dependabot semanal |
@@ -32,6 +32,7 @@ A API é a única fonte de verdade e de segurança. Detalhes em [docs/vision.md]
 | `pnpm --filter web build` | Static export em `apps/web/out/` |
 | `pnpm test:api` | `dotnet test` na solution da API (integração com Testcontainers: exige Docker) |
 | `pnpm screens <rota…>` | Prints do static export no celular e no desktop; `--publish` grava na branch `screens` |
+| `pnpm spike:outbox` | Roteiro Playwright do spike 1a contra a API real (exige `db:up`, `dev:api` e o build do web) |
 
 `pnpm seed` chega no M2. Uma tela do Figma vira código com `/screen <link> <issue>`.
 

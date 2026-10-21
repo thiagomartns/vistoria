@@ -34,3 +34,4 @@ uma decisão nova o substitui e diz qual substituiu. Novo ADR: `/adr <título>` 
 | [0027](0027-credencial-invalida-com-type-proprio-invalid-credentials-complementando-o-adr-0018.md) | Credencial inválida com type próprio (invalid-credentials), complementando o ADR 0018 | Aceito | 2026-10-20 |
 | [0028](0028-id-do-registro-so-na-rota-e-put-sempre-regrava.md) | Id do registro só na rota, e PUT sempre regrava | Aceito | 2026-10-21 |
 | [0029](0029-marca-avis-nome-exibido-e-simbolo-d1.md) | Marca Avis: nome exibido e símbolo D1 | Aceito | 2026-10-21 |
+| [0030](0030-tanstack-db-mantido-apos-o-spike-1a-outbox-persistida-contra-o-upsertclient.md) | TanStack DB mantido após o spike 1a (outbox persistida contra o upsertClient) | Proposto | 2026-10-21 |

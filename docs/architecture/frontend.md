@@ -279,7 +279,7 @@ Os componentes ficam no app, em `shared/components/` ([ADR 0020](../decisions/00
 
 ## Riscos e spikes
 
-Quatro spikes validam as apostas antes das telas. As decisões de produto e arquitetura estão fechadas na tabela [Decisões tomadas](backend.md#decisões-tomadas) do documento do backend; nenhuma fica em aberto aqui.
+Quatro spikes validam as apostas antes das telas; o primeiro foi dividido em 1a (aparelho) e 1b (servidor). As decisões de produto e arquitetura estão fechadas na tabela [Decisões tomadas](backend.md#decisões-tomadas) do documento do backend; nenhuma fica em aberto aqui.
 
 **Riscos**
 
@@ -292,9 +292,10 @@ Quatro spikes validam as apostas antes das telas. As decisões de produto e arqu
 
 **Spikes** (as fases do backend de que cada um depende estão no [Roteiro de estudo](backend.md#roteiro-de-estudo) de lá)
 
-- [ ] **Spike 1 — Outbox:** collection de vistorias persistida; escrita offline, reload, volta da rede, envio com `If-Match` e `Idempotency-Key`; reenvio depois de derrubar a resposta.
+- [x] **Spike 1a — Outbox no aparelho:** collection de clients persistida; escrita offline, reload, volta da rede, envio com `Idempotency-Key` pelo `upsertClient`; reenvio depois de derrubar a resposta com a mesma chave. Resultado: TanStack DB mantido, com os contornos do [ADR 0030](../decisions/0030-tanstack-db-mantido-apos-o-spike-1a-outbox-persistida-contra-o-upsertclient.md); roteiro em `pnpm spike:outbox`.
+- [ ] **Spike 1b — Outbox no servidor:** `If-Match`, 412/409 `version-conflict`, 428 e idempotência aplicada pelo .NET; a mesma vistoria chega uma vez só.
 - [ ] **Spike 2 — Volume:** 10 mil vistorias (com ambientes e itens) via delta paginado; medir abertura do app e tempo de live query.
 - [ ] **Spike 3 — Conflito:** dois navegadores editam a mesma vistoria offline, inclusive o mesmo item; 412/409 `version-conflict` com `current`; merge automático, diff e reenvio com chave nova.
 - [ ] **Spike 4 — Shell:** static export + Serwist + Sanjou UI + rota `?id=`; abrir em modo avião depois da primeira visita; duas abas renovando a sessão ao mesmo tempo.
 
-Os spikes estão encaixados nos [marcos](../vision.md#marcos) do documento [Visão do Projeto](../vision.md): spikes 1 e 4 no M2, spike 3 no M3, spike 2 no M4.
+Os spikes estão encaixados nos [marcos](../vision.md#marcos) do documento [Visão do Projeto](../vision.md): spike 1a antes do M2, spikes 1b e 4 no M2, spike 3 no M3, spike 2 no M4.
