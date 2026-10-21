@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="24" height="24" fill="none" role="img" aria-label="Avis">
+  <title>Avis</title>
+  <path d="M28 14 47 45.67V57H27.2L17 31.5V28A15 15 0 0 1 26.61 14Z" fill="#385DCA"/>
+  <path d="M14 60V28a18 18 0 0 1 36 0v32Z" stroke="#1E232D" stroke-width="6"/>
+</svg>

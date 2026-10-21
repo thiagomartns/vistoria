@@ -40,7 +40,7 @@ Levantado em 2026-10-19 (issue #13), pelo MCP do Figma, nas páginas Telas, Wire
 
 ## Componentes locais
 
-Ficam todos em `apps/web/src/shared/components/` e são feitos só com primitivos e tokens do Sanjou ([ADR 0020](../decisions/0020-componentes-que-faltam-no-sanjou-ficam-no-app.md)). Nenhum existe ainda: cada um nasce com a primeira tela que o usa. Os candidatos entram em "Candidatos ao Sanjou" no `apps/web/CLAUDE.md` quando forem criados.
+Ficam todos em `apps/web/src/shared/components/` e são feitos só com primitivos e tokens do Sanjou ([ADR 0020](../decisions/0020-componentes-que-faltam-no-sanjou-ficam-no-app.md)). Cada um nasce com a primeira tela que o usa; hoje só existem os da marca (`AvisMark` e `AvisLockup`, #62). Os candidatos entram em "Candidatos ao Sanjou" no `apps/web/CLAUDE.md` quando forem criados.
 
 | No Figma (nó) | Import | Variantes | Tipo |
 | --- | --- | --- | --- |
@@ -60,5 +60,7 @@ Ficam todos em `apps/web/src/shared/components/` e são feitos só com primitivo
 | ListRow (64:1706) | `import { ListRow } from "@/shared/components/list-row"` | — | Candidato |
 | EmptyState (64:1722) | `import { EmptyState } from "@/shared/components/empty-state"` | — | Candidato |
 | SortableItem (64:1818) | `import { SortableItem } from "@/shared/components/sortable-item"` | `tipo` texto, campo · `estado` padrão, selecionado | Candidato |
+| Avis/Mark (103:1744) | `import { AvisMark } from "@/shared/components/avis-mark"` | `size` default, small (no código, pelo tamanho: small abaixo de 32 px) | Específico (marca) |
+| Avis/Lockup (103:1759) | `import { AvisLockup } from "@/shared/components/avis-lockup"` | `layout` horizontal, vertical · `legenda` (`caption`) | Específico (marca) |
 
 Os nomes de export acima são o alvo. Se a implementação pedir outro nome, este arquivo muda no mesmo PR.

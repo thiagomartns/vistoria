@@ -8,7 +8,7 @@ Um app de **vistoria de imóveis para locação** usado por vistoriadores autôn
 
 **Para quem.** Vistoriador autônomo (tipicamente MEI) que presta serviço para algumas imobiliárias e faz várias vistorias por dia. Em campo usa o celular, muitas vezes em subsolo, garagem ou imóvel vazio com internet cortada. À noite revisa e emite os laudos no notebook. É um usuário com dois aparelhos, sem equipe.
 
-**Codinome do projeto:** `vistoria`.
+**Codinome do projeto:** `vistoria`. **Nome exibido:** Avis ([ADR 0029](decisions/0029-marca-avis-nome-exibido-e-simbolo-d1.md)).
 
 ### Histórias da versão 1
 

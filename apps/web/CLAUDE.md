@@ -54,6 +54,7 @@ locais, em [figma-sanjou.md](../../docs/architecture/figma-sanjou.md). Sem Code 
 | DialogContent, SelectTrigger | `import { Dialog, DialogContent } from "@sanjou/ui/dialog"`, `import { Select, SelectTrigger } from "@sanjou/ui/select"` |
 | Form item | `import { FormField, FormItem, FormLabel, FormControl, FormMessage } from "@sanjou/ui/form"` (react-hook-form, ADR 0023) |
 | Icon/* | `import { Check } from "lucide-react"` (mesmo nome) |
+| Avis/Mark, Avis/Lockup | `import { AvisMark } from "@/shared/components/avis-mark"`, `import { AvisLockup } from "@/shared/components/avis-lockup"` (marca, ADR 0029) |
 | Auth layout, Auth form, Componentes novos | Locais em `@/shared/components/` (ADR 0020) |
 
 ## Candidatos ao Sanjou
