@@ -131,7 +131,7 @@ export function PropertyForm<TOutput>({
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : null}
-        <div className="flex flex-col gap-5 md:flex-row md:gap-3">
+        <div className="flex flex-col gap-5 md:flex-row md:items-start md:gap-3">
           {select(
             "clientId",
             "Cliente",
@@ -146,20 +146,20 @@ export function PropertyForm<TOutput>({
           )}
           {select("type", "Tipo", "Selecione o tipo", typeOptions, "md:w-[220px] md:shrink-0")}
         </div>
-        <div className="flex flex-col gap-5 md:flex-row md:gap-3">
+        <div className="flex flex-col gap-5 md:flex-row md:items-start md:gap-3">
           {text("zipCode", "CEP", "md:w-[160px] md:shrink-0", {
             inputMode: "numeric",
             maxLength: 9,
           })}
           {text("street", "Rua", "md:min-w-0 md:flex-1")}
         </div>
-        <div className="flex gap-3">
+        <div className="flex items-start gap-3">
           {text("number", "Número", "w-[110px] shrink-0 md:w-[120px]")}
           {text("complement", "Complemento", "min-w-0 flex-1")}
         </div>
-        <div className="flex flex-col gap-5 md:flex-row md:gap-3">
+        <div className="flex flex-col gap-5 md:flex-row md:items-start md:gap-3">
           {text("district", "Bairro", "md:min-w-0 md:flex-1")}
-          <div className="flex gap-3 md:contents">
+          <div className="flex items-start gap-3 md:contents">
             {text("city", "Cidade", "min-w-0 flex-1")}
             {text("state", "UF", "w-[72px] shrink-0 md:w-[80px]", {
               autoCapitalize: "characters",

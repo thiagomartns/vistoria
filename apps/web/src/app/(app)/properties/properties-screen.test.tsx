@@ -183,6 +183,24 @@ describe("PropertiesScreen", () => {
     expect(screen.getByText("Confira a busca e os filtros ou cadastre um imóvel novo.")).toBeDefined();
   });
 
+  it("placeholder da busca: completo no desktop, 'Buscar' no celular (Figma 71:2797 e 71:2965)", () => {
+    seed({ properties: [flores] });
+    const { unmount } = render(<PropertiesScreen />);
+    expect(screen.getByRole("searchbox").getAttribute("placeholder")).toBe("Buscar");
+    unmount();
+
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query === "(min-width: 768px)",
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }));
+    render(<PropertiesScreen />);
+    expect(screen.getByRole("searchbox").getAttribute("placeholder")).toBe(
+      "Buscar por endereço, bairro ou cidade",
+    );
+    vi.unstubAllGlobals();
+  });
+
   it("filtros por cliente e por tipo, na barra do desktop", async () => {
     const user = userEvent.setup();
     seed({ properties: [porto, flores, brasil] });

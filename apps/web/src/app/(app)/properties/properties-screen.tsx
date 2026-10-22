@@ -11,6 +11,7 @@ import { PropertyFilters } from "@/features/properties/components/property-filte
 import { useProperties } from "@/features/properties/hooks/useProperties";
 import { EmptyState } from "@/shared/components/empty-state";
 import { Sheet } from "@/shared/components/sheet";
+import { useIsDesktop } from "@/shared/useIsDesktop";
 
 // /properties (Figma 71:2726 desktop, 71:2900 celular): busca local por endereço, bairro e cidade, filtros por cliente
 // e tipo, "Novo imóvel" e a lista em ordem de endereço. No celular, os filtros ficam no Sheet "Filtros". Sem exclusão
@@ -21,6 +22,7 @@ const NEW_PROPERTY_HREF = "/properties/edit";
 export function PropertiesScreen() {
   const properties = useProperties();
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const desktop = useIsDesktop();
 
   if (!properties.ready) return null;
 
@@ -60,7 +62,7 @@ export function PropertiesScreen() {
           <Input
             type="search"
             aria-label="Buscar imóveis"
-            placeholder="Buscar por endereço, bairro ou cidade"
+            placeholder={desktop ? "Buscar por endereço, bairro ou cidade" : "Buscar"}
             value={properties.search}
             onChange={(event) => properties.setSearch(event.target.value)}
             className="min-w-0 flex-1"
