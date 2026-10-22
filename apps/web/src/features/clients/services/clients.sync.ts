@@ -2,7 +2,7 @@ import type { PendingMutation } from "@tanstack/db";
 
 import { upsertClient } from "@/shared/api/generated";
 import type { Client } from "@/shared/api/generated/client";
-import { openLocalDb } from "@/shared/db/local-db";
+import { closeLocalDb, openLocalDb } from "@/shared/db/local-db";
 import { newId } from "@/shared/sync/ids";
 import {
   type Outbox,
@@ -60,21 +60,47 @@ export interface ClientsStore {
   outbox: Outbox;
 }
 
-let opening: Promise<ClientsStore> | undefined;
+let current: { ownerId: string; opening: Promise<ClientsStore> } | undefined;
 
-/** Abre o banco local, a collection e a outbox uma vez por página (só no navegador). */
-export function openClientsStore(): Promise<ClientsStore> {
-  opening ??= (async () => {
-    const clients = createClientsCollection(await openLocalDb());
-    const outbox = startOutbox({
-      collections: { clients },
-      mutationFns: { [UPSERT_CLIENT]: upsertClientMutation(clients) },
-    });
-    await outbox.waitForInit();
-    trackOutbox(outbox);
-    return { clients, outbox };
+async function open(ownerId: string): Promise<ClientsStore> {
+  const clients = createClientsCollection(await openLocalDb(ownerId));
+  const outbox = startOutbox({
+    ownerId,
+    collections: { clients },
+    mutationFns: { [UPSERT_CLIENT]: upsertClientMutation(clients) },
+  });
+  await outbox.waitForInit();
+  trackOutbox(outbox);
+  return { clients, outbox };
+}
+
+async function close(ownerId: string, opening: Promise<ClientsStore>): Promise<void> {
+  const store = await opening.catch(() => undefined);
+  store?.outbox.dispose();
+  await store?.clients.cleanup();
+  await closeLocalDb(ownerId);
+}
+
+/**
+ * Abre o banco local, a collection e a outbox do usuário uma vez por página (só no navegador). Trocar de usuário
+ * fecha os do anterior: a fila dele fica guardada no banco dele, sem enviar, até ele entrar de novo.
+ */
+export function openClientsStore(ownerId: string): Promise<ClientsStore> {
+  if (current?.ownerId === ownerId) return current.opening;
+  const previous = current;
+  const opening = (async () => {
+    if (previous) await close(previous.ownerId, previous.opening);
+    return open(ownerId);
   })();
+  current = { ownerId, opening };
   return opening;
+}
+
+/** Fecha o que estiver aberto. Só para testes. */
+export async function closeClientsStore(): Promise<void> {
+  const previous = current;
+  current = undefined;
+  if (previous) await close(previous.ownerId, previous.opening);
 }
 
 /** Cria (sem `id`) ou edita um client: aplica na hora e enfileira o `PUT`. Devolve o id. */

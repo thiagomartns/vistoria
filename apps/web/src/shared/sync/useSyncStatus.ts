@@ -20,5 +20,10 @@ export function useSyncStatus() {
     return () => clearInterval(timer);
   }, []);
 
-  return { ...describeSync(snapshot, now), retryNow };
+  return {
+    ...describeSync(snapshot, now),
+    /** Transações na outbox, ou `null` enquanto ela não foi lida. */
+    pending: snapshot.outboxRead ? snapshot.entries.length : null,
+    retryNow,
+  };
 }

@@ -41,7 +41,7 @@ describe("syncFailure", () => {
     ["internal", problem("internal", 500)],
     ["rate-limited", problem("rate-limited", 429)],
     ["idempotency-in-progress", problem("idempotency-in-progress", 409)],
-    ["unauthorized (pausa e refresh são do M4)", problem("unauthorized", 401)],
+    ["unauthorized (a sessão expira; ver outbox-session.test.ts)", problem("unauthorized", 401)],
   ])("%s → tenta de novo", (_, result) => {
     const error = syncFailure(result);
 

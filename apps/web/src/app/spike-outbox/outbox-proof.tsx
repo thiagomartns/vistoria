@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { type FormEvent, useState } from "react";
 
 import { Badge } from "@sanjou/ui/badge";
@@ -11,18 +12,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useClients } from "@/features/clients/hooks/useClients";
 import { useSession } from "@/shared/auth/useSession";
 
-// Parte interativa da prova: entrar, criar e editar um client, e ver a outbox. Os data-testid são do roteiro.
+// Parte interativa da prova: criar e editar um client e ver a outbox, no banco local de quem entrou. Entrar é pelo
+// /login (#72). Os data-testid são do roteiro.
 export function OutboxProof() {
   const session = useSession();
-  const { ready, clients, pending, save, flush } = useClients();
+  const { ready, clients, pending, save } = useClients();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
-
-  const onSignIn = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    if (await session.signIn(String(form.get("email")), String(form.get("password")))) flush();
-  };
 
   const onSave = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -42,24 +38,18 @@ export function OutboxProof() {
     <>
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Sessão</h2>
-        {session.signedIn ? (
+        {session.status === "active" ? (
           <Badge variant="success" data-testid="session">
-            Sessão ativa
+            Sessão ativa · {session.user?.name}
           </Badge>
         ) : (
-          <form className="flex flex-col gap-3 sm:flex-row sm:items-end" onSubmit={onSignIn}>
-            <div className="flex flex-1 flex-col gap-2">
-              <Label htmlFor="email">E-mail</Label>
-              <Input id="email" name="email" type="email" required />
-            </div>
-            <div className="flex flex-1 flex-col gap-2">
-              <Label htmlFor="password">Senha</Label>
-              <Input id="password" name="password" type="password" required />
-            </div>
-            <Button type="submit">Entrar</Button>
-          </form>
+          <p className="text-sm" data-testid="no-session">
+            {session.status === "expired" ? "Sessão expirada. " : "Sem sessão. "}
+            <Link href="/login" className="font-medium text-brand-text">
+              Entrar
+            </Link>
+          </p>
         )}
-        {session.error && <p className="text-destructive text-sm">{session.error}</p>}
       </section>
 
       <section className="flex flex-col gap-3">

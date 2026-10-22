@@ -2,6 +2,8 @@ import { useLiveQuery } from "@tanstack/react-db";
 import { useEffect, useState } from "react";
 
 import type { ClientRecord } from "../models/client";
+import { useSession } from "@/shared/auth/useSession";
+
 import { type ClientsStore, openClientsStore, saveClient } from "../services/clients.sync";
 
 /** Uma transação da outbox, do jeito que a tela mostra. */
@@ -16,20 +18,23 @@ export interface PendingWrite {
 // A outbox não avisa quando muda; a página de prova relê em intervalo curto.
 const OUTBOX_POLL_MS = 300;
 
-/** Clients do banco local (otimistas incluídos), as transações pendentes e a escrita. */
+/** Clients do banco local do dono da sessão (otimistas incluídos), as transações pendentes e a escrita. */
 export function useClients() {
+  const ownerId = useSession().user?.id;
   const [store, setStore] = useState<ClientsStore>();
   const [pending, setPending] = useState<PendingWrite[]>([]);
 
   useEffect(() => {
+    if (!ownerId) return;
     let active = true;
-    void openClientsStore().then((opened) => {
+    void openClientsStore(ownerId).then((opened) => {
       if (active) setStore(opened);
     });
     return () => {
       active = false;
+      setStore(undefined);
     };
-  }, []);
+  }, [ownerId]);
 
   useEffect(() => {
     if (!store) return;
@@ -58,7 +63,5 @@ export function useClients() {
     pending,
     save: (values: Omit<ClientRecord, "id"> & { id?: string }) =>
       store ? saveClient(store, values) : undefined,
-    /** Acorda a fila agora (ex.: logo depois de entrar), sem esperar o backoff. */
-    flush: () => store?.outbox.getOnlineDetector().notifyOnline(),
   };
 }
