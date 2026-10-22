@@ -34,7 +34,7 @@ O risco está concentrado numa peça: TanStack DB, ainda pré-1.0. Todo o resto 
 | Formulários | react-hook-form + Zod, com o `Form` do Sanjou | Baixo | Zod gerado do contrato ([ADR 0023](../decisions/0023-formularios-com-react-hook-form.md)) |
 | Contrato | `@hey-api/openapi-ts` | Baixo | Tipos, client, Zod e `ProblemType` |
 | Coordenação entre abas | Web Locks API + `BroadcastChannel` | Baixo | Nativo do navegador |
-| PWA | Serwist | Baixo | Build de produção com `--webpack` |
+| PWA | Serwist | Baixo | `serwist build` depois do `next build`, sobre o `out/` ([ADR 0032](../decisions/0032-serwist-pelo-cli-sobre-o-static-export-build-com-turbopack.md)) |
 | Compilação | React Compiler | Baixo | Sem `useMemo`/`useCallback` manuais |
 | Lint / format | Oxlint + Oxfmt | Baixo | Reversível |
 | Testes | Vitest + Playwright | Baixo | Playwright simula rede cortada e várias abas |
@@ -214,8 +214,8 @@ As regras da tabela viram regras de lint (fronteiras de import), não convençã
 O app inteiro é um bundle estático que o service worker pré-cacheia. Depois da primeira visita, abrir o app não depende de rede: o shell vem do cache e os dados vêm do banco local.
 
 - **Static export.** `output: 'export'`. O static export não aceita segmentos dinâmicos sem `generateStaticParams`, e os IDs só existem em runtime. Por isso nenhuma rota tem `[id]`: o id vai na query string (`/inspections/edit?id=...`), lido com `useSearchParams` dentro de um `Suspense`. As rotas estão em [Telas](../vision.md#telas-e-fluxo-principal), no documento [Visão do Projeto](../vision.md).
-- **Service worker (Serwist).** Pré-cache do shell, das fontes e dos ícones. Requisições à API nunca passam pelo cache do SW: quem cuida de dado é a camada de sync.
-- **Build.** `next build --webpack`, por exigência do Serwist. Em dev, Turbopack com o SW desligado.
+- **Service worker (Serwist).** Pré-cache do static export inteiro: HTML, payloads RSC, chunks, fontes e ícones. A rota com `?id=` cai no HTML pré-cacheado da rota sem a query. Requisições à API nunca passam pelo cache do SW: quem cuida de dado é a camada de sync.
+- **Build.** `next build` (Turbopack) e depois `serwist build`, que empacota o `src/sw.ts` e pré-cacheia o `out/` ([ADR 0032](../decisions/0032-serwist-pelo-cli-sobre-o-static-export-build-com-turbopack.md)). Em dev o SW não é registrado.
 - **Atualização do app.** A versão nova do SW fica em espera; a UI mostra "Nova versão disponível" e só ativa com a outbox vazia.
 - **Schema local.** Como a atualização só ativa com a outbox vazia, nunca há escrita pendente para migrar. Mudança incompatível no schema local faz wipe-and-resync (rascunhos `draft` são preservados e convertidos pelo mapper da versão).
 - **Laudo.** `/inspections/report` é uma página com CSS `@media print`; o PDF sai do "Salvar como PDF" do navegador, inclusive offline.
@@ -296,6 +296,6 @@ Quatro spikes validam as apostas antes das telas; o primeiro foi dividido em 1a 
 - [ ] **Spike 1b — Outbox no servidor:** `If-Match`, 412/409 `version-conflict`, 428 e idempotência aplicada pelo .NET, com clientes e imóveis; o mesmo registro chega uma vez só ([ADR 0031](../decisions/0031-fatia-de-cadastro-antes-da-vistoria-no-m2.md)).
 - [ ] **Spike 2 — Volume:** 10 mil vistorias (com ambientes e itens) via delta paginado; medir abertura do app e tempo de live query.
 - [ ] **Spike 3 — Conflito:** dois navegadores editam a mesma vistoria offline, inclusive o mesmo item; 412/409 `version-conflict` com `current`; merge automático, diff e reenvio com chave nova.
-- [ ] **Spike 4 — Shell:** static export + Serwist + Sanjou UI + rota `?id=`; abrir em modo avião depois da primeira visita (M2). Duas abas renovando a sessão ao mesmo tempo fica para o M4, que traz o refresh.
+- [x] **Spike 4 — Shell:** static export + Serwist + Sanjou UI + rota `?id=`; abrir em modo avião depois da primeira visita (M2). Resultado: o shell e `/clients/edit?id=` abrem offline, servidos pelo SW, com o Serwist pelo CLI ([ADR 0032](../decisions/0032-serwist-pelo-cli-sobre-o-static-export-build-com-turbopack.md)); roteiro em `pnpm spike:shell`, no CI. Fica para o M4: duas abas renovando a sessão ao mesmo tempo, que depende do refresh.
 
 Os spikes estão encaixados nos [marcos](../vision.md#marcos) do documento [Visão do Projeto](../vision.md): spike 1a antes do M2, spikes 1b e 4 na fatia de cadastro do M2 (o teste de duas abas do 4 no M4), spike 3 no M3, spike 2 no M4.
