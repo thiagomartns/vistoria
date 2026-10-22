@@ -271,6 +271,7 @@ A ousadia visual é tornar o sync legível sem torná-lo barulhento. O estado ap
 - Silêncio no caminho feliz: sincronizado não ganha ícone em toda linha.
 - Cor nunca carrega significado sozinha: todo estado tem ícone e texto.
 - Animação só em transição de estado, curta e desligada por `prefers-reduced-motion`.
+- Movimento desenhado no Figma antes do código; carregamento do banco local com o `Skeleton` do Sanjou; avisos passageiros num toast (`Toaster` do Sanjou, no shell). Sem TanStack Query e sem push na V1 ([ADR 0033](../decisions/0033-movimento-carregamento-e-avisos-na-ui.md)).
 - Keyboard-first: command palette e atalhos para salvar etapa, abrir pendências e alternar registros.
 
 Os componentes ficam no app, em `shared/components/` ([ADR 0020](../decisions/0020-componentes-que-faltam-no-sanjou-ficam-no-app.md)). Recebem um `SyncState` genérico e não conhecem TanStack DB, então podem ir para o Sanjou UI se outro projeto precisar deles.

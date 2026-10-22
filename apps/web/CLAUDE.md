@@ -52,7 +52,8 @@ locais, em [figma-sanjou.md](../../docs/architecture/figma-sanjou.md). Sem Code 
 
 | No Figma | Import |
 | --- | --- |
-| Button, Badge, Input, Textarea, Label, Separator | `import { Button } from "@sanjou/ui/button"` (um subpath por nome) |
+| Button, Badge, Input, Textarea, Label, Separator, Skeleton | `import { Button } from "@sanjou/ui/button"` (um subpath por nome) |
+| Toast (avisos passageiros) | `import { Toaster } from "@sanjou/ui/sonner"`, montado no shell; o aviso sai com `toast()` do `sonner` (ADR 0033) |
 | Alert, Avatar | `import { Alert, AlertTitle, AlertDescription } from "@sanjou/ui/alert"`, `import { Avatar, AvatarFallback } from "@sanjou/ui/avatar"` |
 | TableHead, TableCell | `import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@sanjou/ui/table"` |
 | DialogContent, SelectTrigger | `import { Dialog, DialogContent } from "@sanjou/ui/dialog"`, `import { Select, SelectTrigger } from "@sanjou/ui/select"` |
