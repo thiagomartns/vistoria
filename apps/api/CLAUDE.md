@@ -52,7 +52,8 @@ Cenários esperados em [Testes de integração](../../docs/architecture/backend.
 
 ## Comandos
 
-- `pnpm dev:api` (raiz): `dotnet watch` em `http://localhost:8080`, Swagger em `/swagger`.
+- `pnpm dev:api` (raiz): pré-check em `scripts/dev-api`, depois `dotnet watch` em `http://localhost:8080`, Swagger
+  em `/swagger`.
 - `pnpm test:api` (raiz): `dotnet test` na `Vistoria.sln`.
 - `dotnet build` em `apps/api`: compila e regenera `openapi.json` (ou `/gen-api`).
 - Migrações (em `apps/api`, depois de `dotnet tool restore`): `dotnet ef migrations add <Nome> --project Vistoria.Api`.
@@ -62,3 +63,17 @@ Cenários esperados em [Testes de integração](../../docs/architecture/backend.
   pelo `pnpm db:init` (raiz), `ConnectionStrings__Default` e `Jwt__SigningKey` no container. Nunca em
   `appsettings*.json` (`SecretsTests` cobra). Sem chave válida a API não sobe (`JwtOptionsValidator`), exceto
   na geração do `openapi.json` no build (`OpenApiConfig.IsBuildTimeGeneration`).
+
+## Quando o `dev:api` falha
+
+Peça a mensagem exata antes de reproduzir. O pré-check já cobre os casos comuns; se passar dele, siga a ordem:
+
+1. **Banco:** `docker ps -a --filter name=vistoria-db`. Parado → `pnpm db:up`; `docker logs --tail 50 vistoria-db`.
+2. **Segredos, só os nomes:** `dotnet user-secrets list --project apps/api/Vistoria.Api | cut -d= -f1`. Nunca liste
+   os valores. Faltando algum → `pnpm db:init`.
+3. **Processo duplicado:** `ps -axww -o pid=,args= | grep "watch.*Vistoria.Api"`. Não suba um segundo `dotnet watch`
+   ao lado do de quem está usando: dois watchers estouram o limite de inotify (128) e o processo é dele. Para
+   reiniciar, Ctrl+R no terminal dele.
+4. **Reproduzir:** pelo próprio `pnpm dev:api` (ou `dotnet run --launch-profile http` em `apps/api/Vistoria.Api`),
+   que põe a API em Development e carrega os User Secrets. `dotnet run --environment X` não serve: no SDK, essa
+   opção define variáveis (`-e CHAVE=valor`), e a API sobe sem ambiente nem segredos.

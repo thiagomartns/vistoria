@@ -16,8 +16,7 @@ Documentação: [visão do projeto](docs/vision.md), [arquitetura do frontend](d
 ```bash
 pnpm install
 pnpm db:init   # gera a senha do SQL Server local em infra/.env e grava a connection string e a chave do JWT nos User Secrets
-pnpm db:up
-pnpm dev:api   # aplica as migrações pendentes no startup (só em Development)
+pnpm dev:api   # sobe o banco se estiver parado e aplica as migrações pendentes no startup (só em Development)
 ```
 
 ### Segredos locais
@@ -38,7 +37,7 @@ Nenhuma senha vai para o repositório, nem de exemplo ([ADR 0025](docs/decisions
 | `pnpm db:init` | Gera a senha local em `infra/.env` e grava a connection string e uma chave do JWT nova nos User Secrets; `--rotate` troca a senha |
 | `pnpm db:up` | Sobe o SQL Server 2022 em container e espera o healthcheck |
 | `pnpm db:down` | Derruba o container (o volume com os dados fica) |
-| `pnpm dev:api` | API com `dotnet watch` em http://localhost:8080 (Swagger UI em `/swagger`) |
+| `pnpm dev:api` | Confere o ambiente, sobe o banco se estiver parado e roda a API com `dotnet watch` em http://localhost:8080 (Swagger UI em `/swagger`) |
 | `pnpm dev:web` | Front com `next dev` em http://localhost:3000 |
 | `pnpm check` | Lint, typecheck e testes do front e dos scripts |
 | `pnpm test:api` | Testes da API (`dotnet test`); os de integração sobem o SQL Server via Testcontainers e exigem Docker |

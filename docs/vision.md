@@ -194,7 +194,7 @@ vistoria/
 | Comando | O que faz |
 | --- | --- |
 | `pnpm db:up` | Sobe o SQL Server em container |
-| `pnpm dev:api` | `dotnet watch` em `localhost:8080`, com migrações automáticas em dev |
+| `pnpm dev:api` | Pré-check do ambiente (sobe o banco se preciso) e `dotnet watch` em `localhost:8080`, com migrações automáticas em dev |
 | `pnpm dev:web` | `next dev` em `localhost:3000` |
 | `pnpm gen:api` | Gera tipos, client, Zod e `ProblemType` a partir de `openapi.json` |
 | `pnpm check` | Lint, typecheck e testes do front |
