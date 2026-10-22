@@ -383,6 +383,8 @@ O setup do curso (`WebApplicationFactory` + Testcontainers com SQL Server real) 
 
 Seis fases, cada uma com um conceito novo e um teste que prova que ele funciona. A tabela no fim diz de quais fases cada spike do front depende.
 
+**Ordem de execução** ([ADR 0031](../decisions/0031-fatia-de-cadastro-antes-da-vistoria-no-m2.md)): 1 → 2 (Client e Property) → 4 e 5 (em Client e Property, para a fatia de cadastro do M2) → 2 (Template e Inspection) → 3 → 6. As fases 4 e 5 valem para toda entidade: Template e Inspection já nascem com elas.
+
 1. **Saneamento.** Correções obrigatórias, OpenAPI nativo + Swagger UI, catálogo de erros com `ProblemType` publicado, `signup` e `signin` básicos, tudo async.
    - Aprende: pipeline do ASP.NET Core, OpenAPI 3.1, tratamento centralizado de erro.
    - Pronto quando: o front gera tipos e a union `ProblemType` a partir de `openapi.json`.
@@ -408,7 +410,7 @@ Seis fases, cada uma com um conceito novo e um teste que prova que ele funciona.
 | Spike do front | Depende das fases | Por quê |
 | --- | --- | --- |
 | 1a — Outbox no aparelho | 1 a 3 (só o `PUT` de clients) | Persiste a outbox, envia com `Idempotency-Key` e reenvia após reload ([ADR 0030](../decisions/0030-tanstack-db-mantido-apos-o-spike-1a-outbox-persistida-contra-o-upsertclient.md)) |
-| 1b — Outbox no servidor | 4 e 5 | Envia com `If-Match`, trata 412/428 e prova a idempotência no servidor |
+| 1b — Outbox no servidor | 4 e 5 | Envia com `If-Match`, trata 412/428 e prova a idempotência no servidor, com clientes e imóveis |
 | 2 — Volume | 6 | Precisa do delta para carregar 10 mil registros |
 | 3 — Conflito | 1 a 4 | Precisa de 412/409 com `current` |
 | 4 — Shell | 6 (só o teste de duas abas) | O resto é só front; duas abas renovando juntas exercitam a tolerância de rotação |
