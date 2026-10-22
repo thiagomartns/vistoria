@@ -90,6 +90,15 @@ describe("syncStatusStore", () => {
       entries: [],
       running: 0,
       lastSyncedAt: null,
+      outboxRead: false,
     });
+  });
+
+  it("marca a primeira leitura da outbox, mesmo vazia: antes dela, vazio não quer dizer nada pendente", async () => {
+    expect(syncStatusStore.getSnapshot().outboxRead).toBe(false);
+
+    trackOutbox(fakeOutbox([]).outbox);
+
+    await vi.waitFor(() => expect(syncStatusStore.getSnapshot().outboxRead).toBe(true));
   });
 });

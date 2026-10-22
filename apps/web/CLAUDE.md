@@ -4,7 +4,7 @@ Shell Next.js 16 em **static export**, sem servidor em produção. A UI lê e es
 a rede é detalhe da camada de sync. Arquitetura completa em [frontend.md](../../docs/architecture/frontend.md);
 o contrato (status, cabeçalhos, `type` de erro, prazos) vem só de [backend.md](../../docs/architecture/backend.md).
 
-Hoje existem `src/app/` (o shell no grupo `(app)`), `src/shared/` (`api/`, `auth/`, `db/`, `sync/`, `components/`),
+Hoje existem `src/app/` (o shell no grupo `(app)`; `/login` e `/signup` fora dele), `src/shared/` (`api/`, `auth/`, `db/`, `sync/`, `components/`),
 `src/sw.ts` (service worker, [ADR 0032](../../docs/decisions/0032-serwist-pelo-cli-sobre-o-static-export-build-com-turbopack.md)) e `src/features/clients/`, começo da outbox vinda do spike 1a ([ADR 0030](../../docs/decisions/0030-tanstack-db-mantido-apos-o-spike-1a-outbox-persistida-contra-o-upsertclient.md));
 a árvore descrita em [Estrutura de pastas](../../docs/architecture/frontend.md#estrutura-de-pastas) é o alvo.
 TanStack DB e `@tanstack/offline-transactions` têm versão exata: antes de mudar, ler a documentação da versão
@@ -60,7 +60,8 @@ locais, em [figma-sanjou.md](../../docs/architecture/figma-sanjou.md). Sem Code 
 | Form item | `import { FormField, FormItem, FormLabel, FormControl, FormMessage } from "@sanjou/ui/form"` (react-hook-form, ADR 0023) |
 | Icon/* | `import { Check } from "lucide-react"` (mesmo nome) |
 | Avis/Mark, Avis/Lockup | `import { AvisMark } from "@/shared/components/avis-mark"`, `import { AvisLockup } from "@/shared/components/avis-lockup"` (marca, ADR 0029) |
-| Auth layout, Auth form, Componentes novos | Locais em `@/shared/components/` (ADR 0020) |
+| Auth layout, Auth form / Sign in, Auth form / Create account | `AuthLayout`, `SignInForm`, `SignUpForm` de `@/shared/components/auth-layout`, `sign-in-form`, `sign-up-form` (ADR 0019) |
+| Componentes novos | Locais em `@/shared/components/` (ADR 0020) |
 
 ## Candidatos ao Sanjou
 

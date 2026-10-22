@@ -31,6 +31,7 @@ const snapshot = (over: Partial<SyncSnapshot> = {}): SyncSnapshot => ({
   entries: [],
   running: 0,
   lastSyncedAt: null,
+  outboxRead: true,
   ...over,
 });
 

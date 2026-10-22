@@ -30,7 +30,10 @@ Levantado em 2026-10-19 (issue #13), pelo MCP do Figma, nas páginas Telas, Wire
 | DropdownMenu (o menu do usuário, "usuário (abre DropdownMenu)" no Shell) | `import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuItem } from "@sanjou/ui/dropdown-menu"` | Conteúdo não desenhado: o nome em `DropdownMenuLabel` e "Sair" em `DropdownMenuItem` (nota do frame Shell) |
 | Form item | `import { Form, FormField, FormItem, FormLabel, FormControl, FormDescription, FormMessage } from "@sanjou/ui/form"` | Exige `react-hook-form` ([ADR 0023](../decisions/0023-formularios-com-react-hook-form.md)) · `invalid` vem do erro do campo, não de prop · controle trocado no Figma (Textarea, Select) vai dentro do `FormControl` |
 
-**Auth layout e Auth form / Sign in** são um pattern do registry do Sanjou, sem subpath no pacote. Viram componentes locais, `AuthLayout` e `SignInForm` em `@/shared/components/auth-layout` e `@/shared/components/sign-in-form`, compostos com os componentes acima ([ADR 0019](../decisions/0019-login-da-v1-com-o-pattern-auth-do-sanjou.md), [ADR 0020](../decisions/0020-componentes-que-faltam-no-sanjou-ficam-no-app.md)).
+**Auth layout, Auth form / Sign in e Auth form / Create account** são um pattern do registry do Sanjou, sem subpath no pacote. Viram componentes locais, compostos com os componentes acima ([ADR 0019](../decisions/0019-login-da-v1-com-o-pattern-auth-do-sanjou.md), [ADR 0020](../decisions/0020-componentes-que-faltam-no-sanjou-ficam-no-app.md)):
+
+- `AuthLayout` (`@/shared/components/auth-layout`): no lugar do Image placeholder, o painel escuro do ícone do app (fundo `gray-12`, `AvisMark` com arco claro e luz `indigo-11`), porque o guia da marca não usa o índigo como fundo.
+- `SignInForm` e `SignUpForm` (`@/shared/components/sign-in-form`, `@/shared/components/sign-up-form`), sobre a base `AuthForm` (`@/shared/components/auth-form`): lockup, título, aviso opcional (`SessionExpired`), erro do formulário num `Alert` danger, campos com `Form` do Sanjou e o link para a outra tela. O Toast das notas do Figma vira esse `Alert`: o Sonner não está no mapa.
 
 ## Ícones
 
@@ -41,7 +44,7 @@ Levantado em 2026-10-19 (issue #13), pelo MCP do Figma, nas páginas Telas, Wire
 
 ## Componentes locais
 
-Ficam todos em `apps/web/src/shared/components/` e são feitos só com primitivos e tokens do Sanjou ([ADR 0020](../decisions/0020-componentes-que-faltam-no-sanjou-ficam-no-app.md)). Cada um nasce com a primeira tela que o usa; hoje existem os da marca (`AvisMark` e `AvisLockup`, #62) e os do shell (`Nav`, `Sheet`, `SyncStatus`, `OfflineBanner`, `OutboxPanel`, #71). O menu do usuário do shell é `UserMenu` (`@/shared/components/user-menu`), composto com Avatar e DropdownMenu do Sanjou. Os candidatos entram em "Candidatos ao Sanjou" no `apps/web/CLAUDE.md` quando forem criados.
+Ficam todos em `apps/web/src/shared/components/` e são feitos só com primitivos e tokens do Sanjou ([ADR 0020](../decisions/0020-componentes-que-faltam-no-sanjou-ficam-no-app.md)). Cada um nasce com a primeira tela que o usa; hoje existem os da marca (`AvisMark` e `AvisLockup`, #62), os do shell (`Nav`, `Sheet`, `SyncStatus`, `OfflineBanner`, `OutboxPanel`, #71) e os do acesso (`AuthLayout`, `AuthForm`, `SignInForm`, `SignUpForm`, `SessionExpired`, #72). O menu do usuário do shell é `UserMenu` (`@/shared/components/user-menu`), composto com Avatar e DropdownMenu do Sanjou. Os candidatos entram em "Candidatos ao Sanjou" no `apps/web/CLAUDE.md` quando forem criados.
 
 | No Figma (nó) | Import | Variantes | Tipo |
 | --- | --- | --- | --- |
@@ -54,7 +57,7 @@ Ficam todos em `apps/web/src/shared/components/` e são feitos só com primitivo
 | FieldSyncIndicator (25:1083) | `import { FieldSyncIndicator } from "@/shared/components/field-sync-indicator"` | `estado` igual ao SyncBadge | Específico |
 | StepperForm (27:1220), StepperForm/Etapa (26:1145) | `import { StepperForm, StepperFormStep } from "@/shared/components/stepper-form"` | `layout` desktop, celular · etapa: `estado` pendente, completa, erro, conflito · `atual` | Candidato |
 | DraftResume (29:1342) | `import { DraftResume } from "@/shared/components/draft-resume"` | `estado` local, enviando, conflito, rejeitado · `layout` largo, estreito | Específico |
-| SessionExpired (29:1393) | `import { SessionExpired } from "@/shared/components/session-expired"` | `caso` com pendências, sem pendências, outro usuário | Específico |
+| SessionExpired (29:1393) | `import { SessionExpired } from "@/shared/components/session-expired"` | `caso` pela prop `pending`: com pendências (> 0, `Alert` warning), sem pendências (0, `Alert` neutral) · outro usuário fica para o M4 (sem wipe) | Específico |
 | ConflictResolver (32:1787), ConflictResolver/Campo (30:1431) | `import { ConflictResolver, ConflictField } from "@/shared/components/conflict-resolver"` | `tipo` edição, excluído, exclusão alterada · campo: `escolha` nenhuma, meu, servidor | Específico |
 | ToggleGroup (41:1661), ToggleGroup/Item (41:1610) | `import { ToggleGroup, ToggleGroupItem } from "@/shared/components/toggle-group"` | `tamanho` md, lg · item: `estado` padrão, inválido, somente leitura | Candidato |
 | InspectionItem (42:1758) | `import { InspectionItem } from "@/shared/components/inspection-item"` | `layout` desktop, celular · `tipo` entrada, saída | Específico |

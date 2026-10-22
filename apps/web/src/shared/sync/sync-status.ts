@@ -22,19 +22,35 @@ export interface SyncSnapshot {
   /** Transações sendo enviadas agora. */
   running: number;
   lastSyncedAt: Date | null;
+  /** A outbox já foi lida ao menos uma vez: antes disso, `entries` vazio não quer dizer "nada pendente". */
+  outboxRead: boolean;
 }
 
 const OUTBOX_POLL_MS = 1000;
 
-const INITIAL: SyncSnapshot = { online: true, entries: [], running: 0, lastSyncedAt: null };
+const INITIAL: SyncSnapshot = {
+  online: true,
+  entries: [],
+  running: 0,
+  lastSyncedAt: null,
+  outboxRead: false,
+};
 
-let snapshot = INITIAL;
+let snapshot: SyncSnapshot | undefined;
 let outbox: Outbox | undefined;
 let timer: ReturnType<typeof setInterval> | undefined;
 const listeners = new Set<() => void>();
 
+// A rede é lida já na primeira leitura no navegador, antes de alguém assinar: quem decide pelo `online` no
+// primeiro render (o guard do shell) não pode ver um "online" que não é verdade.
+function current(): SyncSnapshot {
+  if (typeof window === "undefined") return INITIAL;
+  snapshot ??= { ...INITIAL, online: navigator.onLine };
+  return snapshot;
+}
+
 function update(next: Partial<SyncSnapshot>) {
-  snapshot = { ...snapshot, ...next };
+  snapshot = { ...current(), ...next };
   for (const listener of listeners) listener();
 }
 
@@ -54,8 +70,9 @@ async function readOutbox() {
       nextAttemptAt: entry.nextAttemptAt,
     }));
   const running = outbox.getRunningCount();
-  if (running !== snapshot.running || !sameEntries(entries, snapshot.entries)) {
-    update({ entries, running });
+  const { running: before, entries: shown, outboxRead } = current();
+  if (!outboxRead || running !== before || !sameEntries(entries, shown)) {
+    update({ entries, running, outboxRead: true });
   }
 }
 
@@ -97,7 +114,7 @@ export const syncStatusStore = {
       if (listeners.size === 0) stop();
     };
   },
-  getSnapshot: (): SyncSnapshot => snapshot,
+  getSnapshot: current,
   getServerSnapshot: (): SyncSnapshot => INITIAL,
 };
 
@@ -122,5 +139,5 @@ export function resetSyncStatus(): void {
   if (timer !== undefined) stop();
   outbox = undefined;
   listeners.clear();
-  snapshot = INITIAL;
+  snapshot = undefined;
 }

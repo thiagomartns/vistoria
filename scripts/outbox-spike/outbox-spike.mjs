@@ -2,6 +2,9 @@
 // Roteiro do spike 1a (#59, ADR 0030): a outbox do TanStack DB contra a API real, no static export.
 // Exige `pnpm db:up`, `pnpm dev:api` (http://localhost:8080) e `pnpm --filter web build`.
 // Serve `apps/web/out` com `/api/*` repassado para a API, na mesma origem, como o Caddy em produção.
+// Desde o #72 entra pelo /login: recarregar perde o token, a fila espera, e só o login do mesmo usuário a envia.
+// Desde o #69 a API exige If-Match para editar, e a outbox só o envia no spike 1b (#60): até lá o roteiro só cria
+// clients (um PUT sem If-Match por registro).
 
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
@@ -71,10 +74,10 @@ async function callApi(path, init = {}) {
 }
 
 // Senha gerada na hora e nunca impressa (ADR 0025).
-async function signUp() {
+async function signUp(name) {
   const user = {
-    name: "Roteiro do spike 1a",
-    email: `spike-${Date.now()}@exemplo.com`,
+    name,
+    email: `spike-${Date.now()}-${randomBytes(3).toString("hex")}@exemplo.com`,
     password: randomBytes(18).toString("base64url"),
   };
   const { status, body } = await callApi("/api/v1/auth/signup", { method: "POST", body: JSON.stringify(user) });
@@ -112,17 +115,25 @@ function watchPuts(page) {
   return puts;
 }
 
-async function signIn(page, user) {
+/** Entra pelo /login e volta para a página de prova pelo `?next=`, sem recarregar (o token fica na memória). */
+async function signIn(page, user, { expired } = {}) {
+  await page.goto(`${base}/login?next=${encodeURIComponent(route)}`);
+  if (expired) await page.getByText("Sua sessão expirou").waitFor();
+  const notice = expired ? await page.getByRole("status").first().textContent() : null;
   await page.getByLabel("E-mail").fill(user.email);
   await page.getByLabel("Senha").fill(user.password);
   await page.getByRole("button", { name: "Entrar" }).click();
-  await page.getByTestId("session").waitFor();
+  await page.getByTestId("session").getByText(user.name).waitFor();
+  return notice;
 }
 
-async function saveName(page, name, { edit } = {}) {
-  if (edit) await page.getByTestId("client").getByRole("button", { name: "Editar" }).first().click();
+/** Cria um client pela página e devolve o id gerado no aparelho. */
+async function create(page, name) {
   await page.getByLabel("Nome").fill(name);
-  await page.getByRole("button", { name: edit ? "Salvar" : "Criar" }).click();
+  await page.getByRole("button", { name: "Criar" }).click();
+  const row = page.getByTestId("client").filter({ has: page.getByText(name, { exact: true }) });
+  await row.waitFor({ timeout: 1000 });
+  return row.getAttribute("data-id");
 }
 
 const keysOnScreen = (page) => page.getByTestId("outbox-key").allTextContents();
@@ -156,64 +167,67 @@ assert.equal(health.status, 200, `API fora do ar em ${api}: rode \`pnpm dev:api\
 
 const server = await serve();
 const base = `http://127.0.0.1:${server.address().port}`;
+const wait = (ms) => new Promise((done) => setTimeout(done, ms));
 const browser = await launch();
 try {
   const context = await browser.newContext();
   const page = await context.newPage();
   const puts = watchPuts(page);
-  const user = await signUp();
+  const user = await signUp("Ana do roteiro");
+  const other = await signUp("Bia do roteiro");
 
-  step(1, "Entrar com um usuário novo");
-  await page.goto(base + route);
+  step(1, "Entrar pelo /login com um usuário novo");
   await signIn(page, user);
-  ok(`sessão ativa (${user.email})`);
+  ok(`sessão ativa (${user.email}), de volta em ${route}`);
+  // O reload offline do passo 3 vem do service worker (spike 4): ele precisa estar ativo antes.
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  ok("service worker ativo");
 
-  step(2, "Offline: criar e editar um client");
+  step(2, "Offline: criar dois clients");
   await context.setOffline(true);
-  await saveName(page, "Imobiliária Alfa");
-  await page.getByTestId("client-name").getByText("Imobiliária Alfa", { exact: true }).waitFor({ timeout: 1000 });
-  ok("criado: o nome aparece na hora (otimista)");
-  await saveName(page, "Imobiliária Alfa Ltda", { edit: true });
-  await page.getByTestId("client-name").getByText("Imobiliária Alfa Ltda").waitFor({ timeout: 1000 });
-  ok("editado: o nome novo aparece na hora");
-  const id = await page.getByTestId("client").getAttribute("data-id");
+  const alfa = await create(page, "Imobiliária Alfa");
+  const beta = await create(page, "Imobiliária Beta");
+  ok("criados: os nomes aparecem na hora (otimista)");
   await until(async () => (await outboxCount(page)) === 2, "duas transações na outbox");
   const keys = await keysOnScreen(page);
   assert.equal(new Set(keys).size, 2);
   ok(`2 transações pendentes, chaves ${keys.join(", ")}`);
-  assert.equal((await serverClient(user, id)).status, 404, "o client não pode estar no servidor ainda");
-  ok("o servidor ainda não conhece o client");
+  assert.equal((await serverClient(user, alfa)).status, 404, "o client não pode estar no servidor ainda");
+  ok("o servidor ainda não conhece os clients");
 
-  step(3, "Recarregar sem acesso à API");
-  // Sem service worker (spike 4), o shell não abre com o contexto offline: a API fica bloqueada pelo route.
-  await context.route("**/api/**", (r) => r.abort("internetdisconnected"));
-  await context.setOffline(false);
+  step(3, "Modo avião: recarregar");
   await page.reload();
-  await page.getByTestId("client-name").getByText("Imobiliária Alfa Ltda").waitFor();
+  await page.getByTestId("client-name").getByText("Imobiliária Beta").waitFor();
   await until(async () => (await outboxCount(page)) === 2, "outbox restaurada");
   assert.deepEqual(await keysOnScreen(page), keys);
-  ok("o registro e as 2 transações continuam, com as mesmas chaves");
+  await page.getByTestId("no-session").getByText("Sessão expirada").waitFor();
+  ok("os registros e as 2 transações continuam, com as mesmas chaves; a sessão expirou");
 
-  step(4, "Voltar a rede e entrar de novo");
-  await context.unroute("**/api/**");
+  step(4, "Voltar a rede: a fila espera o login; SessionExpired; entrar envia");
   const before = puts.length;
-  await signIn(page, user);
+  await context.setOffline(false);
+  await wait(3000);
+  assert.equal(puts.length, before, "sem token, a fila não pode sair");
+  ok("3 s com rede e sem token: nenhum PUT");
+  const notice = await signIn(page, user, { expired: true });
+  assert.match(notice ?? "", /enviar as 2 alterações salvas neste aparelho/);
+  ok(`/login mostrou: "${notice}"`);
   await until(async () => (await outboxCount(page)) === 0, "outbox vazia", 90_000);
-  const sent = puts.slice(before).filter((put) => put.status === 200 || put.status === 201);
+  const sent = puts.slice(before).filter((put) => put.status === 201);
   assert.deepEqual(
     sent.map((put) => put.key),
     keys,
     "cada transação sai uma vez com sucesso, na ordem, com a sua chave",
   );
-  for (const put of sent) {
-    assert.equal(put.id, id);
-    assert.match(put.auth ?? "", /^Bearer .+/);
+  assert.deepEqual(sent.map((put) => put.id), [alfa, beta]);
+  for (const put of sent) assert.match(put.auth ?? "", /^Bearer .+/);
+  ok(`2 PUT /api/v1/clients/{id} com Authorization e Idempotency-Key (${sent.map((p) => p.status).join(", ")})`);
+  for (const [id, name] of [[alfa, "Imobiliária Alfa"], [beta, "Imobiliária Beta"]]) {
+    const saved = await serverClient(user, id);
+    assert.equal(saved.status, 200);
+    assert.equal(saved.body.name, name);
   }
-  ok(`PUT /api/v1/clients/${id} com Authorization e Idempotency-Key (${sent.map((p) => p.status).join(", ")})`);
-  const saved = await serverClient(user, id);
-  assert.equal(saved.status, 200);
-  assert.equal(saved.body.name, "Imobiliária Alfa Ltda");
-  ok(`getClient confirma no SQL Server: "${saved.body.name}" (version ${saved.body.version})`);
+  ok("getClient confirma os dois no SQL Server");
 
   step(5, "Derrubar a resposta depois de o servidor processar");
   let dropped = 0;
@@ -225,17 +239,17 @@ try {
     return r.abort("connectionreset");
   });
   const fromDrop = puts.length;
-  await saveName(page, "Alfa Imóveis", { edit: true });
-  await settled(page, puts, fromDrop, 200, "reenvio confirmado");
+  const gama = await create(page, "Gama Imóveis");
+  await settled(page, puts, fromDrop, 201, "reenvio confirmado");
   await context.unroute("**/api/v1/clients/*");
   const attempts = puts.slice(fromDrop);
   assert.ok(attempts.length >= 2, `esperava reenvio, houve ${attempts.length} envio(s)`);
   assert.equal(new Set(attempts.map((put) => put.key)).size, 1, "a mesma chave em todo envio");
   assert.equal(new Set(attempts.map((put) => put.body)).size, 1, "o mesmo corpo em todo envio");
   ok(`${attempts.length} envios com a mesma chave ${attempts[0].key} e o mesmo corpo`);
-  const after = await serverClient(user, id);
-  assert.equal(after.body.name, "Alfa Imóveis");
-  ok(`um client só no servidor (id ${id}), "${after.body.name}", version ${after.body.version}`);
+  const after = await serverClient(user, gama);
+  assert.equal(after.body.name, "Gama Imóveis");
+  ok(`um client só no servidor (id ${gama}), version ${after.body.version}`);
 
   step(6, "Grupos de falha: retry tenta de novo; outro grupo não entra em laço");
   const problem = (type, status, title) =>
@@ -246,8 +260,8 @@ try {
     return r.fulfill({ status: 500, contentType: "application/problem+json", body: problem("internal", 500, "Erro") });
   });
   const fromInternal = puts.length;
-  await saveName(page, "Alfa Imóveis S/A", { edit: true });
-  await settled(page, puts, fromInternal, 200, "retry depois do 500");
+  await create(page, "Delta Imóveis");
+  await settled(page, puts, fromInternal, 201, "retry depois do 500");
   await context.unroute("**/api/v1/clients/*");
   const retried = puts.slice(fromInternal);
   assert.equal(retried.length, 2);
@@ -260,13 +274,39 @@ try {
       : r.fallback(),
   );
   const fromValidation = puts.length;
-  await saveName(page, "Nome recusado", { edit: true });
+  await create(page, "Nome recusado");
   await settled(page, puts, fromValidation, 400, "transação recusada sai da fila");
-  await new Promise((done) => setTimeout(done, 5000));
+  await wait(5000);
   await context.unroute("**/api/v1/clients/*");
   assert.equal(puts.length - fromValidation, 1, "validation não pode ser reenviado");
-  await page.getByTestId("client-name").getByText("Alfa Imóveis S/A").waitFor();
+  await until(async () => (await page.getByText("Nome recusado", { exact: true }).count()) === 0, "otimista desfeito");
   ok("400 validation → 1 envio em 5 s, a transação sai da fila e o otimista é desfeito");
+
+  step(7, "Outro usuário entra: a fila do anterior não sai com a conta dele");
+  // Com a página controlada pelo service worker, o modo avião do Playwright não barra o fetch que passa por ele;
+  // aqui a pendência nasce com a sessão expirada (recarregou), e a fila espera pelo token.
+  await page.reload();
+  await page.getByTestId("no-session").getByText("Sessão expirada").waitFor();
+  const fromPending = puts.length;
+  const pending = await create(page, "Pendência da Ana");
+  await until(async () => (await outboxCount(page)) === 1, "uma pendência da Ana");
+  await wait(2000);
+  assert.equal(puts.length, fromPending, "sem token, a pendência não sai");
+  ok("sessão expirada: a pendência fica na fila");
+  const fromOther = puts.length;
+  await signIn(page, other, { expired: true });
+  await until(async () => (await outboxCount(page)) === 0, "a outbox da Bia, vazia");
+  assert.equal(await page.getByTestId("client").count(), 0, "o banco da Bia não tem os clients da Ana");
+  await wait(5000);
+  assert.equal(puts.length - fromOther, 0, "nenhum PUT da fila da Ana com a sessão da Bia");
+  assert.equal((await serverClient(user, pending)).status, 404);
+  ok("a Bia vê o banco dela, vazio; em 5 s nenhum PUT, e o servidor não recebeu a pendência");
+  await page.reload();
+  await signIn(page, user, { expired: true });
+  await until(async () => (await outboxCount(page)) === 0, "a fila da Ana sai", 90_000);
+  assert.equal((await serverClient(user, pending)).body.name, "Pendência da Ana");
+  assert.equal((await serverClient(other, pending)).status, 404, "a pendência é da Ana, não da Bia");
+  ok("a Ana entra de novo e a pendência dela chega ao servidor, na conta dela");
 
   console.log("\nRoteiro concluído.");
 } finally {

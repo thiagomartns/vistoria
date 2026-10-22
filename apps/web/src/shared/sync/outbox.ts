@@ -1,12 +1,17 @@
 import type { Collection, MutationFnParams } from "@tanstack/db";
 import {
+  IndexedDBAdapter,
   NonRetriableError,
   type OfflineExecutor,
+  type OnlineDetector,
+  WebLocksLeader,
+  WebOnlineDetector,
   startOfflineExecutor,
 } from "@tanstack/offline-transactions";
 
 import { readFailure } from "../api/client";
 import { type ApiFailure, type ReactionGroup, handleProblem } from "../api/problems";
+import { canSendAs, expireSession, sessionStore } from "../auth/session";
 import { newId } from "./ids";
 
 // A outbox do aparelho sobre o @tanstack/offline-transactions (spike 1a, ADR 0030): cada escrita vira uma
@@ -21,8 +26,8 @@ export type OutboxMutationFn<T extends object> = (
 ) => Promise<unknown>;
 
 /**
- * Grupos que voltam para a fila com backoff e a mesma chave. `renew-session` fica aqui até o M4:
- * pausar a fila e renovar a sessão é da sessão; descartar perderia o registro.
+ * Grupos que voltam para a fila com backoff e a mesma chave. `renew-session` também: a sessão expira (sem refresh
+ * até o M4), a fila para e a transação sai depois do próximo login; descartar perderia o registro.
  */
 const RETRY_GROUPS: ReadonlySet<ReactionGroup> = new Set(["retry", "renew-session"]);
 
@@ -52,6 +57,7 @@ export class RejectedSyncError extends NonRetriableError {
 export function syncFailure(result: { error: unknown; response?: Response }): Error {
   const failure = readFailure(result);
   const group = handleProblem(failure);
+  if (group === "renew-session") expireSession();
   if (RETRY_GROUPS.has(group)) return new RetryableSyncError(group, failure);
   console.warn("[outbox] transação recusada", group, failure);
   return new RejectedSyncError(group, failure);
@@ -70,16 +76,65 @@ export function outboxHeaders(idempotencyKey: string): { "Idempotency-Key": stri
   return { "Idempotency-Key": idempotencyKey };
 }
 
+/**
+ * "Online" para a outbox de `ownerId`: rede **e** sessão ativa desse mesmo usuário. Sem token, a fila fica parada
+ * (sessão expirada); com o token de outro usuário também, para a fila de um nunca sair com a conta do outro.
+ * Avisa o executor quando a rede volta e quando o dono entra, e ele zera o backoff e envia.
+ */
+export function ownerOnlineDetector(
+  ownerId: string,
+  network: OnlineDetector = new WebOnlineDetector(),
+): OnlineDetector {
+  const listeners = new Set<() => void>();
+  const isOnline = () => network.isOnline() && canSendAs(ownerId);
+  const notify = () => {
+    for (const listener of listeners) listener();
+  };
+  let wasOnline = isOnline();
+  const stopNetwork = network.subscribe(notify);
+  const stopSession = sessionStore.subscribe(() => {
+    const online = isOnline();
+    if (online && !wasOnline) notify();
+    wasOnline = online;
+  });
+  return {
+    subscribe(callback) {
+      listeners.add(callback);
+      return () => listeners.delete(callback);
+    },
+    notifyOnline: notify,
+    isOnline,
+    dispose() {
+      stopNetwork();
+      stopSession();
+      network.dispose();
+      listeners.clear();
+    },
+  };
+}
+
 export interface OutboxConfig {
+  /** O `user.id` dono da fila: dá nome ao armazenamento e ao lock, e só a sessão dele envia. */
+  ownerId: string;
   collections: Record<string, Collection<any, any, any, any, any>>;
   mutationFns: Record<string, OutboxMutationFn<any>>;
 }
 
-export function startOutbox({ collections, mutationFns }: OutboxConfig): Outbox {
+/** Nome do armazenamento e do lock da outbox de um usuário. */
+export const outboxName = (ownerId: string) => `vistoria-outbox-${ownerId}`;
+
+export function startOutbox({ ownerId, collections, mutationFns }: OutboxConfig): Outbox {
   return startOfflineExecutor({
     collections,
     mutationFns,
     shouldRetry,
+    // Sem IndexedDB ou Web Locks, o executor escolhe sozinho (localStorage, BroadcastChannel).
+    ...(typeof indexedDB !== "undefined" && { storage: new IndexedDBAdapter(outboxName(ownerId)) }),
+    // Lock por dono: ao trocar de usuário, a outbox nova não disputa o lock que a anterior ainda está soltando.
+    ...(WebLocksLeader.isSupported() && {
+      leaderElection: new WebLocksLeader(outboxName(ownerId)),
+    }),
+    onlineDetector: ownerOnlineDetector(ownerId),
     onStorageFailure: (diagnostic) => console.warn("[outbox] sem armazenamento", diagnostic),
   });
 }

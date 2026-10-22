@@ -5,6 +5,7 @@ import { type ReactNode, useState } from "react";
 
 import { useClientsOutbox } from "@/features/clients/hooks/useClientsOutbox";
 import { useSession } from "@/shared/auth/useSession";
+import { useSessionGuard } from "@/shared/auth/useSessionGuard";
 import { BottomNav, Sidebar } from "@/shared/components/nav";
 import { OfflineBanner } from "@/shared/components/offline-banner";
 import { OutboxPanel } from "@/shared/components/outbox-panel";
@@ -15,13 +16,15 @@ import { useSyncStatus } from "@/shared/sync/useSyncStatus";
 import { NAV_ITEMS, navItemFor } from "./nav-items";
 
 // Shell do app (Figma "Shell (#7)", 14:1006): sidebar no desktop, barra inferior no celular, SyncStatus no header
-// e OfflineBanner no topo do conteúdo. O bloqueio da janela offline de 72 h é do M4.
+// e OfflineBanner no topo do conteúdo. Sem sessão vai para /login; com a sessão expirada, fica offline com os dados
+// locais e vai para /login quando a rede volta. O bloqueio da janela offline de 72 h é do M4.
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const session = useSession();
   const sync = useSyncStatus();
   const [panelOpen, setPanelOpen] = useState(false);
+  useSessionGuard(sync.offline);
   useClientsOutbox();
 
   const current = navItemFor(pathname);

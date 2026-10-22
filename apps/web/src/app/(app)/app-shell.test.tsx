@@ -2,23 +2,46 @@ import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { accessToken } from "@/shared/api/client";
+import { resetSession } from "@/shared/auth/session";
 import { resetSyncStatus } from "@/shared/sync/sync-status";
 
 import { AppShell } from "./app-shell";
 
-const navigation = vi.hoisted(() => ({ pathname: "/clients/edit", push: vi.fn<(href: string) => void>() }));
+const navigation = vi.hoisted(() => ({
+  pathname: "/clients/edit",
+  push: vi.fn<(href: string) => void>(),
+  replace: vi.fn<(href: string) => void>(),
+}));
 
 vi.mock("next/navigation", () => ({
   usePathname: () => navigation.pathname,
-  useRouter: () => ({ push: navigation.push, replace: vi.fn<() => void>() }),
+  useRouter: () => ({ push: navigation.push, replace: navigation.replace }),
 }));
 
 // A outbox real precisa do IndexedDB; aqui o shell só a abre.
 vi.mock("@/features/clients/hooks/useClientsOutbox", () => ({ useClientsOutbox: () => {} }));
 
+const owner = { id: "0199a0b2-7c1e-7f3a-9b2d-1c2d3e4f5a6b", name: "Ana Souza" };
+
+/** Como depois de um reload: o dono no localStorage e, se `token`, uma sessão ativa. */
+function seedSession({ token }: { token: boolean }) {
+  localStorage.setItem("vistoria.owner", JSON.stringify(owner));
+  resetSession();
+  if (token) accessToken.set("token");
+}
+
+function setNetwork(online: boolean) {
+  vi.spyOn(navigator, "onLine", "get").mockReturnValue(online);
+}
+
 afterEach(() => {
   resetSyncStatus();
+  resetSession();
+  localStorage.clear();
+  vi.restoreAllMocks();
   navigation.push.mockReset();
+  navigation.replace.mockReset();
 });
 
 describe("AppShell", () => {
@@ -71,5 +94,47 @@ describe("AppShell", () => {
     await user.click(screen.getByRole("menuitem", { name: "Entrar" }));
 
     expect(navigation.push).toHaveBeenCalledWith("/login");
+  });
+
+  describe("guarda da sessão", () => {
+    it("sem ninguém no aparelho, vai para /login, com a volta para a tela atual", () => {
+      window.history.pushState(null, "", "/clients/edit?id=c1");
+      render(<AppShell>conteúdo</AppShell>);
+
+      expect(navigation.replace).toHaveBeenCalledWith(
+        `/login?next=${encodeURIComponent("/clients/edit?id=c1")}`,
+      );
+    });
+
+    it("sessão ativa fica, com o nome do dono no menu", () => {
+      seedSession({ token: true });
+      render(<AppShell>conteúdo</AppShell>);
+
+      expect(navigation.replace).not.toHaveBeenCalled();
+      expect(screen.getByText("Ana Souza")).toBeDefined();
+    });
+
+    it("recarregou offline com a sessão expirada: fica, com o OfflineBanner", () => {
+      seedSession({ token: false });
+      setNetwork(false);
+      render(<AppShell>dados locais</AppShell>);
+
+      expect(navigation.replace).not.toHaveBeenCalled();
+      expect(screen.getByText("Você está offline")).toBeDefined();
+      expect(screen.getByRole("main").textContent).toContain("dados locais");
+    });
+
+    it("a rede volta com a sessão expirada: vai para /login", () => {
+      seedSession({ token: false });
+      setNetwork(false);
+      render(<AppShell>dados locais</AppShell>);
+
+      setNetwork(true);
+      act(() => {
+        window.dispatchEvent(new Event("online"));
+      });
+
+      expect(navigation.replace).toHaveBeenCalledWith(expect.stringMatching(/^\/login\?next=/));
+    });
   });
 });
