@@ -4,6 +4,8 @@ import type { ReactNode } from "react";
 
 import { APP_TITLE } from "@/shared/app";
 
+import { ServiceWorkerRegistration } from "./service-worker-registration";
+
 import "./globals.css";
 
 // Baixadas no build e servidas junto com o export: nada de fonte vem da rede em runtime.
@@ -18,7 +20,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <html lang="pt-BR" className={`${geistSans.variable} ${geistMono.variable}`}>
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        {children}
+        <ServiceWorkerRegistration />
+      </body>
     </html>
   );
 }
