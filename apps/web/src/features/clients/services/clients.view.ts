@@ -1,3 +1,4 @@
+import { fold } from "@/shared/search";
 import type { DraftRecord } from "@/shared/sync/drafts";
 import type { RecordSyncState } from "@/shared/sync/sync-view";
 
@@ -44,10 +45,6 @@ export function clientRowOf(
   if (!client) return undefined;
   return { ...fieldsOf(client, client.id), sync: syncState ?? "sincronizado" };
 }
-
-/** Sem acento e sem caixa, para a busca e a ordem. */
-const fold = (value: string) =>
-  value.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLocaleLowerCase("pt-BR");
 
 /** Busca local por nome, documento (com ou sem máscara) e e-mail. */
 export function matchesSearch(row: ClientRow, search: string): boolean {

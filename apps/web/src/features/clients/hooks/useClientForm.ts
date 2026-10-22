@@ -2,6 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { type FieldErrors, useForm, useFormState } from "react-hook-form";
 
+import { useLocalStore } from "@/features/local-store/hooks/useLocalStore";
 import type { DraftRecord } from "@/shared/sync/drafts";
 
 import {
@@ -14,7 +15,6 @@ import {
 } from "../schemas/client.schemas";
 import { saveClient } from "../services/clients.sync";
 import { type ClientRow, clientRowOf } from "../services/clients.view";
-import { useClientsStore } from "./useClientsStore";
 
 /** Para onde o formulário volta: a lista. */
 export const CLIENTS_HREF = "/clients";
@@ -57,7 +57,7 @@ function fieldErrorsOf(draft: DraftRecord): FieldErrors<ClientFormValues> {
  */
 export function useClientForm(id: string | null) {
   const router = useRouter();
-  const { store, ready, clients, drafts, states } = useClientsStore();
+  const { store, ready, clients, drafts, states } = useLocalStore();
 
   const draft = id ? drafts.find((candidate) => candidate.id === id) : undefined;
   const client = id ? clients.find((candidate) => candidate.id === id) : undefined;

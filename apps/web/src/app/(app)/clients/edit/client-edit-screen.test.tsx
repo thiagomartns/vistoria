@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ClientRecord } from "@/features/clients/models/client";
+import type { PropertyRecord } from "@/features/properties/models/property";
 import { saveClient } from "@/features/clients/services/clients.sync";
 import { resetSession } from "@/shared/auth/session";
 import type { DraftRecord } from "@/shared/sync/drafts";
@@ -25,20 +26,21 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(navigation.search),
 }));
 
-vi.mock("@/features/clients/hooks/useClientsOutbox", () => ({ useClientsOutbox: () => {} }));
+vi.mock("@/features/local-store/hooks/useLocalOutbox", () => ({ useLocalOutbox: () => {} }));
 
 const local = vi.hoisted(() => ({
   value: {
     store: {},
     ready: true,
     clients: [] as ClientRecord[],
+    properties: [] as PropertyRecord[],
     drafts: [] as DraftRecord[],
     states: new Map<string, RecordSyncState>(),
   },
 }));
 
-vi.mock("@/features/clients/hooks/useClientsStore", () => ({
-  useClientsStore: () => local.value,
+vi.mock("@/features/local-store/hooks/useLocalStore", () => ({
+  useLocalStore: () => local.value,
 }));
 
 vi.mock("@/features/clients/services/clients.sync", () => ({
@@ -69,7 +71,14 @@ const header = () => heading().closest("header")!;
 const field = (label: string) => screen.getByLabelText(label) as HTMLInputElement;
 
 afterEach(() => {
-  local.value = { store: {}, ready: true, clients: [], drafts: [], states: new Map() };
+  local.value = {
+    store: {},
+    ready: true,
+    clients: [],
+    properties: [],
+    drafts: [],
+    states: new Map(),
+  };
   navigation.push.mockReset();
   vi.mocked(saveClient).mockClear();
   resetSyncStatus();

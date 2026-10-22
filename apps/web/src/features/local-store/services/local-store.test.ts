@@ -3,17 +3,22 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { closeLocalDb, openLocalDb } from "@/shared/db/local-db";
 import { startOutbox } from "@/shared/sync/outbox";
 
-import { closeClientsStore, openClientsStore } from "./clients.sync";
+import { closeLocalStore, openLocalStore } from "./local-store";
 
-// Um banco e uma outbox por usuário: trocar de dono fecha os do anterior, e a fila dele não sai com o outro.
+// Um banco e uma outbox por usuário, a mesma para clients e properties: trocar de dono fecha os do anterior, e a
+// fila dele não sai com o outro.
 
 vi.mock("@/shared/db/local-db", () => ({
   openLocalDb: vi.fn<(ownerId: string) => Promise<object>>(async (ownerId) => ({ name: ownerId })),
   closeLocalDb: vi.fn<(ownerId: string) => Promise<void>>(async () => {}),
 }));
 
-vi.mock("./clients.collection", () => ({
+vi.mock("@/features/clients/services/clients.collection", () => ({
   createClientsCollection: () => ({ cleanup: vi.fn<() => Promise<void>>(async () => {}) }),
+}));
+
+vi.mock("@/features/properties/services/properties.collection", () => ({
+  createPropertiesCollection: () => ({ cleanup: vi.fn<() => Promise<void>>(async () => {}) }),
 }));
 
 vi.mock("@/shared/sync/drafts", () => ({
@@ -31,27 +36,37 @@ vi.mock("@/shared/sync/outbox", async (original) => ({
 }));
 
 afterEach(async () => {
-  await closeClientsStore();
+  await closeLocalStore();
   vi.clearAllMocks();
 });
 
-describe("openClientsStore", () => {
+describe("openLocalStore", () => {
   it("abre o banco e a outbox do dono, uma vez só", async () => {
-    const first = openClientsStore("ana");
+    const first = openLocalStore("ana");
 
-    expect(openClientsStore("ana")).toBe(first);
+    expect(openLocalStore("ana")).toBe(first);
     await first;
     expect(openLocalDb).toHaveBeenCalledExactlyOnceWith("ana");
     expect(vi.mocked(startOutbox).mock.calls[0]?.[0]).toMatchObject({ ownerId: "ana" });
   });
 
-  it("trocar de dono fecha a outbox, as collections e o banco do anterior antes de abrir os do novo", async () => {
-    const ana = await openClientsStore("ana");
+  it("uma outbox só, com as collections e as mutationFns de clients e properties", async () => {
+    await openLocalStore("ana");
 
-    const bia = await openClientsStore("bia");
+    expect(startOutbox).toHaveBeenCalledOnce();
+    const [config] = vi.mocked(startOutbox).mock.calls[0]!;
+    expect(Object.keys(config.collections).toSorted()).toEqual(["clients", "properties"]);
+    expect(Object.keys(config.mutationFns).toSorted()).toEqual(["upsertClient", "upsertProperty"]);
+  });
+
+  it("trocar de dono fecha a outbox, as collections e o banco do anterior antes de abrir os do novo", async () => {
+    const ana = await openLocalStore("ana");
+
+    const bia = await openLocalStore("bia");
 
     expect(ana.outbox.dispose).toHaveBeenCalledOnce();
     expect(ana.clients.cleanup).toHaveBeenCalledOnce();
+    expect(ana.properties.cleanup).toHaveBeenCalledOnce();
     expect(ana.drafts.cleanup).toHaveBeenCalledOnce();
     expect(closeLocalDb).toHaveBeenCalledExactlyOnceWith("ana");
     expect(bia).not.toBe(ana);

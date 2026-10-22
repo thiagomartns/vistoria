@@ -5,6 +5,8 @@
 // Desde o #72 entra pelo /login: recarregar perde o token, a fila espera, e só o login do mesmo usuário a envia.
 // Desde o #73 usa as telas de clientes (/clients e /clients/edit) no desktop, e a outbox envia If-Match na edição.
 // A navegação entre as telas é pelo app (links), nunca por page.goto: recarregar perderia o token.
+// Desde o #74 cria também um imóvel offline com um cliente ainda pendente: a fila é serial (ADR 0034), e o imóvel sai
+// depois do cliente.
 
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
@@ -89,13 +91,19 @@ async function serverClient(user, id) {
   return callApi(`/api/v1/clients/${id}`, { headers: { authorization: `Bearer ${user.token}` } });
 }
 
-/** Todo PUT de client que a página dispara, com o que interessa ao roteiro. */
+async function serverProperty(user, id) {
+  return callApi(`/api/v1/properties/${id}`, { headers: { authorization: `Bearer ${user.token}` } });
+}
+
+/** Todo PUT de client e de imóvel que a página dispara, com o que interessa ao roteiro. */
 function watchPuts(page) {
   const puts = [];
   page.on("request", (req) => {
-    if (req.method() !== "PUT" || !req.url().includes("/api/v1/clients/")) return;
+    const entity = req.url().match(/\/api\/v1\/(clients|properties)\//)?.[1];
+    if (req.method() !== "PUT" || !entity) return;
     const entry = {
       at: Date.now(),
+      entity,
       id: req.url().split("/").pop(),
       key: req.headers()["idempotency-key"],
       ifMatch: req.headers()["if-match"],
@@ -141,6 +149,33 @@ async function create(page, name) {
   const link = page.getByRole("table").getByRole("link", { name, exact: true });
   await link.waitFor({ timeout: 2000 });
   return new URL(await link.getAttribute("href"), base).searchParams.get("id");
+}
+
+/** Vai de /clients a /properties e cria um imóvel do cliente `clientName` por /properties/edit; volta para /clients. */
+async function createProperty(page, clientName, street) {
+  await page.getByRole("navigation").getByRole("link", { name: "Imóveis" }).click();
+  await page.getByRole("heading", { level: 1, name: "Imóveis" }).waitFor();
+  await page.getByRole("link", { name: "Novo imóvel" }).first().click();
+  await page.getByRole("heading", { level: 1, name: "Novo imóvel" }).waitFor();
+  await page.getByLabel("Cliente").click();
+  await page.getByRole("option", { name: clientName }).click();
+  await page.getByLabel("Tipo").click();
+  await page.getByRole("option", { name: "Apartamento" }).click();
+  await page.getByLabel("CEP").fill("40010-000");
+  await page.getByLabel("Rua").fill(street);
+  await page.getByLabel("Número").fill("10");
+  await page.getByLabel("Bairro").fill("Comércio");
+  await page.getByLabel("Cidade").fill("Salvador");
+  await page.getByLabel("UF").fill("ba");
+  await page.getByRole("button", { name: "Salvar" }).click();
+  const address = `${street}, 10`;
+  const link = page.getByRole("table").getByRole("link", { name: address, exact: true });
+  await link.waitFor({ timeout: 2000 });
+  await rowOf(page, address).getByText("Salvo no aparelho").waitFor();
+  const id = new URL(await link.getAttribute("href"), base).searchParams.get("id");
+  await page.getByRole("navigation").getByRole("link", { name: "Clientes" }).click();
+  await page.getByRole("heading", { level: 1, name: "Clientes" }).waitFor();
+  return id;
 }
 
 /** As chaves das transações na outbox do usuário, da mais antiga para a mais nova, lidas do IndexedDB dela. */
@@ -214,7 +249,7 @@ try {
   await page.evaluate(() => navigator.serviceWorker.ready);
   ok("service worker ativo");
 
-  step(2, "Offline: criar dois clients por /clients/edit");
+  step(2, "Offline: criar dois clients por /clients/edit e um imóvel do segundo por /properties/edit");
   await context.setOffline(true);
   const alfa = await create(page, "Imobiliária Alfa");
   const beta = await create(page, "Imobiliária Beta");
@@ -222,19 +257,22 @@ try {
     await rowOf(page, name).getByText("Salvo no aparelho").waitFor();
   }
   ok("criados: as linhas aparecem na hora, com o SyncBadge \"Salvo no aparelho\"");
-  await until(async () => (await outboxCount(page, user)) === 2, "duas transações na outbox");
+  const casa = await createProperty(page, "Imobiliária Beta", "Rua do Roteiro");
+  ok("imóvel criado com a Imobiliária Beta, ainda pendente, com \"Salvo no aparelho\" em /properties");
+  await until(async () => (await outboxCount(page, user)) === 3, "três transações na outbox");
   const keys = await outboxKeys(page, user);
-  assert.equal(new Set(keys).size, 2);
-  ok(`2 transações pendentes, chaves ${keys.join(", ")}`);
+  assert.equal(new Set(keys).size, 3);
+  ok(`3 transações pendentes, chaves ${keys.join(", ")}`);
   assert.equal((await serverClient(user, alfa)).status, 404, "o client não pode estar no servidor ainda");
-  ok("o servidor ainda não conhece os clients");
+  assert.equal((await serverProperty(user, casa)).status, 404, "o imóvel não pode estar no servidor ainda");
+  ok("o servidor ainda não conhece os clients nem o imóvel");
 
   step(3, "Modo avião: recarregar");
   await page.reload();
   await rowOf(page, "Imobiliária Beta").getByText("Salvo no aparelho").waitFor();
-  await until(async () => (await outboxCount(page, user)) === 2, "outbox restaurada");
+  await until(async () => (await outboxCount(page, user)) === 3, "outbox restaurada");
   assert.deepEqual(await outboxKeys(page, user), keys);
-  ok("os registros e as 2 transações continuam, com as mesmas chaves; a sessão expirou");
+  ok("os registros e as 3 transações continuam, com as mesmas chaves; a sessão expirou");
 
   step(4, "Voltar a rede: a fila espera o login; SessionExpired; entrar envia");
   const before = puts.length;
@@ -244,7 +282,7 @@ try {
   assert.equal(puts.length, before, "sem token, a fila não pode sair");
   ok("com rede e sem token: o shell manda para o /login e nenhum PUT sai");
   const notice = await signIn(page, user, { expired: true });
-  assert.match(notice ?? "", /enviar as 2 alterações salvas neste aparelho/);
+  assert.match(notice ?? "", /enviar as 3 alterações salvas neste aparelho/);
   ok(`/login mostrou: "${notice}"`);
   await until(async () => (await outboxCount(page, user)) === 0, "outbox vazia", 90_000);
   const sent = puts.slice(before).filter((put) => put.status === 201);
@@ -253,12 +291,17 @@ try {
     keys,
     "cada transação sai uma vez com sucesso, na ordem, com a sua chave",
   );
-  assert.deepEqual(sent.map((put) => put.id), [alfa, beta]);
+  assert.deepEqual(sent.map((put) => put.id), [alfa, beta, casa]);
+  assert.deepEqual(sent.map((put) => put.entity), ["clients", "clients", "properties"]);
+  assert.ok(
+    puts.slice(before).every((put) => put.entity === "clients" || put.at > sent[1].at),
+    "o imóvel não sai antes do cliente",
+  );
   for (const put of sent) {
     assert.match(put.auth ?? "", /^Bearer .+/);
     assert.equal(put.ifMatch, undefined, "criação sem If-Match");
   }
-  ok(`2 PUT /api/v1/clients/{id} com Authorization e Idempotency-Key, sem If-Match (${sent.map((p) => p.status).join(", ")})`);
+  ok(`2 PUT de clients e depois 1 PUT de properties, com Authorization e Idempotency-Key, sem If-Match (${sent.map((p) => p.status).join(", ")})`);
   for (const name of ["Imobiliária Alfa", "Imobiliária Beta"]) {
     await until(async () => (await rowOf(page, name).getByText("Salvo no aparelho").count()) === 0, `badge de ${name} some`);
   }
@@ -268,7 +311,14 @@ try {
     assert.equal(saved.status, 200);
     assert.equal(saved.body.name, name);
   }
-  ok("getClient confirma os dois no SQL Server");
+  const property = await serverProperty(user, casa);
+  assert.equal(property.status, 200);
+  assert.equal(property.body.clientId, beta);
+  assert.equal(property.body.zipCode, "40010000");
+  assert.equal(property.body.state, "BA");
+  const client = await serverClient(user, beta);
+  assert.ok(client.body.createdAt <= property.body.createdAt, "o cliente chega antes do imóvel");
+  ok("getClient e getProperty confirmam os três no SQL Server, o imóvel da Beta depois dela (CEP sem hífen, UF BA)");
 
   step(5, "Editar um client sincronizado: If-Match com a version do servidor");
   const created = await serverClient(user, alfa);

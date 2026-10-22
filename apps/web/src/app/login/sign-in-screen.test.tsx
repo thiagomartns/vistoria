@@ -22,7 +22,7 @@ vi.mock("@/shared/api/generated", async (original) => ({
 }));
 
 // A outbox real precisa do IndexedDB; aqui a tela só a abre.
-vi.mock("@/features/clients/hooks/useClientsOutbox", () => ({ useClientsOutbox: () => {} }));
+vi.mock("@/features/local-store/hooks/useLocalOutbox", () => ({ useLocalOutbox: () => {} }));
 
 const owner = { id: "0199a0b2-7c1e-7f3a-9b2d-1c2d3e4f5a6b", name: "Ana Souza" };
 

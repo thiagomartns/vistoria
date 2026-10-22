@@ -5,7 +5,7 @@ a rede é detalhe da camada de sync. Arquitetura completa em [frontend.md](../..
 o contrato (status, cabeçalhos, `type` de erro, prazos) vem só de [backend.md](../../docs/architecture/backend.md).
 
 Hoje existem `src/app/` (o shell no grupo `(app)`; `/login` e `/signup` fora dele), `src/shared/` (`api/`, `auth/`, `db/`, `sync/`, `components/`),
-`src/sw.ts` (service worker, [ADR 0032](../../docs/decisions/0032-serwist-pelo-cli-sobre-o-static-export-build-com-turbopack.md)) e `src/features/clients/` (telas de clientes sobre a outbox vinda do spike 1a, [ADR 0030](../../docs/decisions/0030-tanstack-db-mantido-apos-o-spike-1a-outbox-persistida-contra-o-upsertclient.md), com `If-Match` e a recusa `validation` guardada em `drafts`);
+`src/sw.ts` (service worker, [ADR 0032](../../docs/decisions/0032-serwist-pelo-cli-sobre-o-static-export-build-com-turbopack.md)), `src/features/clients/` e `src/features/properties/` (telas de clientes e imóveis sobre a outbox vinda do spike 1a, [ADR 0030](../../docs/decisions/0030-tanstack-db-mantido-apos-o-spike-1a-outbox-persistida-contra-o-upsertclient.md), com `If-Match` e a recusa `validation` guardada em `drafts`) e `src/features/local-store/` (o banco local do usuário e a outbox única, serial, [ADR 0034](../../docs/decisions/0034-outbox-serial-uma-transacao-por-vez-na-ordem-de-criacao.md));
 a árvore descrita em [Estrutura de pastas](../../docs/architecture/frontend.md#estrutura-de-pastas) é o alvo.
 TanStack DB e `@tanstack/offline-transactions` têm versão exata: antes de mudar, ler a documentação da versão
 instalada (`node_modules/@tanstack/*/skills/`), não a memória.

@@ -242,7 +242,7 @@ Todo prazo e limite do sistema está aqui, e só aqui. O front lê esta tabela; 
 | Pull periódico | A cada 60 s com o app visível | Front |
 | Backoff de retry | 1 s, dobrando até 5 min, com jitter | Front |
 | Pendência "travada" | 24 h falhando sem sucesso | Front |
-| Envio em paralelo | Até 4 registros; em ordem dentro do mesmo registro | Front |
+| Envio pela outbox | Um por vez, na ordem de criação ([ADR 0034](../decisions/0034-outbox-serial-uma-transacao-por-vez-na-ordem-de-criacao.md)) | Front |
 | Rate limit de `signup` e `signin` | 5 por minuto por IP, cada | .NET |
 | Rate limit de `refresh` | 30 por minuto por IP | .NET |
 

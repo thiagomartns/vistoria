@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ClientRecord } from "@/features/clients/models/client";
+import type { PropertyRecord } from "@/features/properties/models/property";
 import type { DraftRecord } from "@/shared/sync/drafts";
 import type { RecordSyncState } from "@/shared/sync/sync-view";
 
@@ -14,13 +15,14 @@ const local = vi.hoisted(() => ({
     store: {},
     ready: true,
     clients: [] as ClientRecord[],
+    properties: [] as PropertyRecord[],
     drafts: [] as DraftRecord[],
     states: new Map<string, RecordSyncState>(),
   },
 }));
 
-vi.mock("@/features/clients/hooks/useClientsStore", () => ({
-  useClientsStore: () => local.value,
+vi.mock("@/features/local-store/hooks/useLocalStore", () => ({
+  useLocalStore: () => local.value,
 }));
 
 const client = (id: string, name: string, over: Partial<ClientRecord> = {}): ClientRecord => ({
@@ -52,7 +54,14 @@ const table = () => screen.getByRole("table");
 const mobileList = () => screen.getByRole("list");
 
 afterEach(() => {
-  local.value = { store: {}, ready: true, clients: [], drafts: [], states: new Map() };
+  local.value = {
+    store: {},
+    ready: true,
+    clients: [],
+    properties: [],
+    drafts: [],
+    states: new Map(),
+  };
 });
 
 describe("ClientsScreen", () => {
@@ -91,6 +100,34 @@ describe("ClientsScreen", () => {
     expect(within(mobileList()).getByRole("link", { name: /Maria Souza/ }).textContent).toContain(
       "529.982.247-25 · (11) 98765-4321",
     );
+  });
+
+  it("Imóveis: quantos imóveis do cliente estão no aparelho, na coluna e na meta do celular", () => {
+    const property = (id: string, clientId: string) => ({ id, clientId }) as PropertyRecord;
+    seed({
+      clients: [maria, horizonte],
+      properties: [property("p1", "c1"), property("p2", "c1"), property("p3", "c2")],
+    });
+
+    render(<ClientsScreen />);
+
+    const header = within(table()).getAllByRole("columnheader").map((cell) => cell.textContent);
+    expect(header).toEqual(["Nome", "CPF ou CNPJ", "E-mail", "Telefone", "Imóveis", "Sincronização"]);
+    const rows = within(table()).getAllByRole("row").slice(1) as HTMLTableRowElement[];
+    expect(rows.map((row) => row.cells[4]?.textContent)).toEqual(["2", "1"]);
+    const links = within(mobileList()).getAllByRole("link");
+    expect(links[0]?.textContent).toContain("2 imóveis");
+    expect(links[1]?.textContent).toContain("1 imóvel");
+  });
+
+  it("sem imóvel, a meta do celular fica vazia e a coluna mostra 0", () => {
+    seed({ clients: [maria] });
+
+    render(<ClientsScreen />);
+
+    const [row] = within(table()).getAllByRole("row").slice(1) as HTMLTableRowElement[];
+    expect(row?.cells[4]?.textContent).toBe("0");
+    expect(within(mobileList()).getByRole("link").textContent).not.toContain("imóve");
   });
 
   it("criado offline: 'Salvo no aparelho' na linha; enviado, o badge some (silêncio no caminho feliz)", () => {
