@@ -90,7 +90,7 @@ O caminho feliz é invisível para o usuário. A tabela de reações abaixo cobr
 - Cada mudança vira uma transação na outbox: o agregado completo (vistoria com todos os ambientes e itens), a `baseVersion` e uma `Idempotency-Key` (UUID v7) gerada ao enfileirar.
 - `baseVersion` nula (registro criado offline) → `PUT` sem `If-Match`. Caso contrário, `If-Match: "<baseVersion>"`.
 - Transações do mesmo registro que **nunca foram enviadas** são compactadas na mais recente. Uma transação que já teve uma tentativa nunca é compactada, porque pode ter sido aplicada.
-- Ordem estrita dentro do mesmo registro; registros diferentes em paralelo, até o limite dos Parâmetros.
+- Uma transação por vez, na ordem de criação, numa fila só para todas as entidades: a dependência entre registros (cliente antes do imóvel, roteiro antes da vistoria) vem da ordem. Recusado o registro pai, o filho volta com erro no campo e vira rascunho ([ADR 0034](../decisions/0034-outbox-serial-uma-transacao-por-vez-na-ordem-de-criacao.md)).
 - Sucesso: a `version` da resposta vira a `serverShadow` e a `baseVersion` da próxima transação daquele registro.
 - Exclusão (só de vistoria em andamento): `deleteInspection` com `If-Match`; 204 é sucesso mesmo se ela já tinha sumido.
 - Concluir é um `PUT` com `status: completed`. Na UI, a vistoria fica só leitura assim que o usuário conclui, antes mesmo da confirmação do servidor.
@@ -187,6 +187,7 @@ src/
         useInspectionDraft.ts        # ciclo de vida do rascunho
       components/                    # compõem Sanjou UI, sem acesso a dados
     clients/  properties/  templates/  # mesma estrutura, mais simples
+    local-store/                     # banco local do usuário: as collections e a outbox única (ADR 0034)
   shared/
     api/generated/                   # saída do gerador OpenAPI (não editar)
     api/client.ts                    # fetch com token e credentials
