@@ -65,6 +65,30 @@ export const zProblemDetails = z.object({
     missingHeader: z.string().optional()
 });
 
+export const zPropertyType = z.enum([
+    'apartment',
+    'house',
+    'commercial',
+    'other'
+]);
+
+export const zPropertyDto = z.object({
+    id: z.uuid(),
+    clientId: z.uuid(),
+    street: z.string(),
+    number: z.string(),
+    complement: z.string().nullable(),
+    district: z.string(),
+    city: z.string(),
+    state: z.string(),
+    zipCode: z.string(),
+    type: zPropertyType,
+    notes: z.string().nullable(),
+    version: z.string(),
+    createdAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime()
+});
+
 export const zSignInDto = z.object({
     email: z.string().max(254),
     password: z.string().max(128)
@@ -81,6 +105,19 @@ export const zUpsertClientDto = z.object({
     document: z.string().nullish(),
     email: z.string().max(254).nullish(),
     phone: z.string().max(20).nullish()
+});
+
+export const zUpsertPropertyDto = z.object({
+    clientId: z.uuid().nullable(),
+    street: z.string().max(120),
+    number: z.string().max(10),
+    complement: z.string().max(60).nullish(),
+    district: z.string().max(60),
+    city: z.string().max(60),
+    state: z.string(),
+    zipCode: z.string().regex(/^[0-9]{8}$/),
+    type: zPropertyType.nullable(),
+    notes: z.string().max(1000).nullish()
 });
 
 export const zSignUpBody = zSignUpDto;
@@ -126,3 +163,28 @@ export const zUpsertClientResponse = zClientDto;
  * OK
  */
 export const zGetHealthResponse = zHealthDto;
+
+export const zGetPropertyPath = z.object({
+    id: z.uuid()
+});
+
+/**
+ * OK
+ */
+export const zGetPropertyResponse = zPropertyDto;
+
+export const zUpsertPropertyBody = zUpsertPropertyDto;
+
+export const zUpsertPropertyHeaders = z.object({
+    'If-Match': z.string().optional(),
+    'Idempotency-Key': z.uuid()
+});
+
+export const zUpsertPropertyPath = z.object({
+    id: z.uuid()
+});
+
+/**
+ * OK
+ */
+export const zUpsertPropertyResponse = zPropertyDto;
