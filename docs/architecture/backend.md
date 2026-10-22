@@ -176,7 +176,7 @@ Rotas no plural com a versão no prefixo (`/api/v1/...`). `operationId` explíci
 | Cabeçalho | Onde | Regra |
 | --- | --- | --- |
 | `If-Match` | `PUT` e `DELETE` de registro que existe | ETag da versão-base. Ausente quando o registro existe → 428. Na criação (id inexistente) é omitido e ignorado. ETag fraco, `*`, lista de ETags ou valor ilegível não provam versão nenhuma e contam como diferentes (412). |
-| `Idempotency-Key` | Todo `PUT` e `DELETE` | UUID v7. Uma chave por corpo: o mesmo corpo reenviado usa a mesma chave; um corpo novo (por exemplo, depois de um merge) usa chave nova. Ausente → 428. |
+| `Idempotency-Key` | Todo `PUT` e `DELETE` | UUID v7. Uma chave por corpo: o mesmo corpo reenviado usa a mesma chave; um corpo novo (por exemplo, depois de um merge) usa chave nova. Ausente → 428; valor que não é UUID v7, ou mais de um valor, não identifica o pedido e conta como ausente. |
 | `ETag` | Respostas 200/201 de `GET` e `PUT` | `"<version em base64>"`, forte. O DTO repete o valor sem aspas em `version`. |
 | `Retry-After` | 429 e 409 `idempotency-in-progress` | Segundos |
 | `Authorization` | Todas as rotas, exceto `/auth/*` | `Bearer <accessToken>` |
@@ -235,6 +235,8 @@ Todo prazo e limite do sistema está aqui, e só aqui. O front lê esta tabela; 
 | Tolerância de rotação do refresh | 30 s | .NET |
 | Janela de uso offline | 72 h desde o último refresh bem-sucedido | Front |
 | Validade da `Idempotency-Key` | 7 dias | .NET |
+| `Retry-After` de `idempotency-in-progress` | 1 s | .NET |
+| Ciclo do `CleanupService` | 1 h, o primeiro uma hora depois do startup | .NET |
 | Retenção de tombstones | 90 dias | .NET |
 | Página do delta | 500 por padrão, 1000 no máximo | .NET |
 | Pull periódico | A cada 60 s com o app visível | Front |
@@ -258,10 +260,11 @@ A ordem importa: idempotência primeiro (um retry nunca reexecuta nada), depois 
 
 **Idempotência**
 
-- Tabela `idempotency_keys`: `Key`, `UserId`, `RequestHash` (SHA-256 de método + rota + corpo), `State` (`processing` ou `done`), `StatusCode`, `ResponseBody`, `CreatedAt`. Índice único em (`UserId`, `Key`).
-- O filtro insere a chave como `processing` antes da action. Chave `done` com o mesmo hash → devolve a resposta gravada. Chave `processing` → 409 `idempotency-in-progress`. Hash diferente → 422 `idempotency-key-reused`.
-- Respostas finais (2xx e 4xx, exceto 401 e 429) são gravadas. Em 5xx a linha é apagada, para o retry executar de novo.
-- O `CleanupService` roda a cada hora e apaga chaves com mais de 7 dias e tombstones com mais de 90.
+- Tabela `idempotency_keys`: `Key`, `UserId`, `RequestHash` (SHA-256 de método + rota + corpo cru), `State` (`processing` ou `done`), `StatusCode`, `ResponseHeaders` (`Content-Type`, `ETag` e `Location`, em JSON), `ResponseBody`, `CreatedAt`. Chave primária (`UserId`, `Key`): a mesma chave de outro usuário é outro pedido.
+- O filtro (`IdempotencyFilter`, global em `PUT` e `DELETE`) roda depois da autenticação e antes do model binding, e insere a chave como `processing` antes da action. Quem perde o `INSERT` lê a linha: hash diferente → 422 `idempotency-key-reused`; `processing` → 409 `idempotency-in-progress`; `done` → a resposta gravada. O "em processamento" é essa linha, nunca um lock em memória, então vale entre instâncias da API.
+- Chave vencida que o `CleanupService` ainda não apagou conta como inexistente: a linha sai e o pedido executa de novo.
+- Respostas finais (2xx e 4xx, exceto 401 e 429) são gravadas, inclusive o `ProblemDetails` de um erro, com o mesmo `traceId`. Em 5xx a linha é apagada, para o retry executar de novo.
+- O `CleanupService` roda a cada hora e apaga chaves com mais de 7 dias e tombstones com mais de 90 (estes quando houver `DELETE`). É um `DELETE` só por ciclo, sem trava: em duas instâncias, a que chega depois não acha mais as linhas.
 
 **Escrita repetida depois que a chave venceu.** O servidor reexecuta e responde 412, porque a primeira execução já mudou a versão. O `current` devolvido é igual ao corpo enviado. O servidor não tenta detectar isso; o front compara e trata como sucesso.
 
