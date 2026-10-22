@@ -35,6 +35,7 @@ Um app de **vistoria de imóveis para locação** usado por vistoriadores autôn
 | IA para redigir observações | Sem previsão |
 | Equipes, vários vistoriadores, portal da imobiliária | Sem previsão |
 | Envio do laudo por e-mail ou WhatsApp | Sem previsão |
+| Notificação do sistema (push) | Sem previsão ([ADR 0033](decisions/0033-movimento-carregamento-e-avisos-na-ui.md)) |
 | Agenda, cobrança, contestação | Sem previsão |
 | App nativo | Não: o PWA cobre |
 

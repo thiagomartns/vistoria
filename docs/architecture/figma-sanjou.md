@@ -29,11 +29,13 @@ Levantado em 2026-10-19 (issue #13), pelo MCP do Figma, nas páginas Telas, Wire
 | DialogContent, DialogOverlay | `import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@sanjou/ui/dialog"` | O overlay vem dentro do `DialogContent` · `close button` → `showCloseButton` · `footer` → `DialogFooter` |
 | DropdownMenu (o menu do usuário, "usuário (abre DropdownMenu)" no Shell) | `import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuItem } from "@sanjou/ui/dropdown-menu"` | Conteúdo não desenhado: o nome em `DropdownMenuLabel` e "Sair" em `DropdownMenuItem` (nota do frame Shell) |
 | Form item | `import { Form, FormField, FormItem, FormLabel, FormControl, FormDescription, FormMessage } from "@sanjou/ui/form"` | Exige `react-hook-form` ([ADR 0023](../decisions/0023-formularios-com-react-hook-form.md)) · `invalid` vem do erro do campo, não de prop · controle trocado no Figma (Textarea, Select) vai dentro do `FormControl` |
+| Toast (notas dos frames) | `import { Toaster } from "@sanjou/ui/sonner"` | Montado uma vez no shell; o aviso sai com `toast()` do `sonner` ([ADR 0033](../decisions/0033-movimento-carregamento-e-avisos-na-ui.md)). Erro de formulário continua no `Alert` |
+| Skeleton | `import { Skeleton } from "@sanjou/ui/skeleton"` | Enquanto o banco local abre ([ADR 0033](../decisions/0033-movimento-carregamento-e-avisos-na-ui.md)) |
 
 **Auth layout, Auth form / Sign in e Auth form / Create account** são um pattern do registry do Sanjou, sem subpath no pacote. Viram componentes locais, compostos com os componentes acima ([ADR 0019](../decisions/0019-login-da-v1-com-o-pattern-auth-do-sanjou.md), [ADR 0020](../decisions/0020-componentes-que-faltam-no-sanjou-ficam-no-app.md)):
 
 - `AuthLayout` (`@/shared/components/auth-layout`): no lugar do Image placeholder, o painel escuro do ícone do app (fundo `gray-12`, `AvisMark` com arco claro e luz `indigo-11`), porque o guia da marca não usa o índigo como fundo.
-- `SignInForm` e `SignUpForm` (`@/shared/components/sign-in-form`, `@/shared/components/sign-up-form`), sobre a base `AuthForm` (`@/shared/components/auth-form`): lockup, título, aviso opcional (`SessionExpired`), erro do formulário num `Alert` danger, campos com `Form` do Sanjou e o link para a outra tela. O Toast das notas do Figma vira esse `Alert`: o Sonner não está no mapa.
+- `SignInForm` e `SignUpForm` (`@/shared/components/sign-in-form`, `@/shared/components/sign-up-form`), sobre a base `AuthForm` (`@/shared/components/auth-form`): lockup, título, aviso opcional (`SessionExpired`), erro do formulário num `Alert` danger, campos com `Form` do Sanjou e o link para a outra tela. O Toast das notas do Figma vira esse `Alert`, porque ali o aviso é erro do formulário; o toast do shell é o `Toaster` ([ADR 0033](../decisions/0033-movimento-carregamento-e-avisos-na-ui.md)).
 
 ## Ícones
 
