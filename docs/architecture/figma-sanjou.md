@@ -44,7 +44,7 @@ Levantado em 2026-10-19 (issue #13), pelo MCP do Figma, nas páginas Telas, Wire
 
 ## Componentes locais
 
-Ficam todos em `apps/web/src/shared/components/` e são feitos só com primitivos e tokens do Sanjou ([ADR 0020](../decisions/0020-componentes-que-faltam-no-sanjou-ficam-no-app.md)). Cada um nasce com a primeira tela que o usa; hoje existem os da marca (`AvisMark` e `AvisLockup`, #62), os do shell (`Nav`, `Sheet`, `SyncStatus`, `OfflineBanner`, `OutboxPanel`, #71) e os do acesso (`AuthLayout`, `AuthForm`, `SignInForm`, `SignUpForm`, `SessionExpired`, #72). O menu do usuário do shell é `UserMenu` (`@/shared/components/user-menu`), composto com Avatar e DropdownMenu do Sanjou. Os candidatos entram em "Candidatos ao Sanjou" no `apps/web/CLAUDE.md` quando forem criados.
+Ficam todos em `apps/web/src/shared/components/` e são feitos só com primitivos e tokens do Sanjou ([ADR 0020](../decisions/0020-componentes-que-faltam-no-sanjou-ficam-no-app.md)). Cada um nasce com a primeira tela que o usa; hoje existem os da marca (`AvisMark` e `AvisLockup`, #62), os do shell (`Nav`, `Sheet`, `SyncStatus`, `OfflineBanner`, `OutboxPanel`, #71) e os do acesso (`AuthLayout`, `AuthForm`, `SignInForm`, `SignUpForm`, `SessionExpired`, #72) e os das listas (`SyncBadge`, `ListRow`, `EmptyState`, #73). O menu do usuário do shell é `UserMenu` (`@/shared/components/user-menu`), composto com Avatar e DropdownMenu do Sanjou. Os candidatos entram em "Candidatos ao Sanjou" no `apps/web/CLAUDE.md` quando forem criados.
 
 | No Figma (nó) | Import | Variantes | Tipo |
 | --- | --- | --- | --- |

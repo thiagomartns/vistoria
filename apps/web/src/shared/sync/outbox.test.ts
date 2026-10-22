@@ -80,8 +80,16 @@ describe("shouldRetry", () => {
 });
 
 describe("outboxHeaders", () => {
-  it("leva a chave da transação", () => {
+  it("leva a chave da transação e, sem versão-base (criado no aparelho), nenhum If-Match", () => {
     expect(outboxHeaders("k")).toEqual({ "Idempotency-Key": "k" });
+    expect(outboxHeaders("k", null)).toEqual({ "Idempotency-Key": "k" });
+  });
+
+  it("com versão-base, If-Match com o ETag forte (entre aspas)", () => {
+    expect(outboxHeaders("k", "AAAAAAAAB9M=")).toEqual({
+      "Idempotency-Key": "k",
+      "If-Match": '"AAAAAAAAB9M="',
+    });
   });
 });
 

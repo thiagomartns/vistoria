@@ -15,7 +15,8 @@ import { canSendAs, expireSession, sessionStore } from "../auth/session";
 import { newId } from "./ids";
 
 // A outbox do aparelho sobre o @tanstack/offline-transactions (spike 1a, ADR 0030): cada escrita vira uma
-// transação persistida com o registro completo e uma Idempotency-Key v7, enviada quando houver rede.
+// transação persistida com o registro completo e uma Idempotency-Key v7, enviada quando houver rede, com If-Match
+// quando o registro já existe no servidor.
 // If-Match e Idempotency-Key só são escritos aqui (frontend.md, "Escrita (push)").
 
 export type Outbox = OfflineExecutor;
@@ -71,9 +72,18 @@ export function shouldRetry(error: Error): boolean {
   return error instanceof RetryableSyncError;
 }
 
-/** Cabeçalhos do envio de uma transação. O `If-Match` entra aqui no spike 1b. */
-export function outboxHeaders(idempotencyKey: string): { "Idempotency-Key": string } {
-  return { "Idempotency-Key": idempotencyKey };
+/**
+ * Cabeçalhos do envio de uma transação: a chave dela e, quando o registro já existe no servidor, `If-Match` com a
+ * versão-base. Sem versão-base (criado no aparelho), nada de `If-Match`: a API cria e ignora o cabeçalho.
+ */
+export function outboxHeaders(
+  idempotencyKey: string,
+  baseVersion?: string | null,
+): { "Idempotency-Key": string; "If-Match"?: string } {
+  return {
+    "Idempotency-Key": idempotencyKey,
+    ...(baseVersion && { "If-Match": `"${baseVersion}"` }),
+  };
 }
 
 /**

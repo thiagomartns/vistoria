@@ -7,6 +7,7 @@ import {
   STUCK_AFTER_MS,
   calendarTime,
   describeSync,
+  recordSyncStates,
   registerRecordLabel,
   relativeTime,
 } from "./sync-view";
@@ -187,5 +188,37 @@ describe("tempos", () => {
     expect(calendarTime(new Date(2026, 9, 22, 8, 5), now)).toBe("hoje, 08:05");
     expect(calendarTime(new Date(2026, 9, 21, 23, 50), now)).toBe("ontem, 23:50");
     expect(calendarTime(new Date(2026, 9, 2, 10, 0), now)).toBe("02/10, 10:00");
+  });
+});
+
+describe("recordSyncStates: SyncBadge por registro", () => {
+  const of = (id: string, over: Partial<OutboxEntry> = {}) => entry({ record: { id }, ...over });
+
+  it("sem transação, o registro não entra (sincronizado)", () => {
+    expect(recordSyncStates(snapshot()).size).toBe(0);
+  });
+
+  it("transação na fila → local; a mais antiga no ar → enviando", () => {
+    const states = recordSyncStates(
+      snapshot({ entries: [of("a"), of("b"), of("c")], running: 1 }),
+    );
+
+    expect(Object.fromEntries(states)).toEqual({ a: "enviando", b: "local", c: "local" });
+  });
+
+  it("offline nada está no ar: tudo local", () => {
+    const states = recordSyncStates(snapshot({ online: false, entries: [of("a")], running: 1 }));
+
+    expect(states.get("a")).toBe("local");
+  });
+
+  it("duas transações do mesmo registro, a primeira no ar: enviando", () => {
+    const states = recordSyncStates(snapshot({ entries: [of("a"), of("a")], running: 1 }));
+
+    expect(states.get("a")).toBe("enviando");
+  });
+
+  it("registro sem id (transação de outra forma) é ignorado", () => {
+    expect(recordSyncStates(snapshot({ entries: [entry()] })).size).toBe(0);
   });
 });

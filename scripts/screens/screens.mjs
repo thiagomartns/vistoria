@@ -1,6 +1,8 @@
-// `pnpm screens <rota…> [--publish] [--out dir]`
+// `pnpm screens <rota…> [--session] [--publish] [--out dir]`
 // Tira prints do static export (`apps/web/out`) no celular e no desktop, nos tamanhos dos frames do Figma.
-// Com --publish, grava os PNGs na branch órfã `screens` e imprime a tabela para o corpo do PR.
+// Com --session, entra pelo /login (signin respondido aqui, sem API) e tira o print da rota do shell já logado:
+// o banco local do usuário de mentira começa vazio. Com --publish, grava os PNGs na branch órfã `screens` e imprime
+// a tabela para o corpo do PR.
 
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
@@ -59,7 +61,30 @@ async function launch() {
   }
 }
 
-async function capture(routes, dir) {
+// O signin da API, respondido pelo roteiro; o resto de /api/ fica sem resposta (o print não espera o sync).
+const SESSION_USER = { id: "0199a0b2-7c1e-7f3a-9b2d-1c2d3e4f5a6b", name: "Thiago Martins" };
+
+async function signIn(page, base, route) {
+  await page.route("**/api/v1/auth/signin", (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        accessToken: "token-dos-prints",
+        expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+        user: SESSION_USER,
+      }),
+    }),
+  );
+  await page.goto(`${base}/login?next=${encodeURIComponent(route)}`);
+  await page.getByLabel("E-mail").fill("prints@exemplo.com");
+  await page.getByLabel("Senha").fill("senha-dos-prints");
+  await page.getByRole("button", { name: "Entrar" }).click();
+  await page.waitForURL((url) => url.pathname + url.search === route);
+  await page.waitForLoadState("networkidle");
+}
+
+async function capture(routes, dir, { session }) {
   if (!existsSync(join(outDir, "index.html"))) {
     throw new Error("apps/web/out não existe: rode `pnpm --filter web build` antes.");
   }
@@ -72,8 +97,12 @@ async function capture(routes, dir) {
     for (const route of routes) {
       for (const viewport of VIEWPORTS) {
         const page = await browser.newPage({ viewport: { width: viewport.width, height: viewport.height } });
-        const response = await page.goto(base + route, { waitUntil: "networkidle" });
-        if (!response?.ok()) throw new Error(`${route} respondeu ${response?.status()}`);
+        if (session) {
+          await signIn(page, base, route);
+        } else {
+          const response = await page.goto(base + route, { waitUntil: "networkidle" });
+          if (!response?.ok()) throw new Error(`${route} respondeu ${response?.status()}`);
+        }
         await page.evaluate(() => document.fonts.ready);
         const path = join(dir, screenshotName(route, viewport.name));
         await page.screenshot({ path, fullPage: true });
@@ -152,6 +181,6 @@ function publish(files) {
   console.log(`\n${markdownTable([...rows.values()])}`);
 }
 
-const { routes, publish: shouldPublish, out } = parseArgs(process.argv.slice(2));
-const files = await capture(routes, resolve(process.env.INIT_CWD ?? root, out));
+const { routes, publish: shouldPublish, session, out } = parseArgs(process.argv.slice(2));
+const files = await capture(routes, resolve(process.env.INIT_CWD ?? root, out), { session });
 if (shouldPublish) publish(files);

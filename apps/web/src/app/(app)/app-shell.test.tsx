@@ -7,6 +7,7 @@ import { resetSession } from "@/shared/auth/session";
 import { resetSyncStatus } from "@/shared/sync/sync-status";
 
 import { AppShell } from "./app-shell";
+import { PageHeader } from "./shell-header";
 
 const navigation = vi.hoisted(() => ({
   pathname: "/clients/edit",
@@ -55,6 +56,24 @@ describe("AppShell", () => {
       );
     }
     expect(screen.getByRole("main").textContent).toContain("conteúdo da tela");
+  });
+
+  it("uma tela de registro troca o título, ganha Voltar e o SyncBadge; ao sair, o header volta", () => {
+    const { rerender } = render(
+      <AppShell>
+        <PageHeader title="Maria Souza" backHref="/clients" sync="local" />
+      </AppShell>,
+    );
+
+    expect(screen.getByRole("heading", { level: 1, name: "Maria Souza" })).toBeDefined();
+    expect(screen.getByRole("link", { name: "Voltar" }).getAttribute("href")).toBe("/clients");
+    expect(screen.getByText("Salvo no aparelho")).toBeDefined();
+
+    rerender(<AppShell>outra tela</AppShell>);
+
+    expect(screen.getByRole("heading", { level: 1, name: "Clientes" })).toBeDefined();
+    expect(screen.queryByRole("link", { name: "Voltar" })).toBeNull();
+    expect(screen.queryByText("Salvo no aparelho")).toBeNull();
   });
 
   it("reflete a rede: offline mostra o banner e o SyncStatus offline; online, some", () => {

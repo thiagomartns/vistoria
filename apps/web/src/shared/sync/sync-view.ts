@@ -177,3 +177,24 @@ function statusOf({
     compactLabel: "Sincronizado",
   };
 }
+
+/** Estado de sync de um registro com transação na outbox (SyncBadge da linha e do cabeçalho). */
+export type RecordSyncState = "local" | "enviando";
+
+/**
+ * O estado de cada registro que tem transação na outbox, pelo `id` do registro enviado. Sem transação, o registro
+ * está sincronizado (não entra no mapa). Mesma regra do painel: as `running` mais antigas estão no ar, só online.
+ */
+export function recordSyncStates(snapshot: SyncSnapshot): Map<string, RecordSyncState> {
+  const states = new Map<string, RecordSyncState>();
+  let sendingLeft = snapshot.online ? snapshot.running : 0;
+  for (const entry of snapshot.entries) {
+    const sending = sendingLeft > 0;
+    sendingLeft--;
+    const id = entry.record?.id;
+    if (typeof id !== "string") continue;
+    if (sending) states.set(id, "enviando");
+    else if (!states.has(id)) states.set(id, "local");
+  }
+  return states;
+}
