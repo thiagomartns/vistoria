@@ -10,6 +10,7 @@ builder.Services.AddApiControllers();
 builder.Services.AddDatabase(builder.Configuration);
 builder.Services.AddMappings();
 builder.Services.AddDomainServices();
+builder.Services.AddIdempotency();
 builder.Services.AddDevCors(builder.Environment);
 builder.Services.AddRateLimits();
 builder.Services.AddAuth(builder.Configuration);

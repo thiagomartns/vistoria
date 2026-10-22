@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Http.Json;
 using System.Text.Json;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -260,7 +259,7 @@ public class PropertiesTests(ApiFactory factory) : IClassFixture<ApiFactory>
     private static async Task<Guid> CreateClient(HttpClient client)
     {
         var id = Guid.CreateVersion7();
-        var response = await client.PutAsJsonAsync($"/api/v1/clients/{id}", new { name = "Imobiliária" }, Ct);
+        var response = await client.SendAsync(WriteRequests.Put($"/api/v1/clients/{id}", new { name = "Imobiliária" }), Ct);
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         return id;
     }
@@ -270,7 +269,7 @@ public class PropertiesTests(ApiFactory factory) : IClassFixture<ApiFactory>
     // ifMatch é o base64 do ETag (como o ETagOf devolve); vai entre aspas, como ETag forte.
     private static Task<HttpResponseMessage> Put(HttpClient client, Guid id, object body, string? ifMatch = null)
     {
-        var request = new HttpRequestMessage(HttpMethod.Put, PathOf(id)) { Content = JsonContent.Create(body) };
+        var request = WriteRequests.Put(PathOf(id), body);
         if (ifMatch is not null)
         {
             request.Headers.TryAddWithoutValidation("If-Match", $"\"{ifMatch}\"");
