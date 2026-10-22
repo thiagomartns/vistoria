@@ -8,6 +8,7 @@ using Vistoria.Api.Infrastructure.Errors;
 using Vistoria.Api.Model;
 using Vistoria.Api.Repositories;
 using Vistoria.Api.Services.Impl;
+using Vistoria.Api.Sync;
 
 namespace Vistoria.Api.Tests.Unit;
 
@@ -33,7 +34,8 @@ public class ClientServiceTests
         });
         var service = new ClientService(repository, Mapper);
 
-        var act = () => service.UpsertAsync(ownerId, repository.Stored.Id, new UpsertClientDto { Name = "Meu" }, Ct);
+        var act = () => service.UpsertAsync(ownerId, repository.Stored.Id,
+            ETagHelper.ToETag(repository.Stored.Version), new UpsertClientDto { Name = "Meu" }, Ct);
 
         var conflict = (await act.Should().ThrowAsync<VersionConflictException>()).Which;
         conflict.Status.Should().Be(409);

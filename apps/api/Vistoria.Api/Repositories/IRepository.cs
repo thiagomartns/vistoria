@@ -8,7 +8,10 @@ public interface IRepository<T> where T : SyncEntity
 {
     Task<T?> FindByIdAsync(Guid id, CancellationToken cancellationToken);
 
-    /// <summary>Grava o registro novo; volta com <see cref="SyncEntity.Version"/> e as datas do servidor.</summary>
+    /// <summary>
+    /// Grava o registro novo; volta com <see cref="SyncEntity.Version"/> e as datas do servidor. Se outra gravação
+    /// criou o mesmo id antes, lança <see cref="DuplicateIdException"/>.
+    /// </summary>
     Task<T> AddAsync(T entity, CancellationToken cancellationToken);
 
     /// <summary>
@@ -21,3 +24,6 @@ public interface IRepository<T> where T : SyncEntity
     /// <summary>Soft delete (<see cref="SyncEntity.DeletedAt"/>). Devolve <c>false</c> se não existe ou já foi excluído.</summary>
     Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken);
 }
+
+/// <summary>A PK recusou a criação: outra requisição criou o mesmo id entre a leitura e o <c>SaveChanges</c>.</summary>
+public sealed class DuplicateIdException(Exception inner) : Exception("Id já existe.", inner);

@@ -14,7 +14,17 @@ public class GenericRepository<T>(AppDbContext db) : IRepository<T> where T : Sy
     public async Task<T> AddAsync(T entity, CancellationToken cancellationToken)
     {
         Set.Add(entity);
-        await db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException e) when (SqlErrors.IsUniqueViolation(e))
+        {
+            // Outra criação com o mesmo id gravou primeiro; sem o Detach, um próximo SaveChanges tentaria de novo.
+            db.Entry(entity).State = EntityState.Detached;
+            throw new DuplicateIdException(e);
+        }
+
         return entity;
     }
 

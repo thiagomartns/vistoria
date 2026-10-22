@@ -43,7 +43,8 @@ public class ClientsController(IClientService clients) : ControllerBase
     public async Task<ActionResult<ClientDto>> Upsert(
         Guid id, UpsertClientDto body, CancellationToken cancellationToken)
     {
-        var (client, created) = await clients.UpsertAsync(User.GetUserId(), id, body, cancellationToken);
+        var (client, created) = await clients.UpsertAsync(
+            User.GetUserId(), id, Request.Headers.IfMatch.ToString(), body, cancellationToken);
         SetETag(client);
         return created ? CreatedAtAction(nameof(Get), new { id }, client) : Ok(client);
     }

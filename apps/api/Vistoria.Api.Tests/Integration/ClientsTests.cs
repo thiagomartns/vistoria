@@ -35,7 +35,7 @@ public class ClientsTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var firstETag = ETagOf(created);
         Version(await Body(created)).Should().Be(firstETag);
 
-        var updated = await Put(client, id, ValidBody);
+        var updated = await Put(client, id, ValidBody, firstETag);
         updated.StatusCode.Should().Be(HttpStatusCode.OK);
         var secondETag = ETagOf(updated);
         secondETag.Should().NotBe(firstETag);
@@ -168,8 +168,17 @@ public class ClientsTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
     private static string PathOf(Guid id) => $"/api/v1/clients/{id}";
 
-    private static Task<HttpResponseMessage> Put(HttpClient client, Guid id, object body) =>
-        client.PutAsJsonAsync(PathOf(id), body, Ct);
+    // ifMatch é o base64 do ETag (como o ETagOf devolve); vai entre aspas, como ETag forte.
+    private static Task<HttpResponseMessage> Put(HttpClient client, Guid id, object body, string? ifMatch = null)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Put, PathOf(id)) { Content = JsonContent.Create(body) };
+        if (ifMatch is not null)
+        {
+            request.Headers.TryAddWithoutValidation("If-Match", $"\"{ifMatch}\"");
+        }
+
+        return client.SendAsync(request, Ct);
+    }
 
     private static async Task<JsonElement> Body(HttpResponseMessage response) =>
         JsonDocument.Parse(await response.Content.ReadAsStringAsync(Ct)).RootElement;

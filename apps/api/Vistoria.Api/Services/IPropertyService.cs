@@ -8,10 +8,10 @@ public interface IPropertyService
     Task<PropertyDto> GetAsync(Guid ownerId, Guid id, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Cria (<c>Created</c> = <c>true</c>) ou regrava o imóvel. De outro dono → <c>ForbiddenException</c>; cliente
-    /// inexistente ou de outro dono → <c>ValidationException</c> em <c>clientId</c>; corrida com outra gravação →
-    /// <c>VersionConflictException</c> (409) com o registro atual.
+    /// Cria (<c>Created</c> = <c>true</c>) ou regrava o imóvel, com as mesmas regras de dono e de
+    /// <paramref name="ifMatch"/> do <c>IClientService</c>. Cliente inexistente ou de outro dono →
+    /// <c>ValidationException</c> em <c>clientId</c>, conferido depois da versão.
     /// </summary>
     Task<(PropertyDto Property, bool Created)> UpsertAsync(
-        Guid ownerId, Guid id, UpsertPropertyDto request, CancellationToken cancellationToken);
+        Guid ownerId, Guid id, string? ifMatch, UpsertPropertyDto request, CancellationToken cancellationToken);
 }

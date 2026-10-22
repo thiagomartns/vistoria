@@ -175,7 +175,7 @@ Rotas no plural com a versão no prefixo (`/api/v1/...`). `operationId` explíci
 
 | Cabeçalho | Onde | Regra |
 | --- | --- | --- |
-| `If-Match` | `PUT` e `DELETE` de registro que existe | ETag da versão-base. Ausente quando o registro existe → 428. Na criação (id inexistente) é omitido e ignorado. |
+| `If-Match` | `PUT` e `DELETE` de registro que existe | ETag da versão-base. Ausente quando o registro existe → 428. Na criação (id inexistente) é omitido e ignorado. ETag fraco, `*`, lista de ETags ou valor ilegível não provam versão nenhuma e contam como diferentes (412). |
 | `Idempotency-Key` | Todo `PUT` e `DELETE` | UUID v7. Uma chave por corpo: o mesmo corpo reenviado usa a mesma chave; um corpo novo (por exemplo, depois de um merge) usa chave nova. Ausente → 428. |
 | `ETag` | Respostas 200/201 de `GET` e `PUT` | `"<version em base64>"`, forte. O DTO repete o valor sem aspas em `version`. |
 | `Retry-After` | 429 e 409 `idempotency-in-progress` | Segundos |
