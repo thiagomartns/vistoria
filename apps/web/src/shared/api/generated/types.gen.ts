@@ -64,6 +64,25 @@ export type ProblemDetails = {
  */
 export type ProblemType = 'urn:vistoria:problem:validation' | 'urn:vistoria:problem:invalid-cursor' | 'urn:vistoria:problem:unauthorized' | 'urn:vistoria:problem:invalid-credentials' | 'urn:vistoria:problem:forbidden' | 'urn:vistoria:problem:not-found' | 'urn:vistoria:problem:unsupported-request' | 'urn:vistoria:problem:version-conflict' | 'urn:vistoria:problem:idempotency-in-progress' | 'urn:vistoria:problem:locked' | 'urn:vistoria:problem:deleted' | 'urn:vistoria:problem:cursor-expired' | 'urn:vistoria:problem:idempotency-key-reused' | 'urn:vistoria:problem:precondition-required' | 'urn:vistoria:problem:rate-limited' | 'urn:vistoria:problem:internal';
 
+export type PropertyDto = {
+    id: string;
+    clientId: string;
+    street: string;
+    number: string;
+    complement: null | string;
+    district: string;
+    city: string;
+    state: string;
+    zipCode: string;
+    type: PropertyType;
+    notes: null | string;
+    version: string;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type PropertyType = 'apartment' | 'house' | 'commercial' | 'other';
+
 export type SignInDto = {
     email: string;
     password: string;
@@ -80,6 +99,19 @@ export type UpsertClientDto = {
     document?: null | string;
     email?: null | string;
     phone?: null | string;
+};
+
+export type UpsertPropertyDto = {
+    clientId: null | string;
+    street: string;
+    number: string;
+    complement?: null | string;
+    district: string;
+    city: string;
+    state: string;
+    zipCode: string;
+    type: null | PropertyType;
+    notes?: null | string;
 };
 
 export type SignUpData = {
@@ -263,3 +295,107 @@ export type GetHealthResponses = {
 };
 
 export type GetHealthResponse = GetHealthResponses[keyof GetHealthResponses];
+
+export type GetPropertyData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/properties/{id}';
+};
+
+export type GetPropertyErrors = {
+    /**
+     * Unauthorized
+     */
+    401: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+};
+
+export type GetPropertyError = GetPropertyErrors[keyof GetPropertyErrors];
+
+export type GetPropertyResponses = {
+    /**
+     * OK
+     */
+    200: PropertyDto;
+};
+
+export type GetPropertyResponse = GetPropertyResponses[keyof GetPropertyResponses];
+
+export type UpsertPropertyData = {
+    body: UpsertPropertyDto;
+    headers: {
+        /**
+         * ETag da versão-base. Obrigatório quando o registro já existe (ausente → 428 precondition-required); omitido na criação.
+         */
+        'If-Match'?: string;
+        /**
+         * UUID v7, um por corpo: o mesmo corpo reenviado usa a mesma chave.
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/properties/{id}';
+};
+
+export type UpsertPropertyErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Unauthorized
+     */
+    401: ProblemDetails;
+    /**
+     * Forbidden
+     */
+    403: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Gone
+     */
+    410: ProblemDetails;
+    /**
+     * Precondition Failed
+     */
+    412: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Precondition Required
+     */
+    428: ProblemDetails;
+    /**
+     * Too Many Requests
+     */
+    429: ProblemDetails;
+};
+
+export type UpsertPropertyError = UpsertPropertyErrors[keyof UpsertPropertyErrors];
+
+export type UpsertPropertyResponses = {
+    /**
+     * OK
+     */
+    200: PropertyDto;
+    /**
+     * Created
+     */
+    201: PropertyDto;
+};
+
+export type UpsertPropertyResponse = UpsertPropertyResponses[keyof UpsertPropertyResponses];

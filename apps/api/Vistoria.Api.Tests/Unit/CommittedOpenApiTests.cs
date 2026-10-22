@@ -18,6 +18,21 @@ public class CommittedOpenApiTests
             .Should().BeEquivalentTo(ProblemTypes.All);
     }
 
+    // backend.md, "Contrato da API": enums como string. O front recebe a union, não números.
+    [Fact]
+    public void PropertyType_IsAStringEnum_ReferencedByBothDtos()
+    {
+        var schemas = Document().GetProperty("components").GetProperty("schemas");
+
+        schemas.GetProperty("PropertyType").GetProperty("enum").EnumerateArray().Select(e => e.GetString())
+            .Should().Equal("apartment", "house", "commercial", "other");
+        schemas.GetProperty("PropertyDto").GetProperty("properties").GetProperty("type").GetProperty("$ref")
+            .GetString().Should().Be("#/components/schemas/PropertyType");
+        schemas.GetProperty("UpsertPropertyDto").GetProperty("properties").GetProperty("type").GetProperty("oneOf")
+            .EnumerateArray().Select(s => s.TryGetProperty("$ref", out var r) ? r.GetString() : null)
+            .Should().Contain("#/components/schemas/PropertyType");
+    }
+
     // Status da tabela de Endpoints do backend.md.
     [Theory]
     [InlineData("/api/v1/auth/signup", "signUp", "201", new[] { "400", "429" })]

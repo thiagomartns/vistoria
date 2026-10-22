@@ -9,6 +9,7 @@ public static class DomainConfig
     public static IServiceCollection AddDomainServices(this IServiceCollection services)
     {
         services.AddScoped<IClientService, ClientService>();
+        services.AddScoped<IPropertyService, PropertyService>();
         return services;
     }
 }

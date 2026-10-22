@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GetClientData, GetClientErrors, GetClientResponses, GetHealthData, GetHealthResponses, SignInData, SignInErrors, SignInResponses, SignUpData, SignUpErrors, SignUpResponses, UpsertClientData, UpsertClientErrors, UpsertClientResponses } from './types.gen';
+import type { GetClientData, GetClientErrors, GetClientResponses, GetHealthData, GetHealthResponses, GetPropertyData, GetPropertyErrors, GetPropertyResponses, SignInData, SignInErrors, SignInResponses, SignUpData, SignUpErrors, SignUpResponses, UpsertClientData, UpsertClientErrors, UpsertClientResponses, UpsertPropertyData, UpsertPropertyErrors, UpsertPropertyResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -48,3 +48,14 @@ export const upsertClient = <ThrowOnError extends boolean = false>(options: Opti
 });
 
 export const getHealth = <ThrowOnError extends boolean = false>(options?: Options<GetHealthData, ThrowOnError>): RequestResult<GetHealthResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetHealthResponses, unknown, ThrowOnError>({ url: '/api/v1/health', ...options });
+
+export const getProperty = <ThrowOnError extends boolean = false>(options: Options<GetPropertyData, ThrowOnError>): RequestResult<GetPropertyResponses, GetPropertyErrors, ThrowOnError> => (options.client ?? client).get<GetPropertyResponses, GetPropertyErrors, ThrowOnError>({ url: '/api/v1/properties/{id}', ...options });
+
+export const upsertProperty = <ThrowOnError extends boolean = false>(options: Options<UpsertPropertyData, ThrowOnError>): RequestResult<UpsertPropertyResponses, UpsertPropertyErrors, ThrowOnError> => (options.client ?? client).put<UpsertPropertyResponses, UpsertPropertyErrors, ThrowOnError>({
+    url: '/api/v1/properties/{id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
