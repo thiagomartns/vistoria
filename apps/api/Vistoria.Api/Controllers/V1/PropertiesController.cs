@@ -8,7 +8,7 @@ using Vistoria.Api.Sync;
 
 namespace Vistoria.Api.Controllers.V1;
 
-// Mesmo contrato do ClientsController: os erros do PUT já incluem os que só chegam no M2.
+// Mesmo contrato do ClientsController, inclusive os erros do IdempotencyFilter.
 [ApiController]
 [Route("api/v1/properties")]
 [ProblemResponses(StatusCodes.Status401Unauthorized)]

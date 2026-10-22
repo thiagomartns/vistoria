@@ -8,8 +8,8 @@ using Vistoria.Api.Sync;
 
 namespace Vistoria.Api.Controllers.V1;
 
-// Protegido pela fallback policy. Os erros do PUT são os da tabela de Endpoints (backend.md), inclusive os que só
-// chegam no M2 (If-Match, Idempotency-Key): o contrato não muda quando eles chegarem.
+// Protegido pela fallback policy. Os erros do PUT são os da tabela de Endpoints (backend.md); 409
+// idempotency-in-progress, 422 e o 428 da Idempotency-Key vêm do IdempotencyFilter, antes da action.
 [ApiController]
 [Route("api/v1/clients")]
 [ProblemResponses(StatusCodes.Status401Unauthorized)]

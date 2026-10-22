@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Headers;
-using System.Net.Http.Json;
 using System.Text.Json;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -231,7 +230,7 @@ public class OptimisticConcurrencyTests(ApiFactory factory) : IClassFixture<ApiF
     private static Task<HttpResponseMessage> Put(
         HttpClient client, string resource, Guid id, object body, string? ifMatch)
     {
-        var request = new HttpRequestMessage(HttpMethod.Put, PathOf(resource, id)) { Content = JsonContent.Create(body) };
+        var request = WriteRequests.Put(PathOf(resource, id), body);
         if (ifMatch is not null)
         {
             request.Headers.TryAddWithoutValidation("If-Match", ifMatch);

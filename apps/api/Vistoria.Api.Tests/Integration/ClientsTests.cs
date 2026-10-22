@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Http.Json;
 using System.Text.Json;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -171,7 +170,7 @@ public class ClientsTests(ApiFactory factory) : IClassFixture<ApiFactory>
     // ifMatch é o base64 do ETag (como o ETagOf devolve); vai entre aspas, como ETag forte.
     private static Task<HttpResponseMessage> Put(HttpClient client, Guid id, object body, string? ifMatch = null)
     {
-        var request = new HttpRequestMessage(HttpMethod.Put, PathOf(id)) { Content = JsonContent.Create(body) };
+        var request = WriteRequests.Put(PathOf(id), body);
         if (ifMatch is not null)
         {
             request.Headers.TryAddWithoutValidation("If-Match", $"\"{ifMatch}\"");
