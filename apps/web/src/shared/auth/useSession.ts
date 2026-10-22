@@ -1,20 +1,24 @@
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 
 import { handleProblem } from "../api/problems";
-import { signInWithPassword } from "./session";
+import { sessionStore, signInWithPassword, signOutSession } from "./session";
 
-/** Estado da sessão mínima do spike 1a; a sessão real é do M4. */
+/** Sessão mínima (token e usuário em memória); a sessão real é do M4. */
 export function useSession() {
-  const [signedIn, setSignedIn] = useState(false);
+  const user = useSyncExternalStore(
+    sessionStore.subscribe,
+    sessionStore.getSnapshot,
+    sessionStore.getServerSnapshot,
+  );
   const [error, setError] = useState<string | null>(null);
 
   return {
-    signedIn,
+    user,
+    signedIn: user !== null,
     error,
     signIn: async (email: string, password: string) => {
       const failure = await signInWithPassword(email, password);
       if (!failure) {
-        setSignedIn(true);
         setError(null);
         return true;
       }
@@ -25,5 +29,6 @@ export function useSession() {
       );
       return false;
     },
+    signOut: signOutSession,
   };
 }

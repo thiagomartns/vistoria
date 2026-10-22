@@ -13,11 +13,15 @@ import {
   startOutbox,
   syncFailure,
 } from "@/shared/sync/outbox";
+import { recordSyncSuccess, trackOutbox } from "@/shared/sync/sync-status";
+import { registerRecordLabel } from "@/shared/sync/sync-view";
 
 import type { ClientRecord } from "../models/client";
 import { type ClientsCollection, createClientsCollection } from "./clients.collection";
 
 export const UPSERT_CLIENT = "upsertClient";
+
+registerRecordLabel(UPSERT_CLIENT, (record) => `Cliente · ${String(record.name ?? "")}`);
 
 /**
  * Envia a transação como `PUT /api/v1/clients/{id}` com o registro completo e a chave da transação.
@@ -47,6 +51,7 @@ export function upsertClientMutation(
     if (!result.data) throw syncFailure(result);
     // Na 0.14, acceptMutations tipa as mutações como Record<string, unknown>, não pelo item da collection.
     await clients.utils.acceptMutations(transaction as unknown as { mutations: PendingMutation[] });
+    recordSyncSuccess();
   };
 }
 
@@ -66,6 +71,7 @@ export function openClientsStore(): Promise<ClientsStore> {
       mutationFns: { [UPSERT_CLIENT]: upsertClientMutation(clients) },
     });
     await outbox.waitForInit();
+    trackOutbox(outbox);
     return { clients, outbox };
   })();
   return opening;
