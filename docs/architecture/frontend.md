@@ -293,9 +293,9 @@ Quatro spikes validam as apostas antes das telas; o primeiro foi dividido em 1a 
 **Spikes** (as fases do backend de que cada um depende estão no [Roteiro de estudo](backend.md#roteiro-de-estudo) de lá)
 
 - [x] **Spike 1a — Outbox no aparelho:** collection de clients persistida; escrita offline, reload, volta da rede, envio com `Idempotency-Key` pelo `upsertClient`; reenvio depois de derrubar a resposta com a mesma chave. Resultado: TanStack DB mantido, com os contornos do [ADR 0030](../decisions/0030-tanstack-db-mantido-apos-o-spike-1a-outbox-persistida-contra-o-upsertclient.md); roteiro em `pnpm spike:outbox`.
-- [ ] **Spike 1b — Outbox no servidor:** `If-Match`, 412/409 `version-conflict`, 428 e idempotência aplicada pelo .NET; a mesma vistoria chega uma vez só.
+- [ ] **Spike 1b — Outbox no servidor:** `If-Match`, 412/409 `version-conflict`, 428 e idempotência aplicada pelo .NET, com clientes e imóveis; o mesmo registro chega uma vez só ([ADR 0031](../decisions/0031-fatia-de-cadastro-antes-da-vistoria-no-m2.md)).
 - [ ] **Spike 2 — Volume:** 10 mil vistorias (com ambientes e itens) via delta paginado; medir abertura do app e tempo de live query.
 - [ ] **Spike 3 — Conflito:** dois navegadores editam a mesma vistoria offline, inclusive o mesmo item; 412/409 `version-conflict` com `current`; merge automático, diff e reenvio com chave nova.
-- [ ] **Spike 4 — Shell:** static export + Serwist + Sanjou UI + rota `?id=`; abrir em modo avião depois da primeira visita; duas abas renovando a sessão ao mesmo tempo.
+- [ ] **Spike 4 — Shell:** static export + Serwist + Sanjou UI + rota `?id=`; abrir em modo avião depois da primeira visita (M2). Duas abas renovando a sessão ao mesmo tempo fica para o M4, que traz o refresh.
 
-Os spikes estão encaixados nos [marcos](../vision.md#marcos) do documento [Visão do Projeto](../vision.md): spike 1a antes do M2, spikes 1b e 4 no M2, spike 3 no M3, spike 2 no M4.
+Os spikes estão encaixados nos [marcos](../vision.md#marcos) do documento [Visão do Projeto](../vision.md): spike 1a antes do M2, spikes 1b e 4 na fatia de cadastro do M2 (o teste de duas abas do 4 no M4), spike 3 no M3, spike 2 no M4.
