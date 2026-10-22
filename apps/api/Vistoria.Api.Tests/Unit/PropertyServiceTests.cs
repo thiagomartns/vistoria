@@ -9,6 +9,7 @@ using Vistoria.Api.Model;
 using Vistoria.Api.Model.Base;
 using Vistoria.Api.Repositories;
 using Vistoria.Api.Services.Impl;
+using Vistoria.Api.Sync;
 
 namespace Vistoria.Api.Tests.Unit;
 
@@ -46,7 +47,8 @@ public class PropertyServiceTests
             Type = PropertyType.House,
         };
 
-        var act = () => service.UpsertAsync(ownerId, repository.Stored.Id, request, Ct);
+        var act = () => service.UpsertAsync(
+            ownerId, repository.Stored.Id, ETagHelper.ToETag(repository.Stored.Version), request, Ct);
 
         var conflict = (await act.Should().ThrowAsync<VersionConflictException>()).Which;
         conflict.Status.Should().Be(409);

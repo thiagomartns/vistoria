@@ -41,7 +41,8 @@ public class PropertiesController(IPropertyService properties) : ControllerBase
     public async Task<ActionResult<PropertyDto>> Upsert(
         Guid id, UpsertPropertyDto body, CancellationToken cancellationToken)
     {
-        var (property, created) = await properties.UpsertAsync(User.GetUserId(), id, body, cancellationToken);
+        var (property, created) = await properties.UpsertAsync(
+            User.GetUserId(), id, Request.Headers.IfMatch.ToString(), body, cancellationToken);
         SetETag(property);
         return created ? CreatedAtAction(nameof(Get), new { id }, property) : Ok(property);
     }
