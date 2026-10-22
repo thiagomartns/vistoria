@@ -31,7 +31,7 @@ A API é a única fonte de verdade e de segurança. Detalhes em [docs/vision.md]
 | `pnpm gen:api` | Gera tipos, client, Zod e `ProblemType` em `apps/web/src/shared/api/generated/` a partir de `apps/api/openapi.json` |
 | `pnpm --filter web build` | Static export em `apps/web/out/`, com o service worker (`sw.js`) |
 | `pnpm test:api` | `dotnet test` na solution da API (integração com Testcontainers: exige Docker) |
-| `pnpm screens <rota…>` | Prints do static export no celular e no desktop; `--publish` grava na branch `screens` |
+| `pnpm screens <rota…>` | Prints do static export no celular e no desktop; `--session` entra pelo `/login` (rotas do shell); `--publish` grava na branch `screens` |
 | `pnpm spike:outbox` | Roteiro Playwright do spike 1a contra a API real (exige `db:up`, `dev:api` e o build do web) |
 | `pnpm spike:shell` | Roteiro Playwright do spike 4: o shell abre em modo avião depois da primeira visita (exige o build do web; roda no CI) |
 

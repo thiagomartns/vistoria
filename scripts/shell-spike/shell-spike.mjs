@@ -5,6 +5,8 @@
 // precisa vir do service worker (`response.fromServiceWorker()`).
 // Desde o #72 o shell exige sessão: o roteiro entra pelo /login com o signin respondido aqui (sem API no CI) e, ao
 // voltar a rede depois do reload, confere que a sessão expirada pede login de novo.
+// Desde o #73 o passo 3 cria um cliente offline pela tela e reabre /clients/edit?id= pelo service worker; o PUT
+// dele também é respondido aqui, para a fila esvaziar depois do login.
 
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -61,8 +63,8 @@ const ok = (text) => console.log(`   ✓ ${text}`);
 
 const user = { id: randomUUID(), name: "Roteiro do spike 4" };
 
-/** O signin da API, respondido pelo roteiro: o CI não tem API. */
-async function fakeSignIn(context) {
+/** O signin e o PUT de client da API, respondidos pelo roteiro: o CI não tem API. */
+async function fakeApi(context) {
   await context.route("**/api/v1/auth/signin", (route) =>
     route.fulfill({
       status: 200,
@@ -74,6 +76,22 @@ async function fakeSignIn(context) {
       }),
     }),
   );
+  await context.route("**/api/v1/clients/*", (route) => {
+    if (route.request().method() !== "PUT") return route.fallback();
+    const id = new URL(route.request().url()).pathname.split("/").pop();
+    const now = new Date().toISOString();
+    return route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id,
+        ...JSON.parse(route.request().postData() ?? "{}"),
+        version: "AAAAAAAAB9M=",
+        createdAt: now,
+        updatedAt: now,
+      }),
+    });
+  });
 }
 
 async function signIn(page) {
@@ -104,7 +122,7 @@ try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
 
-  await fakeSignIn(context);
+  await fakeApi(context);
 
   step(1, "Primeira visita, com rede: o shell manda para o /login");
   await page.goto(`${base}/inspections`);
@@ -133,11 +151,22 @@ try {
   await page.getByText(user.name).waitFor();
   ok("OfflineBanner e SyncStatus mostram offline; o menu mostra o dono");
 
-  step(3, "Modo avião: rota com ?id= e outra rota");
-  const id = randomUUID();
-  fromServiceWorker(await openShell(page, `${base}/clients/edit?id=${id}`, "Clientes"), "/clients/edit");
-  await page.getByText(`Cliente ${id}`).waitFor();
-  ok(`/clients/edit?id=${id} abriu com o id`);
+  step(3, "Modo avião: criar um cliente, abrir a rota com ?id= e outra rota");
+  fromServiceWorker(await openShell(page, `${base}/clients`, "Clientes"), "/clients");
+  await page.getByRole("link", { name: "Novo cliente" }).first().click();
+  await page.getByRole("heading", { level: 1, name: "Novo cliente" }).waitFor();
+  await page.getByLabel("Nome").fill("Cliente do roteiro");
+  await page.getByRole("button", { name: "Salvar" }).click();
+  const row = page.getByRole("row").filter({ has: page.getByRole("link", { name: "Cliente do roteiro" }) });
+  await row.getByText("Salvo no aparelho").waitFor({ timeout: 2000 });
+  ok("criado offline: a linha aparece na hora, com \"Salvo no aparelho\"");
+  const id = new URL(await row.getByRole("link").getAttribute("href"), base).searchParams.get("id");
+  fromServiceWorker(
+    await openShell(page, `${base}/clients/edit?id=${id}`, "Cliente do roteiro"),
+    "/clients/edit",
+  );
+  assert.equal(await page.getByLabel("Nome").inputValue(), "Cliente do roteiro");
+  ok(`/clients/edit?id=${id} abriu com o cliente do banco local`);
   fromServiceWorker(await openShell(page, `${base}/properties`, "Imóveis"), "/properties");
   ok("/properties abriu");
   await page.getByRole("link", { name: "Roteiros" }).click();
@@ -148,13 +177,13 @@ try {
   await context.setOffline(false);
   await page.waitForURL(/\/login\?next=%2Ftemplates$/);
   await page.getByText("Sua sessão expirou").waitFor();
-  await page.getByText("Entre novamente para continuar.").waitFor();
-  ok("/login com SessionExpired (sem pendências)");
+  await page.getByText("Entre novamente para enviar a alteração salva neste aparelho.").waitFor();
+  ok("/login com SessionExpired (com a pendência do cliente criado offline)");
   await signIn(page);
   await page.getByRole("heading", { level: 1, name: "Roteiros" }).waitFor();
   await page.getByRole("button", { name: /^Pendências: Sincronizado/ }).waitFor();
   assert.equal(await page.getByText("Você está offline").count(), 0);
-  ok("entrou de novo, voltou para /templates e o SyncStatus está sincronizado");
+  ok("entrou de novo, voltou para /templates, o cliente saiu e o SyncStatus está sincronizado");
 
   console.log("\nSpike 4: o shell abre offline depois da primeira visita.");
 } finally {

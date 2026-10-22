@@ -60,15 +60,19 @@ export function markdownTable(rows) {
 export function parseArgs(argv) {
   const routes = [];
   let publish = false;
+  let session = false;
   let out = ".screens";
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--") continue;
     if (arg === "--publish") publish = true;
+    else if (arg === "--session") session = true;
     else if (arg === "--out") out = argv[++i] ?? out;
     else if (arg.startsWith("--")) throw new Error(`Opção desconhecida: ${arg}`);
     else routes.push(arg.startsWith("/") ? arg : `/${arg}`);
   }
-  if (routes.length === 0) throw new Error("Uso: pnpm screens <rota…> [--publish] [--out dir]");
-  return { routes, publish, out };
+  if (routes.length === 0) {
+    throw new Error("Uso: pnpm screens <rota…> [--session] [--publish] [--out dir]");
+  }
+  return { routes, publish, session, out };
 }

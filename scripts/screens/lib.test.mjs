@@ -69,8 +69,13 @@ describe("parseArgs", () => {
     assert.deepEqual(parseArgs(["--", "login", "/sanjou", "--publish", "--out", "tmp"]), {
       routes: ["/login", "/sanjou"],
       publish: true,
+      session: false,
       out: "tmp",
     });
+  });
+
+  it("--session: as rotas do shell com uma sessão de mentira", () => {
+    assert.equal(parseArgs(["/clients", "--session"]).session, true);
   });
 
   it("exige ao menos uma rota", () => {
