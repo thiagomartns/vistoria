@@ -37,3 +37,4 @@ uma decisão nova o substitui e diz qual substituiu. Novo ADR: `/adr <título>` 
 | [0030](0030-tanstack-db-mantido-apos-o-spike-1a-outbox-persistida-contra-o-upsertclient.md) | TanStack DB mantido após o spike 1a (outbox persistida contra o upsertClient) | Proposto | 2026-10-21 |
 | [0031](0031-fatia-de-cadastro-antes-da-vistoria-no-m2.md) | Fatia de cadastro antes da vistoria no M2 | Proposto | 2026-10-22 |
 | [0032](0032-serwist-pelo-cli-sobre-o-static-export-build-com-turbopack.md) | Serwist pelo CLI sobre o static export, build com Turbopack | Proposto | 2026-10-22 |
+| [0033](0033-movimento-carregamento-e-avisos-na-ui.md) | Movimento, carregamento e avisos na UI | Proposto | 2026-10-22 |
