@@ -12,7 +12,7 @@ A API é a única fonte de verdade e de segurança. Detalhes em [docs/vision.md]
 | --- | --- |
 | `apps/web/` | Next.js 16, static export ([CLAUDE.md](apps/web/CLAUDE.md)) |
 | `apps/api/` | .NET 10, controllers + testes; `openapi.json` gerado no build ([CLAUDE.md](apps/api/CLAUDE.md)) |
-| `scripts/` | `screens` (prints do static export), `gen-api` (gerador do contrato, com TypeScript 6), `db-init` (senha local e chave do JWT), `dev-api` (pré-check e `dotnet watch`), `outbox-spike` (roteiro do spike 1a) e `shell-spike` (roteiro do spike 4) |
+| `scripts/` | `screens` (prints do static export), `gen-api` (gerador do contrato, com TypeScript 6), `db-init` (senha local e chave do JWT), `dev-api` (pré-check e `dotnet watch`), `outbox-spike` (roteiro do spike 1a, pelas telas de clientes) e `shell-spike` (roteiro do spike 4) |
 | `infra/` | `docker-compose.dev.yml` (SQL Server); senha em `infra/.env`, gerada pelo `pnpm db:init` e nunca commitada |
 | `docs/` | Visão, arquitetura e ADRs (`docs/decisions/`) — **o repositório manda** |
 | `.github/` | CI (`ci.yml`: jobs `api`, `web`, `security`, obrigatórios na `main`) e Dependabot semanal |

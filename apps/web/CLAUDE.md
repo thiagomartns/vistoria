@@ -5,7 +5,7 @@ a rede é detalhe da camada de sync. Arquitetura completa em [frontend.md](../..
 o contrato (status, cabeçalhos, `type` de erro, prazos) vem só de [backend.md](../../docs/architecture/backend.md).
 
 Hoje existem `src/app/` (o shell no grupo `(app)`; `/login` e `/signup` fora dele), `src/shared/` (`api/`, `auth/`, `db/`, `sync/`, `components/`),
-`src/sw.ts` (service worker, [ADR 0032](../../docs/decisions/0032-serwist-pelo-cli-sobre-o-static-export-build-com-turbopack.md)) e `src/features/clients/`, começo da outbox vinda do spike 1a ([ADR 0030](../../docs/decisions/0030-tanstack-db-mantido-apos-o-spike-1a-outbox-persistida-contra-o-upsertclient.md));
+`src/sw.ts` (service worker, [ADR 0032](../../docs/decisions/0032-serwist-pelo-cli-sobre-o-static-export-build-com-turbopack.md)) e `src/features/clients/` (telas de clientes sobre a outbox vinda do spike 1a, [ADR 0030](../../docs/decisions/0030-tanstack-db-mantido-apos-o-spike-1a-outbox-persistida-contra-o-upsertclient.md), com `If-Match` e a recusa `validation` guardada em `drafts`);
 a árvore descrita em [Estrutura de pastas](../../docs/architecture/frontend.md#estrutura-de-pastas) é o alvo.
 TanStack DB e `@tanstack/offline-transactions` têm versão exata: antes de mudar, ler a documentação da versão
 instalada (`node_modules/@tanstack/*/skills/`), não a memória.
@@ -70,3 +70,5 @@ levam "Candidato ao Sanjou" na descrição. Uma linha por componente: nome, cami
 
 - `NavItem`, `Sidebar`, `BottomNav` (`src/shared/components/nav.tsx`): navegação de app com sidebar no desktop e barra inferior no celular; nada nela é do vistoria.
 - `Sheet` (`src/shared/components/sheet.tsx`): drawer lateral e bottom sheet sobre o `Dialog` do Sanjou, que hoje só centraliza.
+- `ListRow` (`src/shared/components/list-row.tsx`): linha de lista do celular que abre o registro, com título, subtítulo, meta e badges; serve a qualquer lista.
+- `EmptyState` (`src/shared/components/empty-state.tsx`): estado vazio de lista com ícone, título, descrição e ação; nada nele é do vistoria.

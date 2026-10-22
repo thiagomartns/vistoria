@@ -16,6 +16,10 @@ vi.mock("./clients.collection", () => ({
   createClientsCollection: () => ({ cleanup: vi.fn<() => Promise<void>>(async () => {}) }),
 }));
 
+vi.mock("@/shared/sync/drafts", () => ({
+  createDraftsCollection: () => ({ cleanup: vi.fn<() => Promise<void>>(async () => {}) }),
+}));
+
 vi.mock("@/shared/sync/outbox", async (original) => ({
   ...(await original<typeof import("@/shared/sync/outbox")>()),
   startOutbox: vi.fn<() => object>(() => ({
@@ -41,13 +45,14 @@ describe("openClientsStore", () => {
     expect(vi.mocked(startOutbox).mock.calls[0]?.[0]).toMatchObject({ ownerId: "ana" });
   });
 
-  it("trocar de dono fecha a outbox, a collection e o banco do anterior antes de abrir os do novo", async () => {
+  it("trocar de dono fecha a outbox, as collections e o banco do anterior antes de abrir os do novo", async () => {
     const ana = await openClientsStore("ana");
 
     const bia = await openClientsStore("bia");
 
     expect(ana.outbox.dispose).toHaveBeenCalledOnce();
     expect(ana.clients.cleanup).toHaveBeenCalledOnce();
+    expect(ana.drafts.cleanup).toHaveBeenCalledOnce();
     expect(closeLocalDb).toHaveBeenCalledExactlyOnceWith("ana");
     expect(bia).not.toBe(ana);
     expect(vi.mocked(startOutbox).mock.calls.map(([config]) => config.ownerId)).toEqual([

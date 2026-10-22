@@ -1,19 +1,15 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
-import { ComingSoon } from "../../coming-soon";
-import { ClientId } from "./client-id";
+import { ClientEditScreen } from "./client-edit-screen";
 
 export const metadata: Metadata = { title: "Cliente" };
 
-// `?id=` em vez de segmento dinâmico (static export). O formulário chega na #73.
+// `?id=` em vez de segmento dinâmico (static export); sem `id`, cria.
 export default function ClientEditPage() {
   return (
-    <>
-      <Suspense fallback={null}>
-        <ClientId />
-      </Suspense>
-      <ComingSoon />
-    </>
+    <Suspense fallback={null}>
+      <ClientEditScreen />
+    </Suspense>
   );
 }
