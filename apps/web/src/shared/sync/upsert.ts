@@ -1,11 +1,12 @@
 import type { PendingMutation } from "@tanstack/db";
 
-import { type DraftsCollection, clearDraft, recordRejection } from "./drafts";
+import { type DraftsCollection, clearDraft, recordConflict, recordRejection } from "./drafts";
 import {
   type OutboxMutationFn,
   RejectedSyncError,
   outboxHeaders,
   syncFailure,
+  waitRetryAfter,
 } from "./outbox";
 import { recordSyncSuccess } from "./sync-status";
 
@@ -47,7 +48,9 @@ async function baseVersionOf<T extends SyncRecord>(
 /**
  * Envia a transação pelo `PUT` com o registro completo, a chave da transação e `If-Match` quando o registro já está
  * no servidor. Só depois do 2xx o registro vai para a store local, com a `version` da resposta; antes disso ele vive
- * na outbox. Um 400 `validation` vira rascunho recusado da `entity`, para o formulário reabrir com os erros por campo.
+ * na outbox. Um 400 `validation` vira rascunho recusado da `entity`, para o formulário reabrir com os erros por campo;
+ * um `version-conflict` (409 ou 412) ou `deleted` vira rascunho em conflito, com o `current`, e sai da fila sem laço.
+ * Uma falha com `Retry-After` só volta para a fila depois dele.
  */
 export function upsertMutation<T extends SyncRecord>({
   store,
@@ -81,6 +84,10 @@ export function upsertMutation<T extends SyncRecord>({
       if (error instanceof RejectedSyncError && error.group === "back-to-draft") {
         recordRejection(drafts, entity, mutation.modified, error.failure);
       }
+      if (error instanceof RejectedSyncError && error.group === "user-decision") {
+        recordConflict(drafts, entity, mutation.modified, error.failure);
+      }
+      await waitRetryAfter(error);
       throw error;
     }
     const confirmed = { ...mutation, modified: { ...mutation.modified, version: result.data.version } };

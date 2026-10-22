@@ -50,6 +50,12 @@ describe("estado de sync de um client", () => {
     expect(row).toMatchObject({ name: "M", sync: "rejeitado" });
   });
 
+  it("rascunho em conflito → conflito, com os dados enviados", () => {
+    const draft: DraftRecord = { ...rejected({ ...maria, name: "M" }), status: "conflict", conflict: { current: maria } };
+
+    expect(clientRowOf(maria, draft, "local")).toMatchObject({ name: "M", sync: "conflito" });
+  });
+
   it("sem client nem rascunho, nada", () => {
     expect(clientRowOf(undefined, undefined, undefined)).toBeUndefined();
   });

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { configureClient } from "@/shared/api/client";
 import { createClient, createConfig } from "@/shared/api/generated/client";
-import { RejectedSyncError, RetryableSyncError } from "@/shared/sync/outbox";
+import { RejectedSyncError, RetryableSyncError, shouldRetry } from "@/shared/sync/outbox";
 
 import type { DraftsCollection } from "@/shared/sync/drafts";
 
@@ -198,6 +198,85 @@ describe("upsertClientMutation", () => {
       status: "rejected",
       errors: { document: ["Informe um CPF ou CNPJ válido, sem pontuação."] },
     });
+  });
+
+  it.each([
+    ["412", 412],
+    ["409", 409],
+  ])("%s version-conflict → sai da fila sem gravar na store, e o registro vira rascunho em conflito com o current", async (_, status) => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const current = { ...dto, name: "Alfa (outro aparelho)", version: "AAAAAAAAB9U=" };
+    const { send, acceptMutations, drafts } = setup(() => problemWith("version-conflict", status, { current }));
+
+    const error = (await send({ transaction: transactionOf(record), idempotencyKey }).catch((e: unknown) => e)) as Error;
+
+    expect(error).toBeInstanceOf(RejectedSyncError);
+    expect(shouldRetry(error)).toBe(false);
+    expect(acceptMutations).not.toHaveBeenCalled();
+    expect(drafts.get(id)).toMatchObject({
+      id,
+      entity: "client",
+      data: record,
+      status: "conflict",
+      errors: {},
+      conflict: { current },
+    });
+  });
+
+  it("um conflito depois de uma recusa troca o rascunho, sem os erros antigos", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { send, drafts } = setup(() => problemWith("version-conflict", 412, { current: dto }));
+    drafts.set(id, { id, status: "rejected", errors: { name: ["Curto."] } });
+
+    await send({ transaction: transactionOf(record), idempotencyKey }).catch(() => {});
+
+    expect(drafts.get(id)).toMatchObject({ status: "conflict", errors: {}, conflict: { current: dto } });
+  });
+
+  it("409 idempotency-in-progress com Retry-After: 2 só volta para a fila depois de 2 s, com a mesma chave", async () => {
+    vi.useFakeTimers();
+    try {
+      const { send, requests } = setup(() => {
+        const response = problem("idempotency-in-progress", 409);
+        response.headers.set("Retry-After", "2");
+        return response;
+      });
+      let settled: unknown;
+
+      const sending = send({ transaction: transactionOf(record), idempotencyKey }).catch((error) => {
+        settled = error;
+      });
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(settled).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1);
+      await sending;
+
+      expect(settled).toBeInstanceOf(RetryableSyncError);
+      expect((settled as RetryableSyncError).retryAfterMs).toBe(2_000);
+      expect(requests).toHaveLength(1);
+      expect(requests[0]?.headers.get("Idempotency-Key")).toBe(idempotencyKey);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("duas edições seguidas: a segunda sai com If-Match da version que a primeira devolveu", async () => {
+    const versions = ["AAAAAAAAB9Q=", "AAAAAAAAB9U="];
+    const stored: ClientRecord[] = [{ ...record, version: "AAAAAAAAB9M=" }];
+    const { send, requests, acceptMutations } = setup(
+      () => Response.json({ ...dto, version: versions[requests.length - 1] }),
+      { stored },
+    );
+    // A store de verdade guarda o que o 2xx confirmou; aqui, o mesmo à mão.
+    acceptMutations.mockImplementation(async ({ mutations }) => {
+      stored[0] = mutations[0]!.modified as ClientRecord;
+    });
+
+    await send({ transaction: transactionOf({ ...record, name: "Alfa 1" }), idempotencyKey });
+    await send({ transaction: transactionOf({ ...record, name: "Alfa 2" }), idempotencyKey: `${idempotencyKey}-2` });
+
+    expect(requests.map((request) => request.headers.get("If-Match"))).toEqual(['"AAAAAAAAB9M="', '"AAAAAAAAB9Q="']);
+    expect(stored[0]).toMatchObject({ name: "Alfa 2", version: "AAAAAAAAB9U=" });
   });
 
   it("outra recusa (428) não vira rascunho", async () => {
