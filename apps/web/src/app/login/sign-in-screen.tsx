@@ -3,7 +3,7 @@
 import { Alert, AlertDescription } from "@sanjou/ui/alert";
 import { CloudOff } from "lucide-react";
 
-import { useClientsOutbox } from "@/features/clients/hooks/useClientsOutbox";
+import { useLocalOutbox } from "@/features/local-store/hooks/useLocalOutbox";
 import { useSession } from "@/shared/auth/useSession";
 import { useLeaveWhenActive } from "@/shared/auth/useSessionGuard";
 import { useSignIn } from "@/shared/auth/useSignIn";
@@ -18,7 +18,7 @@ export function SignInScreen() {
   const { form, error, onSubmit } = useSignIn();
   useLeaveWhenActive();
   // Com a sessão expirada, abre a outbox do dono para dizer quantas alterações esperam o login.
-  useClientsOutbox();
+  useLocalOutbox();
 
   // Com a sessão expirada, o aviso espera a primeira leitura da outbox, para não dizer "sem pendências" antes da hora.
   const notice =

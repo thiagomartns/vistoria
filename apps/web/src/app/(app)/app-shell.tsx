@@ -6,7 +6,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useState } from "react";
 
-import { useClientsOutbox } from "@/features/clients/hooks/useClientsOutbox";
+import { useLocalOutbox } from "@/features/local-store/hooks/useLocalOutbox";
 import { useSession } from "@/shared/auth/useSession";
 import { useSessionGuard } from "@/shared/auth/useSessionGuard";
 import { BottomNav, Sidebar } from "@/shared/components/nav";
@@ -31,7 +31,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [panelOpen, setPanelOpen] = useState(false);
   const [header, setHeader] = useState<ShellHeader | null>(null);
   useSessionGuard(sync.offline);
-  useClientsOutbox();
+  useLocalOutbox();
 
   const current = navItemFor(pathname);
   const user = (layout: "sidebar" | "avatar") => (
