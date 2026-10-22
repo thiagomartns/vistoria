@@ -3,6 +3,8 @@
 // numa rota com `?id=`. Exige `pnpm --filter web build`. Roda no CI, depois do static export.
 // Serve `apps/web/out` como o Caddy em produção (`/rota` → `rota.html`). Com a rede desligada, cada página
 // precisa vir do service worker (`response.fromServiceWorker()`).
+// Desde o #72 o shell exige sessão: o roteiro entra pelo /login com o signin respondido aqui (sem API no CI) e, ao
+// voltar a rede depois do reload, confere que a sessão expirada pede login de novo.
 
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -57,6 +59,29 @@ async function launch() {
 const step = (n, text) => console.log(`\n${n}. ${text}`);
 const ok = (text) => console.log(`   ✓ ${text}`);
 
+const user = { id: randomUUID(), name: "Roteiro do spike 4" };
+
+/** O signin da API, respondido pelo roteiro: o CI não tem API. */
+async function fakeSignIn(context) {
+  await context.route("**/api/v1/auth/signin", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        accessToken: "token-do-roteiro",
+        expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+        user,
+      }),
+    }),
+  );
+}
+
+async function signIn(page) {
+  await page.getByLabel("E-mail").fill("roteiro@exemplo.com");
+  await page.getByLabel("Senha").fill("senha-do-roteiro");
+  await page.getByRole("button", { name: "Entrar" }).click();
+}
+
 /** Abre a rota e espera o header do shell com o título. Devolve a resposta do documento. */
 async function openShell(page, url, title) {
   const response = await page.goto(url);
@@ -79,8 +104,14 @@ try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
 
-  step(1, "Primeira visita, com rede");
-  await openShell(page, `${base}/inspections`, "Vistorias");
+  await fakeSignIn(context);
+
+  step(1, "Primeira visita, com rede: o shell manda para o /login");
+  await page.goto(`${base}/inspections`);
+  await page.waitForURL(/\/login\?next=%2Finspections$/);
+  await signIn(page);
+  await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor({ timeout: 10_000 });
+  ok("entrou e voltou para /inspections");
   const precached = await page.evaluate(async () => {
     const registration = await navigator.serviceWorker.ready;
     const keys = await caches.keys();
@@ -92,14 +123,15 @@ try {
   assert.ok(precached.count > 0, "o pré-cache está vazio");
   ok(`service worker ativo, ${precached.count} arquivos no pré-cache`);
 
-  step(2, "Modo avião: recarregar o shell");
+  step(2, "Modo avião: recarregar o shell (o token some, o dono fica)");
   await context.setOffline(true);
   fromServiceWorker(await page.reload(), "/inspections");
   await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor({ timeout: 10_000 });
-  ok("/inspections abriu, servido pelo service worker");
+  ok("/inspections abriu, servido pelo service worker, sem mandar para o /login");
   await page.getByText("Você está offline").waitFor();
   await page.getByRole("button", { name: /^Pendências: Offline/ }).waitFor();
-  ok("OfflineBanner e SyncStatus mostram offline");
+  await page.getByText(user.name).waitFor();
+  ok("OfflineBanner e SyncStatus mostram offline; o menu mostra o dono");
 
   step(3, "Modo avião: rota com ?id= e outra rota");
   const id = randomUUID();
@@ -112,11 +144,17 @@ try {
   await page.getByRole("heading", { level: 1, name: "Roteiros" }).waitFor();
   ok("navegação pela sidebar funciona offline");
 
-  step(4, "Rede de volta");
+  step(4, "Rede de volta: a sessão expirada pede login");
   await context.setOffline(false);
+  await page.waitForURL(/\/login\?next=%2Ftemplates$/);
+  await page.getByText("Sua sessão expirou").waitFor();
+  await page.getByText("Entre novamente para continuar.").waitFor();
+  ok("/login com SessionExpired (sem pendências)");
+  await signIn(page);
+  await page.getByRole("heading", { level: 1, name: "Roteiros" }).waitFor();
   await page.getByRole("button", { name: /^Pendências: Sincronizado/ }).waitFor();
   assert.equal(await page.getByText("Você está offline").count(), 0);
-  ok("o banner some e o SyncStatus volta a sincronizado");
+  ok("entrou de novo, voltou para /templates e o SyncStatus está sincronizado");
 
   console.log("\nSpike 4: o shell abre offline depois da primeira visita.");
 } finally {
