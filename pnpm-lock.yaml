@@ -86,6 +86,8 @@ importers:
 
   scripts/db-init: {}
 
+  scripts/dev-api: {}
+
   scripts/gen-api:
     devDependencies:
       '@hey-api/openapi-ts':

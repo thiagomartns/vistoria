@@ -4,6 +4,7 @@ services:
   db:
     image: mcr.microsoft.com/mssql/server:2022-latest
     container_name: vistoria-db
+    restart: unless-stopped # volta sozinho depois de um reboot; pnpm db:down continua parando de vez
     environment:
       ACCEPT_EULA: "Y"
       MSSQL_PID: Developer
