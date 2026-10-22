@@ -27,20 +27,21 @@ Levantado em 2026-10-19 (issue #13), pelo MCP do Figma, nas páginas Telas, Wire
 | Separator | `import { Separator } from "@sanjou/ui/separator"` | `orientation` horizontal, vertical |
 | TableHead, TableCell | `import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@sanjou/ui/table"` | `type` numeric → `className="text-right tabular-nums"` · actions → `Button` ghost `size="icon"` com `aria-label` · badge → `SyncBadge` ou `Badge` na célula |
 | DialogContent, DialogOverlay | `import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@sanjou/ui/dialog"` | O overlay vem dentro do `DialogContent` · `close button` → `showCloseButton` · `footer` → `DialogFooter` |
+| DropdownMenu (o menu do usuário, "usuário (abre DropdownMenu)" no Shell) | `import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuItem } from "@sanjou/ui/dropdown-menu"` | Conteúdo não desenhado: o nome em `DropdownMenuLabel` e "Sair" em `DropdownMenuItem` (nota do frame Shell) |
 | Form item | `import { Form, FormField, FormItem, FormLabel, FormControl, FormDescription, FormMessage } from "@sanjou/ui/form"` | Exige `react-hook-form` ([ADR 0023](../decisions/0023-formularios-com-react-hook-form.md)) · `invalid` vem do erro do campo, não de prop · controle trocado no Figma (Textarea, Select) vai dentro do `FormControl` |
 
 **Auth layout e Auth form / Sign in** são um pattern do registry do Sanjou, sem subpath no pacote. Viram componentes locais, `AuthLayout` e `SignInForm` em `@/shared/components/auth-layout` e `@/shared/components/sign-in-form`, compostos com os componentes acima ([ADR 0019](../decisions/0019-login-da-v1-com-o-pattern-auth-do-sanjou.md), [ADR 0020](../decisions/0020-componentes-que-faltam-no-sanjou-ficam-no-app.md)).
 
 ## Ícones
 
-`Icon/<Nome>` no Figma, da biblioteca ou local, vira `<Nome>` de `lucide-react` 0.525, a versão que o Sanjou usa. O `lucide-react` entra como dependência direta do web na primeira tela que usar ícone, na mesma versão.
+`Icon/<Nome>` no Figma, da biblioteca ou local, vira `<Nome>` de `lucide-react` 0.525, a versão que o Sanjou usa. O `lucide-react` é dependência direta do web desde o shell (#71), fixado na mesma versão.
 
-- Da biblioteca: `import { Check, ChevronDown, ChevronRight, Circle, CircleAlert, CircleCheck, TriangleAlert, Trash2 } from "lucide-react"`
+- Da biblioteca: `import { Check, ChevronDown, ChevronRight, Circle, CircleAlert, CircleCheck, TriangleAlert, Trash2, X } from "lucide-react"`
 - Locais (o Sanjou ainda não tem; candidatos): `import { Building2, ChevronLeft, ClipboardList, Clock, Cloud, CloudAlert, CloudOff, FilePen, GripVertical, House, ListChecks, Printer, RefreshCw, Search, SlidersHorizontal, Smartphone } from "lucide-react"`
 
 ## Componentes locais
 
-Ficam todos em `apps/web/src/shared/components/` e são feitos só com primitivos e tokens do Sanjou ([ADR 0020](../decisions/0020-componentes-que-faltam-no-sanjou-ficam-no-app.md)). Cada um nasce com a primeira tela que o usa; hoje só existem os da marca (`AvisMark` e `AvisLockup`, #62). Os candidatos entram em "Candidatos ao Sanjou" no `apps/web/CLAUDE.md` quando forem criados.
+Ficam todos em `apps/web/src/shared/components/` e são feitos só com primitivos e tokens do Sanjou ([ADR 0020](../decisions/0020-componentes-que-faltam-no-sanjou-ficam-no-app.md)). Cada um nasce com a primeira tela que o usa; hoje existem os da marca (`AvisMark` e `AvisLockup`, #62) e os do shell (`Nav`, `Sheet`, `SyncStatus`, `OfflineBanner`, `OutboxPanel`, #71). O menu do usuário do shell é `UserMenu` (`@/shared/components/user-menu`), composto com Avatar e DropdownMenu do Sanjou. Os candidatos entram em "Candidatos ao Sanjou" no `apps/web/CLAUDE.md` quando forem criados.
 
 | No Figma (nó) | Import | Variantes | Tipo |
 | --- | --- | --- | --- |

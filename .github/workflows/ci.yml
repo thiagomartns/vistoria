@@ -78,6 +78,10 @@ jobs:
       - name: Static export
         run: pnpm --filter web build
 
+      # Spike 4: depois da primeira visita, o shell abre em modo avião (Chrome do runner).
+      - name: Shell offline
+        run: pnpm spike:shell
+
   security:
     name: security
     runs-on: ubuntu-24.04

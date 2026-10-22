@@ -4,8 +4,8 @@ Shell Next.js 16 em **static export**, sem servidor em produção. A UI lê e es
 a rede é detalhe da camada de sync. Arquitetura completa em [frontend.md](../../docs/architecture/frontend.md);
 o contrato (status, cabeçalhos, `type` de erro, prazos) vem só de [backend.md](../../docs/architecture/backend.md).
 
-Hoje existem `src/app/`, `src/shared/` (`api/`, `auth/`, `db/`, `sync/`, `components/`) e `src/features/clients/`,
-começo da outbox vinda do spike 1a ([ADR 0030](../../docs/decisions/0030-tanstack-db-mantido-apos-o-spike-1a-outbox-persistida-contra-o-upsertclient.md));
+Hoje existem `src/app/` (o shell no grupo `(app)`), `src/shared/` (`api/`, `auth/`, `db/`, `sync/`, `components/`),
+`src/sw.ts` (service worker, [ADR 0032](../../docs/decisions/0032-serwist-pelo-cli-sobre-o-static-export-build-com-turbopack.md)) e `src/features/clients/`, começo da outbox vinda do spike 1a ([ADR 0030](../../docs/decisions/0030-tanstack-db-mantido-apos-o-spike-1a-outbox-persistida-contra-o-upsertclient.md));
 a árvore descrita em [Estrutura de pastas](../../docs/architecture/frontend.md#estrutura-de-pastas) é o alvo.
 TanStack DB e `@tanstack/offline-transactions` têm versão exata: antes de mudar, ler a documentação da versão
 instalada (`node_modules/@tanstack/*/skills/`), não a memória.
@@ -42,7 +42,8 @@ Essas fronteiras são regra, não convenção (viram regras de lint).
 
 ## Comandos (rodar dentro de `apps/web` ou com `pnpm --filter web`)
 
-`dev`, `build`, `lint` (Oxlint), `format` (Oxfmt), `typecheck`, `test` (Vitest), `check` (lint + typecheck + test).
+`dev`, `build` (`next build` + `serwist build`), `lint` (Oxlint), `format` (Oxfmt), `typecheck` (app e `tsconfig.sw.json`),
+`test` (Vitest), `check` (lint + typecheck + test). O service worker só registra no build de produção.
 
 ## Figma → Sanjou
 
@@ -55,6 +56,7 @@ locais, em [figma-sanjou.md](../../docs/architecture/figma-sanjou.md). Sem Code 
 | Alert, Avatar | `import { Alert, AlertTitle, AlertDescription } from "@sanjou/ui/alert"`, `import { Avatar, AvatarFallback } from "@sanjou/ui/avatar"` |
 | TableHead, TableCell | `import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@sanjou/ui/table"` |
 | DialogContent, SelectTrigger | `import { Dialog, DialogContent } from "@sanjou/ui/dialog"`, `import { Select, SelectTrigger } from "@sanjou/ui/select"` |
+| DropdownMenu | `import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@sanjou/ui/dropdown-menu"` |
 | Form item | `import { FormField, FormItem, FormLabel, FormControl, FormMessage } from "@sanjou/ui/form"` (react-hook-form, ADR 0023) |
 | Icon/* | `import { Check } from "lucide-react"` (mesmo nome) |
 | Avis/Mark, Avis/Lockup | `import { AvisMark } from "@/shared/components/avis-mark"`, `import { AvisLockup } from "@/shared/components/avis-lockup"` (marca, ADR 0029) |
@@ -65,4 +67,5 @@ locais, em [figma-sanjou.md](../../docs/architecture/figma-sanjou.md). Sem Code 
 Componentes locais genéricos que sobem em bloco na próxima release do Sanjou (ADR 0020). No Figma,
 levam "Candidato ao Sanjou" na descrição. Uma linha por componente: nome, caminho, motivo.
 
-_Nenhum ainda._
+- `NavItem`, `Sidebar`, `BottomNav` (`src/shared/components/nav.tsx`): navegação de app com sidebar no desktop e barra inferior no celular; nada nela é do vistoria.
+- `Sheet` (`src/shared/components/sheet.tsx`): drawer lateral e bottom sheet sobre o `Dialog` do Sanjou, que hoje só centraliza.
