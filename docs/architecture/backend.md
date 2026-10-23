@@ -74,10 +74,12 @@ Vistoria.Api/
     Impl/AuthService.cs          # cadastro, tokens, rotação, tolerância
   Repositories/
     IRepository.cs               # genérico, async, sobre SyncEntity
+    IInspectionRepository.cs
     Impl/GenericRepository.cs
     Impl/InspectionRepository.cs # Include de ambientes e itens, delta
   Model/
     Base/SyncEntity.cs
+    Base/AggregateChild.cs       # base de Room e InspectionItem (sem versão)
     Client.cs
     Property.cs
     Template.cs                  # ambientes e itens em JSON
@@ -137,7 +139,7 @@ public abstract class SyncEntity
 - `Inspection` é a raiz. Ambientes e itens só são escritos pelo `PUT` da vistoria, nunca por endpoint próprio. Campos e limites de cada entidade estão no [Modelo de domínio](../vision.md#modelo-de-domínio) do documento [Visão do Projeto](../vision.md).
 - A versão do agregado é a da raiz. Toda mudança em ambiente ou item atualiza `Inspection.UpdatedAt`, o que força a linha da raiz a mudar e o rowversion a subir. ETag e delta só olham a raiz.
 - No `PUT`, `rooms` (e `items` dentro de cada ambiente) é a lista completa. Id novo é criado; existente que não veio é marcado com `DeletedAt`.
-- `Room` e `InspectionItem` não têm `version` própria.
+- `Room` e `InspectionItem` não têm `version` própria: herdam de `AggregateChild` (só `Id` do cliente e `DeletedAt`, com o mesmo filtro `SoftDelete`), não de `SyncEntity` ([ADR 0035](../decisions/0035-ambiente-e-item-do-agregado-sobre-aggregatechild-sem-syncentity.md)). No `SaveChangesAsync`, incluir, alterar ou remover um filho marca a vistoria como `Modified`, e `Remove` de filho vira `DeletedAt`. Gravar um filho sem a vistoria rastreada no mesmo contexto lança `InvalidOperationException`.
 - **Conclusão:** o `PUT` com `status: completed` só é aceito se houver ao menos um ambiente, ao menos um item por ambiente e `condition` em todos os itens. O servidor grava `CompletedAt`. Depois disso, qualquer `PUT` ou `DELETE` responde 409 `locked`.
 - **Saída:** `referenceInspectionId`, quando presente, precisa apontar para uma entrada concluída do mesmo imóvel e do mesmo dono.
 - `Template` guarda ambientes e itens como JSON numa coluna só: é um molde, nunca consultado por item.

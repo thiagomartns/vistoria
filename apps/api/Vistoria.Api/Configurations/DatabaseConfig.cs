@@ -16,6 +16,7 @@ public static class DatabaseConfig
         services.AddDbContext<AppDbContext>(options =>
             options.UseSqlServer(configuration.GetConnectionString(ConnectionStringName)));
         services.AddScoped(typeof(IRepository<>), typeof(GenericRepository<>));
+        services.AddScoped<IInspectionRepository, InspectionRepository>();
         return services;
     }
 

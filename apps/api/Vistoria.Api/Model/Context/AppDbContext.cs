@@ -13,20 +13,28 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, TimeProvider t
     public DbSet<Client> Clients => Set<Client>();
     public DbSet<Property> Properties => Set<Property>();
     public DbSet<Template> Templates => Set<Template>();
+    public DbSet<Inspection> Inspections => Set<Inspection>();
+    public DbSet<Room> Rooms => Set<Room>();
+    public DbSet<InspectionItem> InspectionItems => Set<InspectionItem>();
     public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
 
-    // Cada entidade traz seu IEntityTypeConfiguration em Model/Configurations/; o que é comum a toda SyncEntity
-    // vem depois, para nenhum derivado ficar sem.
+    // Cada entidade traz seu IEntityTypeConfiguration em Model/Configurations/; o que é comum a toda SyncEntity (e a
+    // todo filho de agregado) vem depois, para nenhum derivado ficar sem.
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
+        ConfigureAll<SyncEntity>(modelBuilder, nameof(ConfigureSyncEntity));
+        ConfigureAll<AggregateChild>(modelBuilder, nameof(ConfigureAggregateChild));
+    }
 
-        var configure = typeof(AppDbContext).GetMethod(nameof(ConfigureSyncEntity), BindingFlags.NonPublic | BindingFlags.Static)!;
-        var syncTypes = modelBuilder.Model.GetEntityTypes()
-            .Where(e => e.BaseType is null && e.ClrType.IsAssignableTo(typeof(SyncEntity)))
+    private static void ConfigureAll<TBase>(ModelBuilder modelBuilder, string methodName)
+    {
+        var configure = typeof(AppDbContext).GetMethod(methodName, BindingFlags.NonPublic | BindingFlags.Static)!;
+        var types = modelBuilder.Model.GetEntityTypes()
+            .Where(e => e.BaseType is null && e.ClrType.IsAssignableTo(typeof(TBase)))
             .Select(e => e.ClrType)
             .ToList();
-        foreach (var type in syncTypes)
+        foreach (var type in types)
         {
             configure.MakeGenericMethod(type).Invoke(null, [modelBuilder]);
         }
@@ -39,6 +47,15 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, TimeProvider t
         entity.Property(e => e.Id).ValueGeneratedNever();
         entity.Property(e => e.Version).IsRowVersion();
         entity.HasIndex(e => new { e.OwnerId, e.Version });
+        entity.HasQueryFilter(SoftDeleteFilter, e => e.DeletedAt == null);
+    }
+
+    // Sem versão, dono nem datas (ADR 0035): só a chave do cliente e o soft delete, que tira o filho do Include.
+    private static void ConfigureAggregateChild<T>(ModelBuilder modelBuilder) where T : AggregateChild
+    {
+        var entity = modelBuilder.Entity<T>();
+        entity.HasKey(e => e.Id);
+        entity.Property(e => e.Id).ValueGeneratedNever();
         entity.HasQueryFilter(SoftDeleteFilter, e => e.DeletedAt == null);
     }
 
@@ -60,6 +77,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, TimeProvider t
     private void StampSyncEntities()
     {
         var now = time.GetUtcNow();
+        TouchAggregateRoots(now);
         foreach (var entry in ChangeTracker.Entries<SyncEntity>())
         {
             switch (entry.State)
@@ -78,6 +96,49 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, TimeProvider t
                     createdAt.IsModified = false;
                     entry.Entity.UpdatedAt = now;
                     break;
+            }
+        }
+    }
+
+    // Regra do agregado (backend.md): ambiente e item não têm versão, então qualquer mudança neles marca a vistoria
+    // Modified; o laço de StampSyncEntities carimba o UpdatedAt dela e o UPDATE sobe o rowversion. Remove de filho
+    // vira DeletedAt = now, como na raiz. Sem a vistoria rastreada não há versão para subir: filho só se grava por ela.
+    private void TouchAggregateRoots(DateTimeOffset now)
+    {
+        var changed = ChangeTracker.Entries<AggregateChild>()
+            .Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+            .ToList();
+        if (changed.Count == 0)
+        {
+            return;
+        }
+
+        var inspections = ChangeTracker.Entries<Inspection>().ToDictionary(e => e.Entity.Id);
+        var rooms = ChangeTracker.Entries<Room>().ToDictionary(e => e.Entity.Id, e => e.Entity);
+        foreach (var entry in changed)
+        {
+            if (entry.State == EntityState.Deleted)
+            {
+                entry.State = EntityState.Modified;
+                entry.Entity.DeletedAt = now;
+            }
+
+            var inspectionId = entry.Entity switch
+            {
+                Room room => room.InspectionId,
+                InspectionItem item when rooms.TryGetValue(item.RoomId, out var room) => room.InspectionId,
+                _ => (Guid?)null,
+            };
+            if (inspectionId is not { } id || !inspections.TryGetValue(id, out var root))
+            {
+                throw new InvalidOperationException(
+                    $"{entry.Entity.GetType().Name} {entry.Entity.Id} gravado sem a vistoria rastreada: ambientes e "
+                    + "itens só são escritos pela raiz do agregado.");
+            }
+
+            if (root.State == EntityState.Unchanged)
+            {
+                root.State = EntityState.Modified;
             }
         }
     }

@@ -20,9 +20,11 @@ Pastas em [Estrutura de pastas](../../docs/architecture/backend.md#estrutura-de-
 ## Regras
 
 - **Toda entidade do domínio herda de `SyncEntity`** (`Id` Guid do cliente, `Version` rowversion, `CreatedAt`,
-  `UpdatedAt`, `DeletedAt`, `OwnerId`). `Room` e `InspectionItem` só são escritos pelo `PUT` da vistoria e não
-  têm versão própria. Só as de autenticação e infraestrutura (`User`, `RefreshToken`, `IdempotencyRecord`)
-  ficam fora ([ADR 0026](../../docs/decisions/0026-usuario-e-entidades-de-autenticacao-fora-do-syncentity-senha-de-8-a-128-caracteres-sem-regra-de-composicao.md)).
+  `UpdatedAt`, `DeletedAt`, `OwnerId`). A exceção são `Room` e `InspectionItem`: só são escritos pelo `PUT` da
+  vistoria, herdam de `AggregateChild` (`Id` e `DeletedAt`, sem versão) e, ao mudar, sobem a versão da vistoria no
+  `SaveChangesAsync`, que exige a vistoria rastreada
+  ([ADR 0035](../../docs/decisions/0035-ambiente-e-item-do-agregado-sobre-aggregatechild-sem-syncentity.md)).
+  Só as de autenticação e infraestrutura (`User`, `RefreshToken`, `IdempotencyRecord`) ficam fora ([ADR 0026](../../docs/decisions/0026-usuario-e-entidades-de-autenticacao-fora-do-syncentity-senha-de-8-a-128-caracteres-sem-regra-de-composicao.md)).
 - **Erro só por exceção tipada do catálogo** (`Infrastructure/Errors/`), traduzida pelo
   `GlobalExceptionHandler` em `ProblemDetails` com `type`. Nada de `BadRequest("...")` com string.
 - **Rota exige access token por padrão** (fallback policy). Só `/auth/*` e health levam `[AllowAnonymous]`,
