@@ -94,6 +94,28 @@ export type SignUpDto = {
     password: string;
 };
 
+export type TemplateDto = {
+    id: string;
+    name: string;
+    rooms: Array<TemplateRoomDto>;
+    version: string;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type TemplateItemDto = {
+    id: string;
+    name: string;
+    position: number;
+};
+
+export type TemplateRoomDto = {
+    id: string;
+    name: string;
+    position: number;
+    items: Array<TemplateItemDto>;
+};
+
 export type UpsertClientDto = {
     name: string;
     document?: null | string;
@@ -112,6 +134,24 @@ export type UpsertPropertyDto = {
     zipCode: string;
     type: null | PropertyType;
     notes?: null | string;
+};
+
+export type UpsertTemplateDto = {
+    name: string;
+    rooms: Array<UpsertTemplateRoomDto>;
+};
+
+export type UpsertTemplateItemDto = {
+    id: null | string;
+    name: string;
+    position: null | number;
+};
+
+export type UpsertTemplateRoomDto = {
+    id: null | string;
+    name: string;
+    position: null | number;
+    items: Array<UpsertTemplateItemDto>;
 };
 
 export type SignUpData = {
@@ -399,3 +439,107 @@ export type UpsertPropertyResponses = {
 };
 
 export type UpsertPropertyResponse = UpsertPropertyResponses[keyof UpsertPropertyResponses];
+
+export type GetTemplateData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/templates/{id}';
+};
+
+export type GetTemplateErrors = {
+    /**
+     * Unauthorized
+     */
+    401: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+};
+
+export type GetTemplateError = GetTemplateErrors[keyof GetTemplateErrors];
+
+export type GetTemplateResponses = {
+    /**
+     * OK
+     */
+    200: TemplateDto;
+};
+
+export type GetTemplateResponse = GetTemplateResponses[keyof GetTemplateResponses];
+
+export type UpsertTemplateData = {
+    body: UpsertTemplateDto;
+    headers: {
+        /**
+         * ETag da versão-base. Obrigatório quando o registro já existe (ausente → 428 precondition-required); omitido na criação.
+         */
+        'If-Match'?: string;
+        /**
+         * UUID v7, um por corpo: o mesmo corpo reenviado usa a mesma chave.
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/templates/{id}';
+};
+
+export type UpsertTemplateErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Unauthorized
+     */
+    401: ProblemDetails;
+    /**
+     * Forbidden
+     */
+    403: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Gone
+     */
+    410: ProblemDetails;
+    /**
+     * Precondition Failed
+     */
+    412: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Precondition Required
+     */
+    428: ProblemDetails;
+    /**
+     * Too Many Requests
+     */
+    429: ProblemDetails;
+};
+
+export type UpsertTemplateError = UpsertTemplateErrors[keyof UpsertTemplateErrors];
+
+export type UpsertTemplateResponses = {
+    /**
+     * OK
+     */
+    200: TemplateDto;
+    /**
+     * Created
+     */
+    201: TemplateDto;
+};
+
+export type UpsertTemplateResponse = UpsertTemplateResponses[keyof UpsertTemplateResponses];

@@ -33,6 +33,27 @@ public class CommittedOpenApiTests
             .Should().Contain("#/components/schemas/PropertyType");
     }
 
+    // Ambientes e itens vão inteiros no corpo do roteiro, com id, nome e posição.
+    [Theory]
+    [InlineData("get", "getTemplate")]
+    [InlineData("put", "upsertTemplate")]
+    public void TemplateOperations_ReturnTemplateDto_WithRoomsAndItems(string method, string operationId)
+    {
+        var document = Document();
+        var operation = document.GetProperty("paths").GetProperty("/api/v1/templates/{id}").GetProperty(method);
+        var schemas = document.GetProperty("components").GetProperty("schemas");
+
+        operation.GetProperty("operationId").GetString().Should().Be(operationId);
+        operation.GetProperty("responses").GetProperty("200").GetProperty("content").GetProperty("application/json")
+            .GetProperty("schema").GetProperty("$ref").GetString().Should().Be("#/components/schemas/TemplateDto");
+        schemas.GetProperty("TemplateDto").GetProperty("properties").GetProperty("rooms").GetProperty("items")
+            .GetProperty("$ref").GetString().Should().Be("#/components/schemas/TemplateRoomDto");
+        schemas.GetProperty("TemplateRoomDto").GetProperty("properties").EnumerateObject().Select(p => p.Name)
+            .Should().Equal("id", "name", "position", "items");
+        schemas.GetProperty("TemplateItemDto").GetProperty("properties").EnumerateObject().Select(p => p.Name)
+            .Should().Equal("id", "name", "position");
+    }
+
     // Status da tabela de Endpoints do backend.md.
     [Theory]
     [InlineData("/api/v1/auth/signup", "signUp", "201", new[] { "400", "429" })]

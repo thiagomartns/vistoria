@@ -12,6 +12,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, TimeProvider t
     public DbSet<User> Users => Set<User>();
     public DbSet<Client> Clients => Set<Client>();
     public DbSet<Property> Properties => Set<Property>();
+    public DbSet<Template> Templates => Set<Template>();
     public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
 
     // Cada entidade traz seu IEntityTypeConfiguration em Model/Configurations/; o que é comum a toda SyncEntity

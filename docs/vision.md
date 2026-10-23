@@ -91,7 +91,7 @@ Room e Item não têm versão própria; mudar qualquer item sobe a versão da vi
 | --- | --- | --- |
 | Client | `name`, `document`, `email`, `phone` | Nome de 2 a 120 caracteres; CPF ou CNPJ opcional, sem máscara e com os dígitos verificadores (CNPJ também alfanumérico, como a Receita emite desde julho de 2026) |
 | Property | `clientId`, `street`, `number`, `complement`, `district`, `city`, `state`, `zipCode`, `type`, `notes` | Cliente do mesmo dono; só `complement` (até 60) e `notes` (até 1.000) são opcionais; `street` até 120, `number` até 10 (texto, aceita "s/n"), `district` e `city` até 60; UF uma das 27 siglas, em maiúsculas; CEP com 8 dígitos, sem hífen; `type`: `apartment` \| `house` \| `commercial` \| `other` |
-| Template | `name`, `rooms[{ id, name, position, items[{ id, name, position }] }]` | Mesmos limites de Room e Item; um roteiro padrão "Apartamento" vem no seed |
+| Template | `name`, `rooms[{ id, name, position, items[{ id, name, position }] }]` | Nome de 1 a 60 caracteres; mesmos limites de Room e Item (até 40 ambientes, até 60 itens por ambiente, nomes de 1 a 60); ids únicos no roteiro; ambientes e itens ficam na ordem da lista enviada; um roteiro padrão "Apartamento" vem no seed |
 
 ### Regras de negócio
 

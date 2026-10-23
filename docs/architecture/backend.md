@@ -151,7 +151,7 @@ public abstract class SyncEntity
 
 ## Contrato da API
 
-Rotas no plural com a versão no prefixo (`/api/v1/...`). `operationId` explícito em camelCase via `[EndpointName]`. JSON em camelCase, datas em ISO 8601 com offset, enums como string. Todo erro é `ProblemDetails` com um `type` do catálogo abaixo.
+Rotas no plural com a versão no prefixo (`/api/v1/...`). `operationId` explícito em camelCase via `[EndpointName]`. JSON em camelCase, datas em ISO 8601 com offset, enums como string e números só como número (`"3"` no lugar de `3` é 400). Todo erro é `ProblemDetails` com um `type` do catálogo abaixo.
 
 ### Endpoints
 
