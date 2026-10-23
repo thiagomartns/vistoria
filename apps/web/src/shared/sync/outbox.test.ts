@@ -12,8 +12,10 @@ import {
   RetryableSyncError,
   enqueue,
   outboxHeaders,
+  readRetryAfter,
   shouldRetry,
   syncFailure,
+  waitRetryAfter,
 } from "./outbox";
 
 const problem = (type: string, status: number) => ({
@@ -66,6 +68,49 @@ describe("syncFailure", () => {
     expect((error as RejectedSyncError).group).toBe(group);
     expect(shouldRetry(error)).toBe(false);
     expect(warn).toHaveBeenCalledOnce();
+  });
+});
+
+describe("Retry-After", () => {
+  const withRetryAfter = (type: string, status: number, value: string) => {
+    const result = problem(type, status);
+    result.response.headers.set("Retry-After", value);
+    return result;
+  };
+
+  it.each([
+    ["idempotency-in-progress", 409],
+    ["rate-limited", 429],
+  ])("%s: o erro leva o Retry-After em ms", (type, status) => {
+    const error = syncFailure(withRetryAfter(type, status, "2"));
+
+    expect(error).toBeInstanceOf(RetryableSyncError);
+    expect((error as RetryableSyncError).retryAfterMs).toBe(2_000);
+  });
+
+  it("ausente, ilegível ou data HTTP → só o backoff do executor; acima de 60 s, 60 s", () => {
+    expect(readRetryAfter(new Response(null))).toBeUndefined();
+    expect(readRetryAfter(undefined)).toBeUndefined();
+    expect(
+      readRetryAfter(new Response(null, { headers: { "Retry-After": "dois" } })),
+    ).toBeUndefined();
+    expect(readRetryAfter(new Response(null, { headers: { "Retry-After": "-1" } }))).toBeUndefined();
+    expect(
+      readRetryAfter(
+        new Response(null, { headers: { "Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT" } }),
+      ),
+    ).toBeUndefined();
+    expect(readRetryAfter(new Response(null, { headers: { "Retry-After": "3600" } }))).toBe(60_000);
+  });
+
+  it("waitRetryAfter espera só quando há Retry-After", async () => {
+    const sleep = vi.fn<(ms: number) => Promise<void>>(async () => {});
+
+    await waitRetryAfter(syncFailure(withRetryAfter("idempotency-in-progress", 409, "1")), sleep);
+    await waitRetryAfter(syncFailure(problem("internal", 500)), sleep);
+    await waitRetryAfter(new Error("bug"), sleep);
+
+    expect(sleep.mock.calls).toEqual([[1_000]]);
   });
 });
 

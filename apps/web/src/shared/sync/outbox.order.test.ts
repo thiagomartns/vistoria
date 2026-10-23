@@ -1,7 +1,7 @@
 import { createCollection, localOnlyCollectionOptions } from "@tanstack/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { type Outbox, RetryableSyncError, enqueue, startOutbox } from "./outbox";
+import { type Outbox, RejectedSyncError, RetryableSyncError, enqueue, startOutbox } from "./outbox";
 
 // A ordem da outbox com o executor de verdade (ADR 0034): uma transação por vez, na ordem de criação, e a da frente
 // segura as de trás, inclusive no backoff. É o que faz o imóvel criado com um cliente pendente sair depois dele.
@@ -86,6 +86,7 @@ afterEach(() => {
   for (const outbox of open) outbox.dispose();
   open = [];
   localStorage.clear();
+  vi.restoreAllMocks();
 });
 
 describe("outbox serial", () => {
@@ -139,6 +140,35 @@ describe("outbox serial", () => {
     second.outbox.getOnlineDetector().notifyOnline();
 
     await vi.waitFor(() => expect(record.sent).toHaveLength(2), { timeout: 10_000 });
+    expect(record.sent).toEqual(["client:c1", "property:p1"]);
+  });
+
+  it("version-conflict sai da fila na primeira tentativa, sem laço, e a de trás segue", async () => {
+    const conflict = new RejectedSyncError("user-decision", {
+      kind: "problem",
+      problem: {
+        type: "urn:vistoria:problem:version-conflict",
+        title: "Conflito",
+        status: 412,
+        detail: "Conflito",
+        traceId: "00-trace",
+      },
+    });
+    const record = recorder((entity) => {
+      if (entity === "client") throw conflict;
+    });
+    const { outbox, clients, properties } = start(record);
+    open.push(outbox);
+    await ready(outbox);
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    enqueue(outbox, "upsertClient", () => clients.insert({ id: "c1" }));
+    enqueue(outbox, "upsertProperty", () => properties.insert({ id: "p1" }));
+
+    await vi.waitFor(async () => expect(await outbox.peekOutbox()).toHaveLength(0), { timeout: 5_000 });
+    // Acordar a fila não reenvia o que saiu dela.
+    outbox.getOnlineDetector().notifyOnline();
+    await new Promise((done) => setTimeout(done, 300));
     expect(record.sent).toEqual(["client:c1", "property:p1"]);
   });
 });

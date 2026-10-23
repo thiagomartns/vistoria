@@ -122,6 +122,31 @@ describe("upsertPropertyMutation", () => {
     expect(drafts.get(id)).toMatchObject({ id, entity: "property", data: record, status: "rejected", errors });
   });
 
+  it("412 version-conflict → rascunho de property em conflito, com o current, sem gravar na store", async () => {
+    const current = { ...dto, number: "121", version: "AAAAAAAAB9U=" };
+    const { send, acceptMutations, drafts } = setup(() =>
+      Response.json(
+        {
+          type: "urn:vistoria:problem:version-conflict",
+          title: "version-conflict",
+          status: 412,
+          detail: "version-conflict",
+          traceId: "00-trace",
+          current,
+        },
+        { status: 412, headers: { "content-type": "application/problem+json" } },
+      ),
+    );
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await expect(send({ transaction: transactionOf(record), idempotencyKey })).rejects.toBeInstanceOf(
+      RejectedSyncError,
+    );
+
+    expect(acceptMutations).not.toHaveBeenCalled();
+    expect(drafts.get(id)).toMatchObject({ id, entity: "property", data: record, status: "conflict", conflict: { current } });
+  });
+
   it("no painel de pendências, o imóvel aparece pelo endereço", () => {
     const entry: OutboxEntry = {
       id: "t1",

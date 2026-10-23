@@ -1,5 +1,5 @@
 import { byText, fold } from "@/shared/search";
-import type { DraftRecord } from "@/shared/sync/drafts";
+import { type DraftRecord, type DraftSyncState, draftSyncState } from "@/shared/sync/drafts";
 import type { RecordSyncState } from "@/shared/sync/sync-view";
 
 import { PROPERTY_ENTITY, type PropertyRecord, type PropertyType } from "../models/property";
@@ -9,7 +9,7 @@ import { PROPERTY_TYPES } from "../schemas/property.schemas";
 // teste, e os componentes recebem só o resultado.
 
 /** O estado do SyncBadge de um imóvel. */
-export type PropertySyncState = RecordSyncState | "sincronizado" | "rejeitado";
+export type PropertySyncState = RecordSyncState | "sincronizado" | DraftSyncState;
 
 export interface PropertyRow {
   id: string;
@@ -75,8 +75,8 @@ function fieldsOf(
 }
 
 /**
- * Um imóvel como a tela mostra. O rascunho recusado vence: ele tem o que a pessoa digitou e o servidor recusou (e,
- * numa criação recusada, é o único lugar onde o registro ainda existe).
+ * Um imóvel como a tela mostra. O rascunho (recusado ou em conflito) vence: ele tem o que a pessoa digitou e o
+ * servidor não aceitou (e, numa criação recusada, é o único lugar onde o registro ainda existe).
  */
 export function propertyRowOf(
   property: PropertyRecord | undefined,
@@ -84,12 +84,12 @@ export function propertyRowOf(
   syncState: RecordSyncState | undefined,
   clientNames: ReadonlyMap<string, string> = new Map(),
 ): PropertyRow | undefined {
-  if (draft) return { ...fieldsOf(draft.data, draft.id, clientNames), sync: "rejeitado" };
+  if (draft) return { ...fieldsOf(draft.data, draft.id, clientNames), sync: draftSyncState(draft) };
   if (!property) return undefined;
   return { ...fieldsOf(property, property.id, clientNames), sync: syncState ?? "sincronizado" };
 }
 
-/** As linhas da lista: imóveis e rascunhos recusados de imóvel, em ordem de endereço. */
+/** As linhas da lista: imóveis e rascunhos (recusados ou em conflito) de imóvel, em ordem de endereço. */
 export function propertyRows(
   properties: readonly PropertyRecord[],
   allDrafts: readonly DraftRecord[],

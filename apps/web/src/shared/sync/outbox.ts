@@ -37,6 +37,8 @@ export class RetryableSyncError extends Error {
   constructor(
     readonly group: ReactionGroup,
     readonly failure: ApiFailure,
+    /** O `Retry-After` da resposta (429 e 409 `idempotency-in-progress`), em ms; sem ele, só o backoff. */
+    readonly retryAfterMs?: number,
   ) {
     super(`Envio falhou (${group}); tenta de novo`);
     this.name = "RetryableSyncError";
@@ -54,14 +56,37 @@ export class RejectedSyncError extends NonRetriableError {
   }
 }
 
+/** O teto do `Retry-After` que a outbox respeita: o mesmo do backoff do executor. */
+export const MAX_RETRY_AFTER_MS = 60_000;
+
+/** O `Retry-After` em segundos (backend.md, "Cabeçalhos"), em ms; ausente ou ilegível → `undefined`. */
+export function readRetryAfter(response?: Response): number | undefined {
+  const value = response?.headers.get("Retry-After")?.trim();
+  if (!value || !/^\d+$/.test(value)) return undefined;
+  return Math.min(Number(value) * 1000, MAX_RETRY_AFTER_MS);
+}
+
 /** Transforma o `{ error, response }` de uma chamada que falhou no erro que a mutationFn lança. */
 export function syncFailure(result: { error: unknown; response?: Response }): Error {
   const failure = readFailure(result);
   const group = handleProblem(failure);
   if (group === "renew-session") expireSession();
-  if (RETRY_GROUPS.has(group)) return new RetryableSyncError(group, failure);
+  if (RETRY_GROUPS.has(group)) {
+    return new RetryableSyncError(group, failure, readRetryAfter(result.response));
+  }
   console.warn("[outbox] transação recusada", group, failure);
   return new RejectedSyncError(group, failure);
+}
+
+const delay = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
+
+/**
+ * Espera o `Retry-After` de uma falha antes de ela voltar para a fila. O executor (1.1.1) calcula o atraso só pelo
+ * número de tentativas, sem gancho por erro; esperar dentro da mutationFn garante que a próxima tentativa nunca sai
+ * antes do que o servidor pediu (o backoff dele soma depois). A fila é serial: nada que pudesse sair antes espera.
+ */
+export async function waitRetryAfter(error: Error, sleep = delay): Promise<void> {
+  if (error instanceof RetryableSyncError && error.retryAfterMs) await sleep(error.retryAfterMs);
 }
 
 /**

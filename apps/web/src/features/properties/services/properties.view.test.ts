@@ -75,6 +75,15 @@ describe("propertyRowOf", () => {
     const draft = rejected(property("p1", { state: "XX" }));
     expect(propertyRowOf(property("p1"), draft, "local")).toMatchObject({ state: "XX", sync: "rejeitado" });
   });
+
+  it("rascunho em conflito → conflito", () => {
+    const draft: DraftRecord = {
+      ...rejected(property("p1", { number: "9" })),
+      status: "conflict",
+      conflict: { current: property("p1") },
+    };
+    expect(propertyRowOf(property("p1"), draft, undefined)).toMatchObject({ number: "9", sync: "conflito" });
+  });
 });
 
 describe("propertyRows", () => {

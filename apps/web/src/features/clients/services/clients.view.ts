@@ -1,5 +1,5 @@
 import { fold } from "@/shared/search";
-import type { DraftRecord } from "@/shared/sync/drafts";
+import { type DraftRecord, type DraftSyncState, draftSyncState } from "@/shared/sync/drafts";
 import type { RecordSyncState } from "@/shared/sync/sync-view";
 
 import { CLIENT_ENTITY, type ClientRecord } from "../models/client";
@@ -8,7 +8,7 @@ import { CLIENT_ENTITY, type ClientRecord } from "../models/client";
 // num teste, e os componentes recebem só o resultado.
 
 /** O estado do SyncBadge de um client. */
-export type ClientSyncState = RecordSyncState | "sincronizado" | "rejeitado";
+export type ClientSyncState = RecordSyncState | "sincronizado" | DraftSyncState;
 
 export interface ClientRow {
   id: string;
@@ -33,15 +33,15 @@ function fieldsOf(record: Record<string, unknown>, id: string): ClientFields {
 }
 
 /**
- * Um client como a tela mostra. O rascunho recusado vence: ele tem o que a pessoa digitou e o servidor recusou
- * (e, numa criação recusada, é o único lugar onde o registro ainda existe).
+ * Um client como a tela mostra. O rascunho (recusado ou em conflito) vence: ele tem o que a pessoa digitou e o
+ * servidor não aceitou (e, numa criação recusada, é o único lugar onde o registro ainda existe).
  */
 export function clientRowOf(
   client: ClientRecord | undefined,
   draft: DraftRecord | undefined,
   syncState: RecordSyncState | undefined,
 ): ClientRow | undefined {
-  if (draft) return { ...fieldsOf(draft.data, draft.id), sync: "rejeitado" };
+  if (draft) return { ...fieldsOf(draft.data, draft.id), sync: draftSyncState(draft) };
   if (!client) return undefined;
   return { ...fieldsOf(client, client.id), sync: syncState ?? "sincronizado" };
 }
@@ -58,7 +58,7 @@ export function matchesSearch(row: ClientRow, search: string): boolean {
   );
 }
 
-/** As linhas da lista: clients e rascunhos recusados de client, em ordem alfabética. */
+/** As linhas da lista: clients e rascunhos (recusados ou em conflito) de client, em ordem alfabética. */
 export function clientRows(
   clients: readonly ClientRecord[],
   allDrafts: readonly DraftRecord[],
