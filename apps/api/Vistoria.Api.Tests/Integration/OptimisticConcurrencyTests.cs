@@ -15,12 +15,12 @@ using Vistoria.Api.Tests.Support;
 namespace Vistoria.Api.Tests.Integration;
 
 // Fase 4 (backend.md, "Cabeçalhos" e "Testes de integração"): If-Match, 412, 428 e as corridas → 409. Cada cenário
-// roda em clients e properties, que passam pelo mesmo SyncEntityService.
+// roda em clients, properties e templates, que passam pelo mesmo SyncEntityService.
 public class OptimisticConcurrencyTests(ApiFactory factory) : IClassFixture<ApiFactory>
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    public static TheoryData<string> Resources => new() { "clients", "properties" };
+    public static TheoryData<string> Resources => new() { "clients", "properties", "templates" };
 
     [Theory]
     [MemberData(nameof(Resources))]
@@ -70,6 +70,7 @@ public class OptimisticConcurrencyTests(ApiFactory factory) : IClassFixture<ApiF
     {
         { "clients", "weak" }, { "clients", "star" }, { "clients", "garbage" }, { "clients", "unquoted" },
         { "clients", "list" }, { "properties", "weak" }, { "properties", "star" }, { "properties", "unquoted" },
+        { "templates", "weak" }, { "templates", "garbage" },
     };
 
     // Nenhum desses prova sobre qual versão o cliente editou, nem mesmo os que contêm o ETag atual.
@@ -206,6 +207,21 @@ public class OptimisticConcurrencyTests(ApiFactory factory) : IClassFixture<ApiF
         if (resource == "clients")
         {
             return new { name = "Maria Locadora" };
+        }
+
+        if (resource == "templates")
+        {
+            return new
+            {
+                name = "Apartamento",
+                rooms = new[]
+                {
+                    new { id = Guid.CreateVersion7(), name = "Sala", position = 0, items = new[]
+                    {
+                        new { id = Guid.CreateVersion7(), name = "Piso", position = 0 },
+                    } },
+                },
+            };
         }
 
         var (clientId, _, _) = await Create(client, "clients");

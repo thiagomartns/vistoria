@@ -17,19 +17,19 @@ using Vistoria.Api.Tests.Support;
 namespace Vistoria.Api.Tests.Integration;
 
 // Fase 5 (backend.md, "Idempotência" e "Testes de integração"): Idempotency-Key, 409 idempotency-in-progress, 422 e
-// a chave vencida. Cada cenário roda em clients e properties, que passam pelo mesmo IdempotencyFilter.
+// a chave vencida. Cada cenário roda em clients, properties e templates, que passam pelo mesmo IdempotencyFilter.
 public class IdempotencyTests(ApiFactory factory) : IClassFixture<ApiFactory>
 {
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(30);
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    public static TheoryData<string> Resources => new() { "clients", "properties" };
+    public static TheoryData<string> Resources => new() { "clients", "properties", "templates" };
 
     public static TheoryData<string, string> UnusableKeys => new()
     {
         { "clients", "missing" }, { "clients", "garbage" }, { "clients", "v4" }, { "clients", "two" },
-        { "properties", "missing" }, { "properties", "v4" },
+        { "properties", "missing" }, { "properties", "v4" }, { "templates", "missing" }, { "templates", "v4" },
     };
 
     // Sem uma chave v7 não há como reconhecer o reenvio: nada é executado.
@@ -300,6 +300,22 @@ public class IdempotencyTests(ApiFactory factory) : IClassFixture<ApiFactory>
             return new() { ["name"] = "Maria Locadora", ["phone"] = "71 3333-0000" };
         }
 
+        // Ambientes como objetos anônimos em camelCase, para o JSON serializado bater com o current da resposta.
+        if (resource == "templates")
+        {
+            return new()
+            {
+                ["name"] = "Apartamento",
+                ["rooms"] = new[]
+                {
+                    new { id = Guid.CreateVersion7(), name = "Sala", position = 0, items = new[]
+                    {
+                        new { id = Guid.CreateVersion7(), name = "Piso", position = 0 },
+                    } },
+                },
+            };
+        }
+
         var (clientId, _, _, _) = await Create(client, "clients");
         return new()
         {
@@ -314,13 +330,17 @@ public class IdempotencyTests(ApiFactory factory) : IClassFixture<ApiFactory>
         };
     }
 
-    // Outro corpo para o mesmo registro: o telefone do cliente ou o número do imóvel.
+    // Outro corpo para o mesmo registro: o telefone do cliente, o nome do roteiro ou o número do imóvel.
     private static Dictionary<string, object?> Changed(Dictionary<string, object?> body)
     {
         var changed = new Dictionary<string, object?>(body);
         if (changed.ContainsKey("phone"))
         {
             changed["phone"] = "71 3333-4242";
+        }
+        else if (changed.ContainsKey("rooms"))
+        {
+            changed["name"] = "Apartamento revisado";
         }
         else
         {

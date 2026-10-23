@@ -10,6 +10,7 @@ public static class DomainConfig
     {
         services.AddScoped<IClientService, ClientService>();
         services.AddScoped<IPropertyService, PropertyService>();
+        services.AddScoped<ITemplateService, TemplateService>();
         return services;
     }
 }

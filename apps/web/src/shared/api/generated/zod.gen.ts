@@ -100,6 +100,28 @@ export const zSignUpDto = z.object({
     password: z.string().min(8).max(128)
 });
 
+export const zTemplateItemDto = z.object({
+    id: z.uuid(),
+    name: z.string(),
+    position: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' })
+});
+
+export const zTemplateRoomDto = z.object({
+    id: z.uuid(),
+    name: z.string(),
+    position: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' }),
+    items: z.array(zTemplateItemDto)
+});
+
+export const zTemplateDto = z.object({
+    id: z.uuid(),
+    name: z.string(),
+    rooms: z.array(zTemplateRoomDto),
+    version: z.string(),
+    createdAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime()
+});
+
 export const zUpsertClientDto = z.object({
     name: z.string().min(2).max(120),
     document: z.string().nullish(),
@@ -118,6 +140,24 @@ export const zUpsertPropertyDto = z.object({
     zipCode: z.string().regex(/^[0-9]{8}$/),
     type: zPropertyType.nullable(),
     notes: z.string().max(1000).nullish()
+});
+
+export const zUpsertTemplateItemDto = z.object({
+    id: z.uuid().nullable(),
+    name: z.string().max(60),
+    position: z.int().gte(0).lte(2147483647).nullable()
+});
+
+export const zUpsertTemplateRoomDto = z.object({
+    id: z.uuid().nullable(),
+    name: z.string().max(60),
+    position: z.int().gte(0).lte(2147483647).nullable(),
+    items: z.array(zUpsertTemplateItemDto).max(60)
+});
+
+export const zUpsertTemplateDto = z.object({
+    name: z.string().min(1).max(60),
+    rooms: z.array(zUpsertTemplateRoomDto).max(40)
 });
 
 export const zSignUpBody = zSignUpDto;
@@ -188,3 +228,28 @@ export const zUpsertPropertyPath = z.object({
  * OK
  */
 export const zUpsertPropertyResponse = zPropertyDto;
+
+export const zGetTemplatePath = z.object({
+    id: z.uuid()
+});
+
+/**
+ * OK
+ */
+export const zGetTemplateResponse = zTemplateDto;
+
+export const zUpsertTemplateBody = zUpsertTemplateDto;
+
+export const zUpsertTemplateHeaders = z.object({
+    'If-Match': z.string().optional(),
+    'Idempotency-Key': z.uuid()
+});
+
+export const zUpsertTemplatePath = z.object({
+    id: z.uuid()
+});
+
+/**
+ * OK
+ */
+export const zUpsertTemplateResponse = zTemplateDto;

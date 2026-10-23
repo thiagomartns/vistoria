@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GetClientData, GetClientErrors, GetClientResponses, GetHealthData, GetHealthResponses, GetPropertyData, GetPropertyErrors, GetPropertyResponses, SignInData, SignInErrors, SignInResponses, SignUpData, SignUpErrors, SignUpResponses, UpsertClientData, UpsertClientErrors, UpsertClientResponses, UpsertPropertyData, UpsertPropertyErrors, UpsertPropertyResponses } from './types.gen';
+import type { GetClientData, GetClientErrors, GetClientResponses, GetHealthData, GetHealthResponses, GetPropertyData, GetPropertyErrors, GetPropertyResponses, GetTemplateData, GetTemplateErrors, GetTemplateResponses, SignInData, SignInErrors, SignInResponses, SignUpData, SignUpErrors, SignUpResponses, UpsertClientData, UpsertClientErrors, UpsertClientResponses, UpsertPropertyData, UpsertPropertyErrors, UpsertPropertyResponses, UpsertTemplateData, UpsertTemplateErrors, UpsertTemplateResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -53,6 +53,17 @@ export const getProperty = <ThrowOnError extends boolean = false>(options: Optio
 
 export const upsertProperty = <ThrowOnError extends boolean = false>(options: Options<UpsertPropertyData, ThrowOnError>): RequestResult<UpsertPropertyResponses, UpsertPropertyErrors, ThrowOnError> => (options.client ?? client).put<UpsertPropertyResponses, UpsertPropertyErrors, ThrowOnError>({
     url: '/api/v1/properties/{id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const getTemplate = <ThrowOnError extends boolean = false>(options: Options<GetTemplateData, ThrowOnError>): RequestResult<GetTemplateResponses, GetTemplateErrors, ThrowOnError> => (options.client ?? client).get<GetTemplateResponses, GetTemplateErrors, ThrowOnError>({ url: '/api/v1/templates/{id}', ...options });
+
+export const upsertTemplate = <ThrowOnError extends boolean = false>(options: Options<UpsertTemplateData, ThrowOnError>): RequestResult<UpsertTemplateResponses, UpsertTemplateErrors, ThrowOnError> => (options.client ?? client).put<UpsertTemplateResponses, UpsertTemplateErrors, ThrowOnError>({
+    url: '/api/v1/templates/{id}',
     ...options,
     headers: {
         'Content-Type': 'application/json',
