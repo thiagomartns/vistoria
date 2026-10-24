@@ -59,10 +59,9 @@ public abstract class SyncEntityService<TEntity, TDto>(IRepository<TEntity> repo
             baseVersion = parsed;
         }
 
-        await ValidateAsync(proposed, ownerId, cancellationToken);
-
         proposed.Id = id;
         proposed.OwnerId = ownerId;
+        await ValidateAsync(proposed, ownerId, cancellationToken);
 
         if (baseVersion is null)
         {

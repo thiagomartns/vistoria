@@ -42,6 +42,9 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     // Por último na configuração, para vencer um User Secret de dev que exista na máquina.
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        // Sem FileSystemWatcher em appsettings e User Secrets: cada host gastaria instâncias de inotify (128 no Linux),
+        // e a suíte estourava o limite com o dotnet watch do pnpm dev:api aberto.
+        builder.UseSetting("hostBuilder:reloadConfigOnChange", "false");
         builder.ConfigureAppConfiguration(config => config.AddInMemoryCollection(
             new Dictionary<string, string?>
             {

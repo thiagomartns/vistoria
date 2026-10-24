@@ -17,19 +17,21 @@ using Vistoria.Api.Tests.Support;
 namespace Vistoria.Api.Tests.Integration;
 
 // Fase 5 (backend.md, "Idempotência" e "Testes de integração"): Idempotency-Key, 409 idempotency-in-progress, 422 e
-// a chave vencida. Cada cenário roda em clients, properties e templates, que passam pelo mesmo IdempotencyFilter.
+// a chave vencida. Cada cenário roda em clients, properties, templates e inspections, que passam pelo mesmo
+// IdempotencyFilter.
 public class IdempotencyTests(ApiFactory factory) : IClassFixture<ApiFactory>
 {
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(30);
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    public static TheoryData<string> Resources => new() { "clients", "properties", "templates" };
+    public static TheoryData<string> Resources => new() { "clients", "properties", "templates", "inspections" };
 
     public static TheoryData<string, string> UnusableKeys => new()
     {
         { "clients", "missing" }, { "clients", "garbage" }, { "clients", "v4" }, { "clients", "two" },
         { "properties", "missing" }, { "properties", "v4" }, { "templates", "missing" }, { "templates", "v4" },
+        { "inspections", "missing" }, { "inspections", "v4" },
     };
 
     // Sem uma chave v7 não há como reconhecer o reenvio: nada é executado.
@@ -272,6 +274,7 @@ public class IdempotencyTests(ApiFactory factory) : IClassFixture<ApiFactory>
         {
             services.AddSingleton(gate);
             services.Replace(ServiceDescriptor.Scoped(typeof(IRepository<>), typeof(GatedRepository<>)));
+            services.Replace(ServiceDescriptor.Scoped<IInspectionRepository, GatedInspectionRepository>());
         }));
 
     private HttpClient Authenticated(WebApplicationFactory<Program> host, Guid ownerId)
@@ -316,6 +319,31 @@ public class IdempotencyTests(ApiFactory factory) : IClassFixture<ApiFactory>
             };
         }
 
+        if (resource == "inspections")
+        {
+            var (propertyId, _, _, _) = await Create(client, "properties");
+            return new()
+            {
+                ["propertyId"] = propertyId,
+                ["kind"] = "moveIn",
+                ["status"] = "inProgress",
+                ["startedAt"] = ApiFactory.Start,
+                ["generalNotes"] = null,
+                // Os campos de referência são só de saída (ignorados na entrada): vão nulos para bater com o current.
+                ["rooms"] = new[]
+                {
+                    new { id = Guid.CreateVersion7(), name = "Sala", position = 0, notes = (string?)null, items = new[]
+                    {
+                        new
+                        {
+                            id = Guid.CreateVersion7(), name = "Piso", position = 0, condition = "good",
+                            notes = (string?)null, referenceCondition = (string?)null, referenceNotes = (string?)null,
+                        },
+                    } },
+                },
+            };
+        }
+
         var (clientId, _, _, _) = await Create(client, "clients");
         return new()
         {
@@ -330,13 +358,18 @@ public class IdempotencyTests(ApiFactory factory) : IClassFixture<ApiFactory>
         };
     }
 
-    // Outro corpo para o mesmo registro: o telefone do cliente, o nome do roteiro ou o número do imóvel.
+    // Outro corpo para o mesmo registro: o telefone do cliente, o nome do roteiro, as notas da vistoria ou o número do
+    // imóvel.
     private static Dictionary<string, object?> Changed(Dictionary<string, object?> body)
     {
         var changed = new Dictionary<string, object?>(body);
         if (changed.ContainsKey("phone"))
         {
             changed["phone"] = "71 3333-4242";
+        }
+        else if (changed.ContainsKey("kind"))
+        {
+            changed["generalNotes"] = "Chaves com o porteiro.";
         }
         else if (changed.ContainsKey("rooms"))
         {

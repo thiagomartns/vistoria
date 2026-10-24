@@ -11,6 +11,7 @@ public static class DomainConfig
         services.AddScoped<IClientService, ClientService>();
         services.AddScoped<IPropertyService, PropertyService>();
         services.AddScoped<ITemplateService, TemplateService>();
+        services.AddScoped<IInspectionService, InspectionService>();
         return services;
     }
 }

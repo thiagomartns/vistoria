@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Vistoria.Api.Model;
 using Vistoria.Api.Model.Base;
 using Vistoria.Api.Model.Context;
 using Vistoria.Api.Repositories;
@@ -50,25 +51,56 @@ public sealed class WriteGate
 }
 
 /// <summary><see cref="GenericRepository{T}"/> que passa pelo <see cref="WriteGate"/> antes de cada gravação.</summary>
-public sealed class GatedRepository<T>(AppDbContext db, WriteGate gate) : IRepository<T> where T : SyncEntity
+public class GatedRepository<T> : IRepository<T> where T : SyncEntity
 {
-    private readonly GenericRepository<T> _inner = new(db);
+    private readonly IRepository<T> _inner;
+    private readonly WriteGate _gate;
+
+    public GatedRepository(AppDbContext db, WriteGate gate)
+        : this(new GenericRepository<T>(db), gate)
+    {
+    }
+
+    protected GatedRepository(IRepository<T> inner, WriteGate gate)
+    {
+        _inner = inner;
+        _gate = gate;
+    }
 
     public Task<T?> FindByIdAsync(Guid id, CancellationToken cancellationToken) =>
         _inner.FindByIdAsync(id, cancellationToken);
 
     public async Task<T> AddAsync(T entity, CancellationToken cancellationToken)
     {
-        await gate.PassAsync(entity.Id, cancellationToken);
+        await _gate.PassAsync(entity.Id, cancellationToken);
         return await _inner.AddAsync(entity, cancellationToken);
     }
 
     public async Task<T?> UpdateAsync(T entity, CancellationToken cancellationToken)
     {
-        await gate.PassAsync(entity.Id, cancellationToken);
+        await _gate.PassAsync(entity.Id, cancellationToken);
         return await _inner.UpdateAsync(entity, cancellationToken);
     }
 
     public Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken) =>
         _inner.DeleteAsync(id, cancellationToken);
+}
+
+/// <summary><see cref="GatedRepository{T}"/> sobre o <see cref="InspectionRepository"/>.</summary>
+public sealed class GatedInspectionRepository : GatedRepository<Inspection>, IInspectionRepository
+{
+    private readonly InspectionRepository _inner;
+
+    public GatedInspectionRepository(AppDbContext db, WriteGate gate)
+        : this(new InspectionRepository(db), gate)
+    {
+    }
+
+    private GatedInspectionRepository(InspectionRepository inner, WriteGate gate)
+        : base(inner, gate) => _inner = inner;
+
+    public Task<IReadOnlySet<Guid>> FindChildIdsOfOtherInspectionsAsync(
+        Guid inspectionId, IReadOnlyCollection<Guid> roomIds, IReadOnlyCollection<Guid> itemIds,
+        CancellationToken cancellationToken) =>
+        _inner.FindChildIdsOfOtherInspectionsAsync(inspectionId, roomIds, itemIds, cancellationToken);
 }

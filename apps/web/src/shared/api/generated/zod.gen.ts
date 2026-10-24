@@ -28,6 +28,28 @@ export const zHealthDto = z.object({
     status: z.string()
 });
 
+export const zInspectionKind = z.enum(['moveIn', 'moveOut']);
+
+export const zInspectionStatus = z.enum(['inProgress', 'completed']);
+
+export const zItemCondition = z.enum([
+    'new',
+    'good',
+    'fair',
+    'poor',
+    'absent'
+]);
+
+export const zInspectionItemDto = z.object({
+    id: z.uuid(),
+    name: z.string(),
+    position: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' }),
+    condition: zItemCondition.nullable(),
+    notes: z.string().nullable(),
+    referenceCondition: zItemCondition.nullable(),
+    referenceNotes: z.string().nullable()
+});
+
 /**
  * type de erro do catálogo (backend.md, "Catálogo de erros"). O front reage por ele.
  */
@@ -89,6 +111,29 @@ export const zPropertyDto = z.object({
     updatedAt: z.iso.datetime()
 });
 
+export const zRoomDto = z.object({
+    id: z.uuid(),
+    name: z.string(),
+    position: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' }),
+    notes: z.string().nullable(),
+    items: z.array(zInspectionItemDto)
+});
+
+export const zInspectionDto = z.object({
+    id: z.uuid(),
+    propertyId: z.uuid(),
+    kind: zInspectionKind,
+    status: zInspectionStatus,
+    referenceInspectionId: z.uuid().nullable(),
+    startedAt: z.iso.datetime(),
+    completedAt: z.iso.datetime().nullable(),
+    generalNotes: z.string().nullable(),
+    rooms: z.array(zRoomDto),
+    version: z.string(),
+    createdAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime()
+});
+
 export const zSignInDto = z.object({
     email: z.string().max(254),
     password: z.string().max(128)
@@ -129,6 +174,14 @@ export const zUpsertClientDto = z.object({
     phone: z.string().max(20).nullish()
 });
 
+export const zUpsertInspectionItemDto = z.object({
+    id: z.uuid().nullable(),
+    name: z.string().min(1).max(60),
+    position: z.int().gte(0).lte(2147483647).nullable(),
+    condition: zItemCondition.nullish(),
+    notes: z.string().max(1000).nullish()
+});
+
 export const zUpsertPropertyDto = z.object({
     clientId: z.uuid().nullable(),
     street: z.string().max(120),
@@ -140,6 +193,23 @@ export const zUpsertPropertyDto = z.object({
     zipCode: z.string().regex(/^[0-9]{8}$/),
     type: zPropertyType.nullable(),
     notes: z.string().max(1000).nullish()
+});
+
+export const zUpsertRoomDto = z.object({
+    id: z.uuid().nullable(),
+    name: z.string().min(1).max(60),
+    position: z.int().gte(0).lte(2147483647).nullable(),
+    notes: z.string().max(1000).nullish(),
+    items: z.array(zUpsertInspectionItemDto).max(60)
+});
+
+export const zUpsertInspectionDto = z.object({
+    propertyId: z.uuid().nullable(),
+    kind: zInspectionKind.nullable(),
+    status: zInspectionStatus.nullable(),
+    startedAt: z.iso.datetime().nullable(),
+    generalNotes: z.string().max(2000).nullish(),
+    rooms: z.array(zUpsertRoomDto).max(40)
 });
 
 export const zUpsertTemplateItemDto = z.object({
@@ -203,6 +273,31 @@ export const zUpsertClientResponse = zClientDto;
  * OK
  */
 export const zGetHealthResponse = zHealthDto;
+
+export const zGetInspectionPath = z.object({
+    id: z.uuid()
+});
+
+/**
+ * OK
+ */
+export const zGetInspectionResponse = zInspectionDto;
+
+export const zUpsertInspectionBody = zUpsertInspectionDto;
+
+export const zUpsertInspectionHeaders = z.object({
+    'If-Match': z.string().optional(),
+    'Idempotency-Key': z.uuid()
+});
+
+export const zUpsertInspectionPath = z.object({
+    id: z.uuid()
+});
+
+/**
+ * OK
+ */
+export const zUpsertInspectionResponse = zInspectionDto;
 
 export const zGetPropertyPath = z.object({
     id: z.uuid()

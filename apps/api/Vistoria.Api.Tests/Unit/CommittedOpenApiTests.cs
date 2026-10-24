@@ -54,6 +54,45 @@ public class CommittedOpenApiTests
             .Should().Equal("id", "name", "position");
     }
 
+    // O agregado inteiro vai e volta no corpo da vistoria; os campos de referência dos itens são só de saída.
+    [Theory]
+    [InlineData("get", "getInspection", new[] { "200", "401", "404" })]
+    [InlineData("put", "upsertInspection",
+        new[] { "200", "201", "400", "401", "403", "409", "410", "412", "422", "428", "429" })]
+    public void InspectionOperations_ReturnInspectionDto_WithRoomsAndItems(
+        string method, string operationId, string[] statuses)
+    {
+        var document = Document();
+        var operation = document.GetProperty("paths").GetProperty("/api/v1/inspections/{id}").GetProperty(method);
+        var schemas = document.GetProperty("components").GetProperty("schemas");
+
+        operation.GetProperty("operationId").GetString().Should().Be(operationId);
+        operation.GetProperty("responses").EnumerateObject().Select(r => r.Name).Should().BeEquivalentTo(statuses);
+        operation.GetProperty("responses").GetProperty("200").GetProperty("content").GetProperty("application/json")
+            .GetProperty("schema").GetProperty("$ref").GetString().Should().Be("#/components/schemas/InspectionDto");
+        schemas.GetProperty("InspectionDto").GetProperty("properties").GetProperty("rooms").GetProperty("items")
+            .GetProperty("$ref").GetString().Should().Be("#/components/schemas/RoomDto");
+        schemas.GetProperty("RoomDto").GetProperty("properties").GetProperty("items").GetProperty("items")
+            .GetProperty("$ref").GetString().Should().Be("#/components/schemas/InspectionItemDto");
+        schemas.GetProperty("InspectionItemDto").GetProperty("properties").EnumerateObject().Select(p => p.Name)
+            .Should().Equal("id", "name", "position", "condition", "notes", "referenceCondition", "referenceNotes");
+        schemas.GetProperty("UpsertInspectionItemDto").GetProperty("properties").EnumerateObject().Select(p => p.Name)
+            .Should().Equal("id", "name", "position", "condition", "notes");
+    }
+
+    // O Swagger UI lista as rotas do documento: as quatro entidades sincronizáveis com GET e PUT.
+    [Fact]
+    public void Document_HasGetAndPutForTheFourEntities()
+    {
+        var paths = Document().GetProperty("paths");
+
+        foreach (var resource in new[] { "clients", "properties", "templates", "inspections" })
+        {
+            paths.GetProperty($"/api/v1/{resource}/{{id}}").EnumerateObject().Select(o => o.Name)
+                .Should().Contain(["get", "put"], resource);
+        }
+    }
+
     // Status da tabela de Endpoints do backend.md.
     [Theory]
     [InlineData("/api/v1/auth/signup", "signUp", "201", new[] { "400", "429" })]

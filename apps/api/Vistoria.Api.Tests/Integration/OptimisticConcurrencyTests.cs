@@ -15,12 +15,12 @@ using Vistoria.Api.Tests.Support;
 namespace Vistoria.Api.Tests.Integration;
 
 // Fase 4 (backend.md, "Cabeçalhos" e "Testes de integração"): If-Match, 412, 428 e as corridas → 409. Cada cenário
-// roda em clients, properties e templates, que passam pelo mesmo SyncEntityService.
+// roda em clients, properties, templates e inspections, que passam pelo mesmo SyncEntityService.
 public class OptimisticConcurrencyTests(ApiFactory factory) : IClassFixture<ApiFactory>
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    public static TheoryData<string> Resources => new() { "clients", "properties", "templates" };
+    public static TheoryData<string> Resources => new() { "clients", "properties", "templates", "inspections" };
 
     [Theory]
     [MemberData(nameof(Resources))]
@@ -70,7 +70,7 @@ public class OptimisticConcurrencyTests(ApiFactory factory) : IClassFixture<ApiF
     {
         { "clients", "weak" }, { "clients", "star" }, { "clients", "garbage" }, { "clients", "unquoted" },
         { "clients", "list" }, { "properties", "weak" }, { "properties", "star" }, { "properties", "unquoted" },
-        { "templates", "weak" }, { "templates", "garbage" },
+        { "templates", "weak" }, { "templates", "garbage" }, { "inspections", "weak" }, { "inspections", "list" },
     };
 
     // Nenhum desses prova sobre qual versão o cliente editou, nem mesmo os que contêm o ETag atual.
@@ -183,6 +183,7 @@ public class OptimisticConcurrencyTests(ApiFactory factory) : IClassFixture<ApiF
         {
             services.AddSingleton(injector);
             services.Replace(ServiceDescriptor.Scoped(typeof(IRepository<>), typeof(RaceInjectingRepository<>)));
+            services.Replace(ServiceDescriptor.Scoped<IInspectionRepository, RaceInjectingInspectionRepository>());
         }));
 
     private HttpClient Authenticated(WebApplicationFactory<Program> host, Guid ownerId)
@@ -219,6 +220,25 @@ public class OptimisticConcurrencyTests(ApiFactory factory) : IClassFixture<ApiF
                     new { id = Guid.CreateVersion7(), name = "Sala", position = 0, items = new[]
                     {
                         new { id = Guid.CreateVersion7(), name = "Piso", position = 0 },
+                    } },
+                },
+            };
+        }
+
+        if (resource == "inspections")
+        {
+            var (propertyId, _, _) = await Create(client, "properties");
+            return new
+            {
+                propertyId,
+                kind = "moveIn",
+                status = "inProgress",
+                startedAt = ApiFactory.Start,
+                rooms = new[]
+                {
+                    new { id = Guid.CreateVersion7(), name = "Sala", position = 0, items = new[]
+                    {
+                        new { id = Guid.CreateVersion7(), name = "Piso", position = 0, condition = "good" },
                     } },
                 },
             };
