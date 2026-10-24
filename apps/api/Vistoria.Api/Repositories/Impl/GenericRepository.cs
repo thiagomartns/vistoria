@@ -6,9 +6,9 @@ namespace Vistoria.Api.Repositories.Impl;
 
 public class GenericRepository<T>(AppDbContext db) : IRepository<T> where T : SyncEntity
 {
-    private DbSet<T> Set => db.Set<T>();
+    protected DbSet<T> Set => db.Set<T>();
 
-    public Task<T?> FindByIdAsync(Guid id, CancellationToken cancellationToken) =>
+    public virtual Task<T?> FindByIdAsync(Guid id, CancellationToken cancellationToken) =>
         Set.AsNoTracking().SingleOrDefaultAsync(e => e.Id == id, cancellationToken);
 
     public async Task<T> AddAsync(T entity, CancellationToken cancellationToken)

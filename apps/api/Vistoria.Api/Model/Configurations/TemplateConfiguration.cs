@@ -8,12 +8,12 @@ public class TemplateConfiguration : IEntityTypeConfiguration<Template>
 {
     public const int NameMinLength = 1;
     public const int NameMaxLength = 60;
-    public const int RoomsMax = 40;
-    public const int ItemsMax = 60;
 
-    // Mesmos limites de Room e Item da vistoria (vision.md, "Room e Item").
-    public const int RoomNameMaxLength = 60;
-    public const int ItemNameMaxLength = 60;
+    // Mesmos limites de Room e Item da vistoria (vision.md, "Client, Property e Template").
+    public const int RoomsMax = InspectionConfiguration.RoomsMax;
+    public const int ItemsMax = RoomConfiguration.ItemsMax;
+    public const int RoomNameMaxLength = RoomConfiguration.NameMaxLength;
+    public const int ItemNameMaxLength = InspectionItemConfiguration.NameMaxLength;
 
     public void Configure(EntityTypeBuilder<Template> builder)
     {

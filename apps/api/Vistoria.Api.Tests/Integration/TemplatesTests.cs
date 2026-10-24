@@ -149,9 +149,8 @@ public class TemplatesTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var tables = await db.Database
             .SqlQuery<string>($"SELECT TABLE_NAME AS [Value] FROM INFORMATION_SCHEMA.TABLES")
             .ToListAsync(Ct);
-        tables.Should().Contain("templates")
-            .And.NotContain(t => t.Contains("room", StringComparison.OrdinalIgnoreCase)
-                || t.Contains("item", StringComparison.OrdinalIgnoreCase));
+        // rooms e inspection_items são da vistoria; do roteiro só existe a tabela dele.
+        tables.Where(t => t.StartsWith("template", StringComparison.OrdinalIgnoreCase)).Should().Equal("templates");
     }
 
     [Theory]
