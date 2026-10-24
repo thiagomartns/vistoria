@@ -6,12 +6,14 @@ namespace Vistoria.Api.Repositories.Impl;
 
 public class GenericRepository<T>(AppDbContext db) : IRepository<T> where T : SyncEntity
 {
+    protected AppDbContext Db => db;
+
     protected DbSet<T> Set => db.Set<T>();
 
     public virtual Task<T?> FindByIdAsync(Guid id, CancellationToken cancellationToken) =>
         Set.AsNoTracking().SingleOrDefaultAsync(e => e.Id == id, cancellationToken);
 
-    public async Task<T> AddAsync(T entity, CancellationToken cancellationToken)
+    public virtual async Task<T> AddAsync(T entity, CancellationToken cancellationToken)
     {
         Set.Add(entity);
         try
@@ -30,7 +32,7 @@ public class GenericRepository<T>(AppDbContext db) : IRepository<T> where T : Sy
 
     // Sem "update cego": a versão que o cliente leu vira o valor original do rowversion, e o EF põe no WHERE.
     // Se outra gravação passou na frente, nenhuma linha casa e o EF lança DbUpdateConcurrencyException.
-    public async Task<T?> UpdateAsync(T entity, CancellationToken cancellationToken)
+    public virtual async Task<T?> UpdateAsync(T entity, CancellationToken cancellationToken)
     {
         var current = await Set.SingleOrDefaultAsync(e => e.Id == entity.Id, cancellationToken);
         if (current is null)

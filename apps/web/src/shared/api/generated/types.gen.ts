@@ -30,6 +30,37 @@ export type HealthDto = {
     status: string;
 };
 
+export type InspectionDto = {
+    id: string;
+    propertyId: string;
+    kind: InspectionKind;
+    status: InspectionStatus;
+    referenceInspectionId: null | string;
+    startedAt: string;
+    completedAt: null | string;
+    generalNotes: null | string;
+    rooms: Array<RoomDto>;
+    version: string;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type InspectionItemDto = {
+    id: string;
+    name: string;
+    position: number;
+    condition: null | ItemCondition;
+    notes: null | string;
+    referenceCondition: null | ItemCondition;
+    referenceNotes: null | string;
+};
+
+export type InspectionKind = 'moveIn' | 'moveOut';
+
+export type InspectionStatus = 'inProgress' | 'completed';
+
+export type ItemCondition = 'new' | 'good' | 'fair' | 'poor' | 'absent';
+
 /**
  * Erro da API (RFC 9457). Decida pelo type, nunca só pelo status.
  */
@@ -83,6 +114,14 @@ export type PropertyDto = {
 
 export type PropertyType = 'apartment' | 'house' | 'commercial' | 'other';
 
+export type RoomDto = {
+    id: string;
+    name: string;
+    position: number;
+    notes: null | string;
+    items: Array<InspectionItemDto>;
+};
+
 export type SignInDto = {
     email: string;
     password: string;
@@ -123,6 +162,23 @@ export type UpsertClientDto = {
     phone?: null | string;
 };
 
+export type UpsertInspectionDto = {
+    propertyId: null | string;
+    kind: null | InspectionKind;
+    status: null | InspectionStatus;
+    startedAt: null | string;
+    generalNotes?: null | string;
+    rooms: Array<UpsertRoomDto>;
+};
+
+export type UpsertInspectionItemDto = {
+    id: null | string;
+    name: string;
+    position: null | number;
+    condition?: null | ItemCondition;
+    notes?: null | string;
+};
+
 export type UpsertPropertyDto = {
     clientId: null | string;
     street: string;
@@ -134,6 +190,14 @@ export type UpsertPropertyDto = {
     zipCode: string;
     type: null | PropertyType;
     notes?: null | string;
+};
+
+export type UpsertRoomDto = {
+    id: null | string;
+    name: string;
+    position: null | number;
+    notes?: null | string;
+    items: Array<UpsertInspectionItemDto>;
 };
 
 export type UpsertTemplateDto = {
@@ -335,6 +399,110 @@ export type GetHealthResponses = {
 };
 
 export type GetHealthResponse = GetHealthResponses[keyof GetHealthResponses];
+
+export type GetInspectionData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/inspections/{id}';
+};
+
+export type GetInspectionErrors = {
+    /**
+     * Unauthorized
+     */
+    401: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+};
+
+export type GetInspectionError = GetInspectionErrors[keyof GetInspectionErrors];
+
+export type GetInspectionResponses = {
+    /**
+     * OK
+     */
+    200: InspectionDto;
+};
+
+export type GetInspectionResponse = GetInspectionResponses[keyof GetInspectionResponses];
+
+export type UpsertInspectionData = {
+    body: UpsertInspectionDto;
+    headers: {
+        /**
+         * ETag da versão-base. Obrigatório quando o registro já existe (ausente → 428 precondition-required); omitido na criação.
+         */
+        'If-Match'?: string;
+        /**
+         * UUID v7, um por corpo: o mesmo corpo reenviado usa a mesma chave.
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/inspections/{id}';
+};
+
+export type UpsertInspectionErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Unauthorized
+     */
+    401: ProblemDetails;
+    /**
+     * Forbidden
+     */
+    403: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Gone
+     */
+    410: ProblemDetails;
+    /**
+     * Precondition Failed
+     */
+    412: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Precondition Required
+     */
+    428: ProblemDetails;
+    /**
+     * Too Many Requests
+     */
+    429: ProblemDetails;
+};
+
+export type UpsertInspectionError = UpsertInspectionErrors[keyof UpsertInspectionErrors];
+
+export type UpsertInspectionResponses = {
+    /**
+     * OK
+     */
+    200: InspectionDto;
+    /**
+     * Created
+     */
+    201: InspectionDto;
+};
+
+export type UpsertInspectionResponse = UpsertInspectionResponses[keyof UpsertInspectionResponses];
 
 export type GetPropertyData = {
     body?: never;

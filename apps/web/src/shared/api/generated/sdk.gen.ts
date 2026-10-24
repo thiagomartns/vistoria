@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GetClientData, GetClientErrors, GetClientResponses, GetHealthData, GetHealthResponses, GetPropertyData, GetPropertyErrors, GetPropertyResponses, GetTemplateData, GetTemplateErrors, GetTemplateResponses, SignInData, SignInErrors, SignInResponses, SignUpData, SignUpErrors, SignUpResponses, UpsertClientData, UpsertClientErrors, UpsertClientResponses, UpsertPropertyData, UpsertPropertyErrors, UpsertPropertyResponses, UpsertTemplateData, UpsertTemplateErrors, UpsertTemplateResponses } from './types.gen';
+import type { GetClientData, GetClientErrors, GetClientResponses, GetHealthData, GetHealthResponses, GetInspectionData, GetInspectionErrors, GetInspectionResponses, GetPropertyData, GetPropertyErrors, GetPropertyResponses, GetTemplateData, GetTemplateErrors, GetTemplateResponses, SignInData, SignInErrors, SignInResponses, SignUpData, SignUpErrors, SignUpResponses, UpsertClientData, UpsertClientErrors, UpsertClientResponses, UpsertInspectionData, UpsertInspectionErrors, UpsertInspectionResponses, UpsertPropertyData, UpsertPropertyErrors, UpsertPropertyResponses, UpsertTemplateData, UpsertTemplateErrors, UpsertTemplateResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -48,6 +48,17 @@ export const upsertClient = <ThrowOnError extends boolean = false>(options: Opti
 });
 
 export const getHealth = <ThrowOnError extends boolean = false>(options?: Options<GetHealthData, ThrowOnError>): RequestResult<GetHealthResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetHealthResponses, unknown, ThrowOnError>({ url: '/api/v1/health', ...options });
+
+export const getInspection = <ThrowOnError extends boolean = false>(options: Options<GetInspectionData, ThrowOnError>): RequestResult<GetInspectionResponses, GetInspectionErrors, ThrowOnError> => (options.client ?? client).get<GetInspectionResponses, GetInspectionErrors, ThrowOnError>({ url: '/api/v1/inspections/{id}', ...options });
+
+export const upsertInspection = <ThrowOnError extends boolean = false>(options: Options<UpsertInspectionData, ThrowOnError>): RequestResult<UpsertInspectionResponses, UpsertInspectionErrors, ThrowOnError> => (options.client ?? client).put<UpsertInspectionResponses, UpsertInspectionErrors, ThrowOnError>({
+    url: '/api/v1/inspections/{id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 export const getProperty = <ThrowOnError extends boolean = false>(options: Options<GetPropertyData, ThrowOnError>): RequestResult<GetPropertyResponses, GetPropertyErrors, ThrowOnError> => (options.client ?? client).get<GetPropertyResponses, GetPropertyErrors, ThrowOnError>({ url: '/api/v1/properties/{id}', ...options });
 
