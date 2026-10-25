@@ -57,6 +57,10 @@ Nenhum segredo em arquivo versionado, **nem de exemplo** ([ADR 0025](docs/decisi
 4. Rodar `pnpm check` e `pnpm test:api`.
 5. Abrir o PR com `Closes #NN` e a definição de pronto. Nunca fazer merge: quem revisa faz o squash merge.
 
+Issue que serve à entrega de um marco recebe o milestone dele (`M2 · Escrita confiável` etc.); chore solto fica sem.
+O milestone só espelha o marco: o escopo e a entrega verificável continuam nos [Marcos](docs/vision.md#marcos).
+Fechar o milestone é conferir a entrega funcionando.
+
 ## Definição de pronto
 
 - [ ] Todos os critérios de aceite atendidos e cobertos por teste

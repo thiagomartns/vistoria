@@ -9,6 +9,7 @@ Trabalhe a issue #$ARGUMENTS seguindo o fluxo do [CLAUDE.md](../../CLAUDE.md).
    o `--comments` não imprime nem o corpo). Leia as seções de `docs/` citadas em Contexto e
    Notas técnicas, e o `CLAUDE.md` da área afetada (`apps/web/` ou `apps/api/`). Se a issue diz
    "Depende de #N", confira com `gh issue view N` que a dependência está fechada; se não estiver, pare e avise.
+   Se a issue serve à entrega de um marco do [vision.md](../../docs/vision.md#marcos) e está sem milestone, avise.
 2. **Planejar.** Entre em modo de planejamento e proponha um plano: arquivos a criar ou mudar, testes que
    provam cada critério de aceite, e o que fica fora de escopo. **Espere minha aprovação** antes de editar
    qualquer arquivo.
