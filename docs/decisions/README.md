@@ -34,10 +34,11 @@ uma decisão nova o substitui e diz qual substituiu. Novo ADR: `/adr <título>` 
 | [0027](0027-credencial-invalida-com-type-proprio-invalid-credentials-complementando-o-adr-0018.md) | Credencial inválida com type próprio (invalid-credentials), complementando o ADR 0018 | Aceito | 2026-10-20 |
 | [0028](0028-id-do-registro-so-na-rota-e-put-sempre-regrava.md) | Id do registro só na rota, e PUT sempre regrava | Aceito | 2026-10-21 |
 | [0029](0029-marca-avis-nome-exibido-e-simbolo-d1.md) | Marca Avis: nome exibido e símbolo D1 | Aceito | 2026-10-21 |
-| [0030](0030-tanstack-db-mantido-apos-o-spike-1a-outbox-persistida-contra-o-upsertclient.md) | TanStack DB mantido após o spike 1a (outbox persistida contra o upsertClient) | Proposto | 2026-10-21 |
-| [0031](0031-fatia-de-cadastro-antes-da-vistoria-no-m2.md) | Fatia de cadastro antes da vistoria no M2 | Proposto | 2026-10-22 |
-| [0032](0032-serwist-pelo-cli-sobre-o-static-export-build-com-turbopack.md) | Serwist pelo CLI sobre o static export, build com Turbopack | Proposto | 2026-10-22 |
-| [0033](0033-movimento-carregamento-e-avisos-na-ui.md) | Movimento, carregamento e avisos na UI | Proposto | 2026-10-22 |
-| [0034](0034-outbox-serial-uma-transacao-por-vez-na-ordem-de-criacao.md) | Outbox serial: uma transação por vez, na ordem de criação | Proposto | 2026-10-22 |
-| [0035](0035-ambiente-e-item-do-agregado-sobre-aggregatechild-sem-syncentity.md) | Ambiente e item do agregado sobre AggregateChild, sem SyncEntity | Proposto | 2026-10-23 |
-| [0036](0036-rascunho-da-vistoria-guarda-o-passo-e-fica-ate-concluir.md) | Rascunho da vistoria guarda o passo e fica até concluir | Proposto | 2026-10-26 |
+| [0030](0030-tanstack-db-mantido-apos-o-spike-1a-outbox-persistida-contra-o-upsertclient.md) | TanStack DB mantido após o spike 1a (outbox persistida contra o upsertClient) | Aceito | 2026-10-21 |
+| [0031](0031-fatia-de-cadastro-antes-da-vistoria-no-m2.md) | Fatia de cadastro antes da vistoria no M2 | Aceito | 2026-10-22 |
+| [0032](0032-serwist-pelo-cli-sobre-o-static-export-build-com-turbopack.md) | Serwist pelo CLI sobre o static export, build com Turbopack | Aceito | 2026-10-22 |
+| [0033](0033-movimento-carregamento-e-avisos-na-ui.md) | Movimento, carregamento e avisos na UI | Aceito | 2026-10-22 |
+| [0034](0034-outbox-serial-uma-transacao-por-vez-na-ordem-de-criacao.md) | Outbox serial: uma transação por vez, na ordem de criação | Aceito | 2026-10-22 |
+| [0035](0035-ambiente-e-item-do-agregado-sobre-aggregatechild-sem-syncentity.md) | Ambiente e item do agregado sobre AggregateChild, sem SyncEntity | Aceito | 2026-10-23 |
+| [0036](0036-rascunho-da-vistoria-guarda-o-passo-e-fica-ate-concluir.md) | Rascunho da vistoria guarda o passo e fica até concluir | Aceito | 2026-10-26 |
+| [0037](0037-entregaveis-pelo-vision-md-e-pelo-milestone-sem-project.md) | Entregáveis pelo vision.md e pelo milestone, sem Project | Aceito | 2026-10-26 |

@@ -1,6 +1,6 @@
 # 0031 — Fatia de cadastro antes da vistoria no M2
 
-- **Status:** Proposto
+- **Status:** Aceito
 - **Data:** 2026-10-22
 
 ## Contexto

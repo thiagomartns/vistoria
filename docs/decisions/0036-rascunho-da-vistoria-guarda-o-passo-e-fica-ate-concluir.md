@@ -1,6 +1,6 @@
 # 0036 — Rascunho da vistoria guarda o passo e fica até concluir
 
-- **Status:** Proposto
+- **Status:** Aceito
 - **Data:** 2026-10-26
 
 ## Contexto

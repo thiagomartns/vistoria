@@ -140,26 +140,7 @@ O M2 é o mais longo e o mais arriscado: é onde backend e front se encontram pe
 
 **Se atrasar.** As estimativas são otimistas. O MD tem prazo fechado de 3 semanas: o que não ficar pronto em alta fidelidade segue como wireframe e é refinado no M5. Se o M2 passar duas semanas do previsto, o corte vem do M5 (roteiros editáveis viram um roteiro fixo; filtros viram busca simples), nunca da arquitetura de sync, que é o objetivo do estudo.
 
-### Backlog do M0
-
-- [ ] Criar o repositório `vistoria` com a estrutura, o workspace pnpm e a solution .NET
-- [ ] Exportar os três documentos para `docs/` e escrever os três `CLAUDE.md`
-- [ ] Criar os ADRs iniciais a partir das [Decisões tomadas](architecture/backend.md#decisões-tomadas) do backend
-- [ ] `docker-compose.dev.yml` com SQL Server e o comando `pnpm db:up`
-- [ ] CI com os jobs `api` e `web` (esqueleto) e `security`
-- [ ] GitHub Project, labels e modelo de issue
-- [ ] Escrever as issues do M1
-
-### Backlog do MD
-
-- [ ] Criar o arquivo "vistoria — app" no time do Figma, com a biblioteca Sanjou UI ativada e as páginas Fluxos, Wireframes, Telas e Componentes novos
-- [ ] Fluxos: login; lista → nova vistoria → campo → concluir → laudo; sessão expirada; conflito
-- [ ] Shell: navegação, header com `SyncStatus`, `OfflineBanner`, comportamento no celular e no desktop
-- [ ] Tela de campo em alta fidelidade, no celular e no desktop, com os estados vazio, offline, enviando, conflito, rejeitado e concluída
-- [ ] Wireframes das demais telas da tabela de Telas
-- [ ] Componentes que faltam no Sanjou (`SyncBadge`, `ConflictResolver` e os demais) desenhados como componentes locais no arquivo do app, com os genéricos marcados "Candidato ao Sanjou"
-- [ ] Sanjou UI instalado em `apps/web`, com uma página de prova no static export (adianta a parte de risco do spike 4)
-- [ ] Mapa "componente no Figma → import do Sanjou" em `apps/web/CLAUDE.md` e o comando `/screen` no repositório
+**Backlog.** As issues de cada marco ficam no [milestone](https://github.com/thiagomartns/vistoria/milestones?state=all) dele, com o mesmo título; aqui fica só a entrega verificável ([ADR 0037](decisions/0037-entregaveis-pelo-vision-md-e-pelo-milestone-sem-project.md)). O M0 é anterior às issues e não tem milestone.
 
 ## Repositório e ambiente
 
@@ -240,7 +221,8 @@ Cada `CLAUDE.md` fica curto (uma tela) e aponta para `docs/` em vez de repetir o
 
 ### Backlog no GitHub
 
-- **Project** com colunas Backlog, Próximo, Em andamento, Em revisão e Feito, mais o campo **Marco** (M0, MD e M1 a M5).
+- **Milestone** por marco, com o título e a entrega verificável dos [Marcos](#marcos). Issue que serve à entrega recebe o milestone; chore solto fica sem. Fechar o milestone é conferir a entrega funcionando.
+- **Andamento** é o estado da issue e do PR ligado, sem quadro nem colunas ([ADR 0037](decisions/0037-entregaveis-pelo-vision-md-e-pelo-milestone-sem-project.md)).
 - **Labels:** `area:web`, `area:api`, `area:infra`, `area:docs`, `area:design` e `type:feat`, `type:fix`, `type:chore`, `type:spike`, `type:design` (as de design marcam o trabalho no Figma, feito pelo Claude Code via MCP e revisado por você; não geram PR, e o critério de aceite é o link do frame na issue).
 - **Uma issue cabe em uma sessão** (1 a 2 h). Se não cabe, vira duas.
 
@@ -266,7 +248,7 @@ Arquivos prováveis, armadilhas conhecidas.
 
 ### Fluxo de uma sessão
 
-1. Você move uma issue para "Em andamento" e chama `/issue 42`.
+1. Você escolhe uma issue do milestone do marco atual e chama `/issue 42`.
 2. O Claude Code lê a issue e as seções de `docs/` citadas e propõe um plano em modo de planejamento.
 3. Você aprova ou corrige o plano. É o ponto de maior alavancagem: um plano errado custa minutos, código errado custa a sessão.
 4. Ele implementa com testes, roda `pnpm check` e `pnpm test:api` e abre o PR ligado à issue.

@@ -1,6 +1,6 @@
 # 0034 — Outbox serial: uma transação por vez, na ordem de criação
 
-- **Status:** Proposto
+- **Status:** Aceito
 - **Data:** 2026-10-22
 
 ## Contexto
