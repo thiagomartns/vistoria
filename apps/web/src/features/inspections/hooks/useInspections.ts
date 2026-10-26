@@ -1,28 +1,51 @@
+import type { ClientRecord } from "@/features/clients/models/client";
 import { useLocalStore } from "@/features/local-store/hooks/useLocalStore";
+import type { PropertyRecord } from "@/features/properties/models/property";
 import { addressOf } from "@/features/properties/services/properties.view";
 
-import { newMoveInInspection } from "../services/inspections.factory";
-import { saveInspection } from "../services/inspections.sync";
-import { inspectionRows } from "../services/inspections.view";
+import { type PlaceView, dateOf, inspectionRows, startedLabel } from "../services/inspections.view";
 
-/**
- * As vistorias do banco local, com o endereço do imóvel e o estado de sync, e a criação de uma vistoria de entrada a
- * partir do roteiro fixo.
- */
+/** A lista; para onde "Voltar" e "Cancelar" levam. */
+export const INSPECTIONS_HREF = "/inspections";
+
+/** A tela de campo de uma vistoria. */
+export const inspectionHref = (id: string) => `/inspections/edit?id=${encodeURIComponent(id)}`;
+
+/** O imóvel de cada vistoria no aparelho: o endereço e o nome do cliente. */
+export function placesOf(
+  properties: readonly PropertyRecord[],
+  clients: readonly ClientRecord[],
+): Map<string, PlaceView> {
+  const clientNames = new Map(clients.map((client) => [client.id, client.name]));
+  return new Map(
+    properties.map((property) => [
+      property.id,
+      { address: addressOf(property), clientName: clientNames.get(property.clientId) ?? null },
+    ]),
+  );
+}
+
+/** As vistorias do banco local para a lista de /inspections, com o imóvel, o cliente e o estado de sync. */
 export function useInspections() {
-  const { store, ready, inspections, properties, drafts, states } = useLocalStore();
-
-  const addresses = new Map(properties.map((property) => [property.id, addressOf(property)]));
-  const rows = inspectionRows(inspections, drafts, states, addresses);
+  const { ready, inspections, properties, clients, drafts, states } = useLocalStore();
+  const rows = inspectionRows(inspections, drafts, states, placesOf(properties, clients));
   return {
     ready,
     /** O aparelho não tem nenhuma vistoria. */
     empty: rows.length === 0,
-    rows,
-    /** Cria uma vistoria de entrada para o imóvel e devolve o id; sem o banco aberto, `undefined`. */
-    create(propertyId: string): string | undefined {
-      if (!store) return undefined;
-      return saveInspection(store, newMoveInInspection(propertyId));
-    },
+    /** "6 vistorias". */
+    count: `${rows.length} ${rows.length === 1 ? "vistoria" : "vistorias"}`,
+    rows: rows.map((row) => ({
+      id: row.id,
+      href: inspectionHref(row.id),
+      address: row.address ?? "Imóvel fora deste aparelho",
+      clientName: row.clientName,
+      kindLabel: row.kindLabel,
+      statusLabel: row.statusLabel,
+      completed: row.status === "completed",
+      startedOn: dateOf(row.startedAt),
+      startedMeta: startedLabel(row.startedAt),
+      sync: row.sync,
+    })),
   };
 }

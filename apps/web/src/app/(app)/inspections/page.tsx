@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 
-import { ComingSoon } from "../coming-soon";
+import { InspectionsScreen } from "./inspections-screen";
 
 export const metadata: Metadata = { title: "Vistorias" };
 
 export default function InspectionsPage() {
-  return <ComingSoon />;
+  return <InspectionsScreen />;
 }
