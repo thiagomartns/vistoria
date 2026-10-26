@@ -114,6 +114,8 @@ export function useInspectionDraft(id: string | null) {
   useEffect(() => {
     opening.current = { record, draft, source };
   });
+  /** Os valores com que a tela abriu: uma recusa só volta para a fila depois de a pessoa mudar algo. */
+  const openedWith = useRef<string | null>(null);
   useEffect(() => {
     if (!opened) return;
     const { record: base, draft: saved, source: shown } = opening.current;
@@ -121,6 +123,7 @@ export function useInspectionDraft(id: string | null) {
     form.reset(formValuesOf(base ?? emptied(shown)));
     if (saved)
       form.reset(formValuesOf(saved.data as InspectionRecord), { keepDefaultValues: true });
+    openedWith.current = JSON.stringify(form.getValues());
   }, [opened, form]);
 
   // Os erros de um rascunho recusado vão para os campos na abertura e quando uma recusa chega com a tela aberta; uma
@@ -146,12 +149,24 @@ export function useInspectionDraft(id: string | null) {
   const current: Values | undefined =
     hydrated && source ? withoutVersion(recordWith(source, watched)) : undefined;
 
-  /** Grava o rascunho (valores e ambiente) e, se pedido e o formulário está sujo, põe a vistoria na fila. */
+  const [enqueued, setEnqueued] = useState<{
+    base: Record<string, unknown> | undefined;
+    version: string | null;
+  } | null>(null);
+  const baseNow = id && bases.has(id) ? bases.get(id) : enqueued ? enqueued.base : record;
+
+  /**
+   * Grava o rascunho (valores e ambiente) e, se pedido e o formulário está sujo, põe a vistoria na fila. Um rascunho
+   * recusado reabre sujo (o otimista foi desfeito), mas só volta para a fila quando a pessoa muda algo: reenviar sozinho
+   * apagaria os erros antes da correção.
+   */
   function persist(values: InspectionFormValues, at: number, enqueue: boolean) {
     if (!store || !hydrated || !source) return;
-    const next = withoutVersion(recordWith(record ?? source, values));
+    const next = withoutVersion(recordWith(source, values));
     saveInspectionDraft(store.drafts, next, at);
-    if (enqueue && isDirty) {
+    const untouchedRejection = rejected !== null && JSON.stringify(values) === openedWith.current;
+    if (enqueue && isDirty && !untouchedRejection) {
+      setEnqueued({ base: baseNow, version: record?.version ?? null });
       saveInspection(store, next);
       form.reset(values);
     }
@@ -213,8 +228,11 @@ export function useInspectionDraft(id: string | null) {
     setStep(index);
   }
 
-  // O "Não enviado" por item: o que difere do que o servidor confirmou. Sem transação na fila, a base é o registro.
-  const base = id && bases.has(id) ? bases.get(id) : record;
+  // O "Não enviado" por item: o que difere do que o servidor confirmou. Com transação na fila, a base é o original da
+  // mais antiga; sem, o registro. A outbox é lida a cada segundo: logo depois de ir para a fila, a base de antes fica
+  // até a transação aparecer nela ou o servidor confirmar (a `version` muda), para o indicador não piscar.
+  if (enqueued && id && (bases.has(id) || record?.version !== enqueued.version)) setEnqueued(null);
+  const base = baseNow;
   const pending = current ? pendingItemIds(current, base) : new Set<string>();
   const itemSync = (itemId: string, index: number): FieldSyncState | undefined => {
     const itemErrors = errors.rooms?.[step]?.items?.[index];

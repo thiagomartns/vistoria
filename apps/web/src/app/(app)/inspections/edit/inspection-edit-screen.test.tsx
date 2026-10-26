@@ -222,6 +222,32 @@ describe("InspectionEditScreen", () => {
     expect(screen.getByText("Não enviado")).toBeDefined();
   });
 
+  it("logo depois de ir para a fila (antes de a outbox ser lida), o item segue 'Não enviado'; confirmado, some", async () => {
+    const user = userEvent.setup();
+    const view = open();
+    await user.click(chip("Paredes", "Ruim"));
+    await vi.waitFor(() => expect(saveInspection).toHaveBeenCalledOnce(), { timeout: 3000 });
+
+    // O otimista já tem a mudança, e a outbox ainda não foi lida: sem base na fila.
+    const optimistic = structuredClone(vistoria);
+    optimistic.rooms[0]!.items[1]!.condition = "poor";
+    local.value = { ...local.value, inspections: [optimistic] };
+    view.rerender(
+      <AppShell>
+        <InspectionEditScreen />
+      </AppShell>,
+    );
+    expect(screen.getByText("Não enviado")).toBeDefined();
+
+    local.value = { ...local.value, inspections: [{ ...optimistic, version: "AAAAAAAAB9P=" }] };
+    view.rerender(
+      <AppShell>
+        <InspectionEditScreen />
+      </AppShell>,
+    );
+    expect(screen.queryByText("Não enviado")).toBeNull();
+  });
+
   it("formulário sem mudança não vai para a fila, nem ao trocar de ambiente (ADR 0028)", async () => {
     const user = userEvent.setup();
     open();
@@ -339,6 +365,20 @@ describe("InspectionEditScreen", () => {
     expect(screen.queryByText("Escolha a condição.")).toBeNull();
     expect(chips("Bancada").getAttribute("aria-invalid")).toBe("false");
     await vi.waitFor(() => expect(saveInspection).toHaveBeenCalledOnce(), { timeout: 3000 });
+  });
+
+  it("recusada e reaberta sem mudança: não volta sozinha para a fila, mesmo com o otimista desfeito", async () => {
+    const sent = structuredClone(vistoria);
+    sent.rooms[0]!.items[1]!.condition = "poor";
+    open({
+      drafts: [draftOf({ data: sent, status: "rejected", errors: { "rooms[1].items[2].condition": ["Escolha a condição."] } })],
+    });
+    await screen.findByText("Escolha a condição.");
+
+    await new Promise((done) => setTimeout(done, 1700));
+
+    expect(saveInspection).not.toHaveBeenCalled();
+    expect(screen.getByText("Escolha a condição.")).toBeDefined();
   });
 
   it("recusa numa chave fora do formulário: o aviso traz a mensagem do servidor", async () => {
