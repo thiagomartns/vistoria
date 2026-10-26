@@ -1,6 +1,7 @@
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Vistoria.Api.Model.Context;
+using Vistoria.Api.Repositories;
 using Vistoria.Api.Repositories.Impl;
 using Vistoria.Api.Sync;
 using Vistoria.Api.Tests.Support;
@@ -63,7 +64,7 @@ public class SyncEntityTests(SyncDatabase database) : IClassFixture<SyncDatabase
 
         await using (var db = database.CreateContext())
         {
-            (await new GenericRepository<SyncProbe>(db).DeleteAsync(created.Id, Ct)).Should().BeTrue();
+            (await new GenericRepository<SyncProbe>(db).DeleteAsync(created.Id, v3, Ct)).Should().BeTrue();
         }
 
         var v4 = (await ReadIncludingDeleted(created.Id)).Version;
@@ -96,6 +97,19 @@ public class SyncEntityTests(SyncDatabase database) : IClassFixture<SyncDatabase
     }
 
     [Fact]
+    public async Task Delete_WithStaleVersion_ThrowsConcurrencyExceptionAndKeepsRecord()
+    {
+        var created = await Add(NewProbe());
+        await Update(Changed(created, name: "primeiro"));
+
+        await using var db = database.CreateContext();
+        var stale = () => new GenericRepository<SyncProbe>(db).DeleteAsync(created.Id, created.Version, Ct);
+
+        await stale.Should().ThrowAsync<DbUpdateConcurrencyException>();
+        (await Read(created.Id)).Name.Should().Be("primeiro");
+    }
+
+    [Fact]
     public async Task Delete_IsSoft_HiddenFromQueriesButVisibleIgnoringFilters()
     {
         var created = await Add(NewProbe());
@@ -105,7 +119,8 @@ public class SyncEntityTests(SyncDatabase database) : IClassFixture<SyncDatabase
         await using (var db = database.CreateContext())
         {
             var repository = new GenericRepository<SyncProbe>(db);
-            (await repository.DeleteAsync(created.Id, Ct)).Should().BeTrue();
+            (await repository.FindTombstoneAsync(created.Id, Ct)).Should().BeNull();
+            (await repository.DeleteAsync(created.Id, created.Version, Ct)).Should().BeTrue();
         }
 
         await using (var db = database.CreateContext())
@@ -113,7 +128,8 @@ public class SyncEntityTests(SyncDatabase database) : IClassFixture<SyncDatabase
             var repository = new GenericRepository<SyncProbe>(db);
             (await repository.FindByIdAsync(created.Id, Ct)).Should().BeNull();
             (await db.Probes.AnyAsync(p => p.Id == created.Id, Ct)).Should().BeFalse();
-            (await repository.DeleteAsync(created.Id, Ct)).Should().BeFalse();
+            (await repository.FindTombstoneAsync(created.Id, Ct)).Should().Be(new Tombstone(created.OwnerId, now));
+            (await repository.DeleteAsync(created.Id, created.Version, Ct)).Should().BeFalse();
             (await repository.UpdateAsync(Changed(created), Ct)).Should().BeNull();
         }
 

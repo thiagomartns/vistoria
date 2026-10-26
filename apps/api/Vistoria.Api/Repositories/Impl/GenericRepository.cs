@@ -6,12 +6,21 @@ namespace Vistoria.Api.Repositories.Impl;
 
 public class GenericRepository<T>(AppDbContext db) : IRepository<T> where T : SyncEntity
 {
+    private static readonly string[] SoftDelete = [AppDbContext.SoftDeleteFilter];
+
     protected AppDbContext Db => db;
 
     protected DbSet<T> Set => db.Set<T>();
 
     public virtual Task<T?> FindByIdAsync(Guid id, CancellationToken cancellationToken) =>
         Set.AsNoTracking().SingleOrDefaultAsync(e => e.Id == id, cancellationToken);
+
+    // Só o filtro de soft delete sai; um filtro de dono, quando vier, continua valendo.
+    public Task<Tombstone?> FindTombstoneAsync(Guid id, CancellationToken cancellationToken) =>
+        Set.IgnoreQueryFilters(SoftDelete)
+            .Where(e => e.Id == id && e.DeletedAt != null)
+            .Select(e => new Tombstone(e.OwnerId, e.DeletedAt!.Value))
+            .SingleOrDefaultAsync(cancellationToken);
 
     public virtual async Task<T> AddAsync(T entity, CancellationToken cancellationToken)
     {
@@ -50,7 +59,8 @@ public class GenericRepository<T>(AppDbContext db) : IRepository<T> where T : Sy
         return current;
     }
 
-    public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken)
+    // Só a raiz é carregada, sem Include: nenhum filho rastreado para o cascade do EF marcar junto.
+    public async Task<bool> DeleteAsync(Guid id, byte[] version, CancellationToken cancellationToken)
     {
         var current = await Set.SingleOrDefaultAsync(e => e.Id == id, cancellationToken);
         if (current is null)
@@ -58,7 +68,8 @@ public class GenericRepository<T>(AppDbContext db) : IRepository<T> where T : Sy
             return false;
         }
 
-        // O AppDbContext transforma o Remove em DeletedAt = now.
+        // O AppDbContext transforma o Remove em DeletedAt = now; a versão-base vai no WHERE do UPDATE.
+        db.Entry(current).Property(e => e.Version).OriginalValue = version;
         Set.Remove(current);
         await db.SaveChangesAsync(cancellationToken);
         return true;

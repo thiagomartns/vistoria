@@ -49,12 +49,12 @@ public class InspectionRepository(AppDbContext db) : GenericRepository<Inspectio
             return null;
         }
 
-        // Definidos uma vez (na criação, na conclusão, na saída): o PUT não os regrava.
-        var (startedAt, completedAt, referenceId) =
-            (current.StartedAt, current.CompletedAt, current.ReferenceInspectionId);
+        // Definidos uma vez (na criação, na saída): o PUT não os regrava. O CompletedAt vem do service, que o carimba
+        // na conclusão; uma vistoria só é regravada em andamento, então não há valor antigo a manter.
+        var (startedAt, referenceId) = (current.StartedAt, current.ReferenceInspectionId);
         var entry = Db.Entry(current);
         entry.CurrentValues.SetValues(entity);
-        (current.StartedAt, current.CompletedAt, current.ReferenceInspectionId) = (startedAt, completedAt, referenceId);
+        (current.StartedAt, current.ReferenceInspectionId) = (startedAt, referenceId);
         entry.Property(e => e.Version).OriginalValue = entity.Version;
         entry.State = EntityState.Modified;
 

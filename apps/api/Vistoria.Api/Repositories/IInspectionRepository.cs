@@ -6,8 +6,9 @@ namespace Vistoria.Api.Repositories;
 /// <see cref="IRepository{T}"/> da vistoria com o agregado inteiro: <see cref="IRepository{T}.FindByIdAsync"/> traz
 /// ambientes e itens vivos, cada lista em ordem de <c>position</c>. Os excluídos (soft delete) não aparecem.
 /// <see cref="IRepository{T}.UpdateAsync"/> regrava as listas completas: id novo é criado, o que não veio é excluído,
-/// e um excluído reenviado volta. <c>StartedAt</c>, <c>CompletedAt</c>, <c>ReferenceInspectionId</c> e a referência
-/// dos itens ficam como estavam: a regravação não os toca.
+/// e um excluído reenviado volta. <c>StartedAt</c>, <c>ReferenceInspectionId</c> e a referência dos itens ficam como
+/// estavam: a regravação não os toca. <c>CompletedAt</c> é gravado como veio, carimbado pelo service na conclusão.
+/// <see cref="IRepository{T}.DeleteAsync"/> marca só a raiz: ambientes e itens ficam como estão.
 /// </summary>
 public interface IInspectionRepository : IRepository<Inspection>
 {

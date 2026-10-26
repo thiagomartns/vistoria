@@ -82,8 +82,14 @@ public class GatedRepository<T> : IRepository<T> where T : SyncEntity
         return await _inner.UpdateAsync(entity, cancellationToken);
     }
 
-    public Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken) =>
-        _inner.DeleteAsync(id, cancellationToken);
+    public Task<Tombstone?> FindTombstoneAsync(Guid id, CancellationToken cancellationToken) =>
+        _inner.FindTombstoneAsync(id, cancellationToken);
+
+    public async Task<bool> DeleteAsync(Guid id, byte[] version, CancellationToken cancellationToken)
+    {
+        await _gate.PassAsync(id, cancellationToken);
+        return await _inner.DeleteAsync(id, version, cancellationToken);
+    }
 }
 
 /// <summary><see cref="GatedRepository{T}"/> sobre o <see cref="InspectionRepository"/>.</summary>

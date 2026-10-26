@@ -48,6 +48,22 @@ public class InspectionsController(IInspectionService inspections) : ControllerB
         return created ? CreatedAtAction(nameof(Get), new { id }, inspection) : Ok(inspection);
     }
 
+    [HttpDelete("{id:guid}")]
+    [EndpointName("deleteInspection")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProblemResponses(
+        StatusCodes.Status403Forbidden,
+        StatusCodes.Status409Conflict,
+        StatusCodes.Status412PreconditionFailed,
+        StatusCodes.Status422UnprocessableEntity,
+        StatusCodes.Status428PreconditionRequired,
+        StatusCodes.Status429TooManyRequests)]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
+    {
+        await inspections.DeleteAsync(User.GetUserId(), id, Request.Headers.IfMatch.ToString(), cancellationToken);
+        return NoContent();
+    }
+
     private void SetETag(InspectionDto inspection) =>
         Response.Headers[HeaderNames.ETag] = ETagHelper.ToETag(inspection.Version);
 }

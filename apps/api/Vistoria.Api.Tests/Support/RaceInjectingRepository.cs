@@ -9,23 +9,49 @@ using Vistoria.Api.Repositories.Impl;
 
 namespace Vistoria.Api.Tests.Support;
 
-/// <summary>Qual id deve perder a corrida no próximo <c>AddAsync</c> ou <c>UpdateAsync</c>. Cada corrida dispara uma vez.</summary>
+/// <summary>
+/// O que a outra requisição grava antes, por outro <see cref="AppDbContext"/>, quando ganha a corrida de uma regravação
+/// ou de uma exclusão. Qualquer <c>UPDATE</c> sobe o rowversion.
+/// </summary>
+public delegate Task RaceWinner(AppDbContext other, Guid id, CancellationToken cancellationToken);
+
+/// <summary>
+/// Qual id deve perder a corrida no próximo <c>AddAsync</c>, <c>UpdateAsync</c> ou <c>DeleteAsync</c>, e o que o
+/// vencedor grava. Cada corrida dispara uma vez.
+/// </summary>
 public sealed class RaceInjector
 {
     private Guid? _add;
-    private Guid? _update;
+    private (Guid Id, RaceWinner? Winner)? _update;
+    private (Guid Id, RaceWinner? Winner)? _delete;
 
     public void LoseNextAdd(Guid id) => _add = id;
 
-    public void LoseNextUpdate(Guid id) => _update = id;
+    /// <summary>Sem <paramref name="winner"/>, o vencedor só regrava o registro.</summary>
+    public void LoseNextUpdate(Guid id, RaceWinner? winner = null) => _update = (id, winner);
 
-    public bool TakeAdd(Guid id) => Take(ref _add, id);
+    /// <inheritdoc cref="LoseNextUpdate"/>
+    public void LoseNextDelete(Guid id, RaceWinner? winner = null) => _delete = (id, winner);
 
-    public bool TakeUpdate(Guid id) => Take(ref _update, id);
-
-    private static bool Take(ref Guid? slot, Guid id)
+    public bool TakeAdd(Guid id)
     {
-        if (slot != id)
+        if (_add != id)
+        {
+            return false;
+        }
+
+        _add = null;
+        return true;
+    }
+
+    public bool TakeUpdate(Guid id, out RaceWinner? winner) => Take(ref _update, id, out winner);
+
+    public bool TakeDelete(Guid id, out RaceWinner? winner) => Take(ref _delete, id, out winner);
+
+    private static bool Take(ref (Guid Id, RaceWinner? Winner)? slot, Guid id, out RaceWinner? winner)
+    {
+        winner = slot?.Winner;
+        if (slot?.Id != id)
         {
             return false;
         }
@@ -37,7 +63,8 @@ public sealed class RaceInjector
 
 /// <summary>
 /// <see cref="GenericRepository{T}"/> com uma escrita concorrente de verdade, por outro <c>DbContext</c>, logo antes
-/// de gravar: a criação do mesmo id (o SQL Server recusa a PK) ou uma regravação que sobe o rowversion. Torna
+/// de gravar: a criação do mesmo id (o SQL Server recusa a PK) ou, antes de regravar ou excluir, o que o
+/// <see cref="RaceWinner"/> gravar (por padrão, uma regravação que sobe o rowversion). Torna
 /// determinística a janela entre ler e gravar, que duas requisições paralelas só acertam por sorte.
 /// </summary>
 public class RaceInjectingRepository<T> : IRepository<T> where T : SyncEntity
@@ -79,20 +106,38 @@ public class RaceInjectingRepository<T> : IRepository<T> where T : SyncEntity
 
     public async Task<T?> UpdateAsync(T entity, CancellationToken cancellationToken)
     {
-        if (_injector.TakeUpdate(entity.Id))
+        if (_injector.TakeUpdate(entity.Id, out var winner))
         {
-            await using var scope = _scopes.CreateAsyncScope();
-            var other = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            // Qualquer UPDATE sobe o rowversion.
-            await other.Set<T>().Where(e => e.Id == entity.Id)
-                .ExecuteUpdateAsync(s => s.SetProperty(e => e.UpdatedAt, e => e.UpdatedAt), cancellationToken);
+            await WinAsync(entity.Id, winner, cancellationToken);
         }
 
         return await _inner.UpdateAsync(entity, cancellationToken);
     }
 
-    public Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken) =>
-        _inner.DeleteAsync(id, cancellationToken);
+    public Task<Tombstone?> FindTombstoneAsync(Guid id, CancellationToken cancellationToken) =>
+        _inner.FindTombstoneAsync(id, cancellationToken);
+
+    public async Task<bool> DeleteAsync(Guid id, byte[] version, CancellationToken cancellationToken)
+    {
+        if (_injector.TakeDelete(id, out var winner))
+        {
+            await WinAsync(id, winner, cancellationToken);
+        }
+
+        return await _inner.DeleteAsync(id, version, cancellationToken);
+    }
+
+    /// <summary>Só regrava, sem mudar nada: o bastante para o rowversion subir.</summary>
+    private static async Task Rewrite(AppDbContext other, Guid id, CancellationToken cancellationToken) =>
+        await other.Set<T>().Where(e => e.Id == id)
+            .ExecuteUpdateAsync(s => s.SetProperty(e => e.UpdatedAt, e => e.UpdatedAt), cancellationToken);
+
+    private async Task WinAsync(Guid id, RaceWinner? winner, CancellationToken cancellationToken)
+    {
+        await using var scope = _scopes.CreateAsyncScope();
+        var other = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await (winner ?? Rewrite)(other, id, cancellationToken);
+    }
 
     /// <summary>O registro que a outra requisição cria primeiro, com o mesmo id.</summary>
     protected virtual T CompetingCopy(T entity) => (T)CloneMethod.Invoke(entity, null)!;

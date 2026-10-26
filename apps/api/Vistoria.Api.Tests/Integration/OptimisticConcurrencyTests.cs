@@ -4,6 +4,7 @@ using System.Text.Json;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Vistoria.Api.Infrastructure.Auth;
@@ -15,7 +16,8 @@ using Vistoria.Api.Tests.Support;
 namespace Vistoria.Api.Tests.Integration;
 
 // Fase 4 (backend.md, "Cabeçalhos" e "Testes de integração"): If-Match, 412, 428 e as corridas → 409. Cada cenário
-// roda em clients, properties, templates e inspections, que passam pelo mesmo SyncEntityService.
+// roda em clients, properties, templates e inspections, que passam pelo mesmo SyncEntityService; o DELETE e as corridas
+// contra uma conclusão ou exclusão, só em inspections.
 public class OptimisticConcurrencyTests(ApiFactory factory) : IClassFixture<ApiFactory>
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
@@ -177,6 +179,152 @@ public class OptimisticConcurrencyTests(ApiFactory factory) : IClassFixture<ApiF
         (await Body(loser)).GetProperty("type").GetString().Should().Be(ProblemTypes.VersionConflict);
     }
 
+    // DELETE segue o mesmo If-Match do PUT (só a vistoria tem DELETE na V1).
+    public static TheoryData<string> Deletable => new() { "inspections" };
+
+    [Theory]
+    [MemberData(nameof(Deletable))]
+    public async Task Delete_WithoutIfMatch_Returns428WithMissingHeader_AndKeepsTheRecord(string resource)
+    {
+        var client = factory.CreateAuthenticatedClient();
+        var (id, _, etag) = await Create(client, resource);
+
+        var response = await Delete(client, resource, id, ifMatch: null);
+
+        await AssertProblem(response, (HttpStatusCode)428, ProblemTypes.PreconditionRequired);
+        (await Body(response)).GetProperty("missingHeader").GetString().Should().Be("If-Match");
+        ETagOf(await client.GetAsync(PathOf(resource, id), Ct)).Should().Be(etag);
+    }
+
+    [Theory]
+    [MemberData(nameof(Deletable))]
+    public async Task Delete_WithStaleIfMatch_Returns412WithCurrent_AndKeepsTheRecord(string resource)
+    {
+        var client = factory.CreateAuthenticatedClient();
+        var (id, body, stale) = await Create(client, resource);
+        var latest = ETagOf(await Put(client, resource, id, body, Strong(stale)));
+
+        var response = await Delete(client, resource, id, Strong(stale));
+
+        await AssertProblem(response, HttpStatusCode.PreconditionFailed, ProblemTypes.VersionConflict);
+        var current = (await Body(response)).GetProperty("current");
+        current.GetProperty("id").GetGuid().Should().Be(id);
+        current.GetProperty("version").GetString().Should().Be(latest);
+        ETagOf(await client.GetAsync(PathOf(resource, id), Ct)).Should().Be(latest);
+    }
+
+    public static TheoryData<string, string> UnusableDeleteIfMatch => new()
+    {
+        { "inspections", "weak" }, { "inspections", "star" }, { "inspections", "unquoted" },
+    };
+
+    [Theory]
+    [MemberData(nameof(UnusableDeleteIfMatch))]
+    public async Task Delete_WithUnusableIfMatch_Returns412(string resource, string kind)
+    {
+        var client = factory.CreateAuthenticatedClient();
+        var (id, _, etag) = await Create(client, resource);
+        var ifMatch = kind switch
+        {
+            "weak" => $"W/{Strong(etag)}",
+            "star" => "*",
+            "unquoted" => etag,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        };
+
+        var response = await Delete(client, resource, id, ifMatch);
+
+        await AssertProblem(response, HttpStatusCode.PreconditionFailed, ProblemTypes.VersionConflict);
+        ETagOf(await client.GetAsync(PathOf(resource, id), Ct)).Should().Be(etag);
+    }
+
+    [Theory]
+    [MemberData(nameof(Deletable))]
+    public async Task Delete_FromAnotherOwnerWithoutIfMatch_Returns403_Not428(string resource)
+    {
+        var owner = factory.CreateAuthenticatedClient();
+        var (id, _, etag) = await Create(owner, resource);
+
+        var response = await Delete(factory.CreateAuthenticatedClient(), resource, id, ifMatch: null);
+
+        await AssertProblem(response, HttpStatusCode.Forbidden, ProblemTypes.Forbidden);
+        ETagOf(await owner.GetAsync(PathOf(resource, id), Ct)).Should().Be(etag);
+    }
+
+    // Quem perde a corrida recebe a regra que vale para o registro do vencedor: concluído → locked, excluído → deleted
+    // (no PUT) ou o efeito já feito (no DELETE), regravado → version-conflict.
+    [Fact]
+    public async Task Put_WhenACompletionWinsTheRace_Returns409Locked()
+    {
+        var (response, id) = await LoseTheRace(put: true, Completes);
+
+        await AssertProblem(response, HttpStatusCode.Conflict, ProblemTypes.Locked);
+        var current = (await Body(response)).GetProperty("current");
+        current.GetProperty("id").GetGuid().Should().Be(id);
+        current.GetProperty("status").GetString().Should().Be("completed");
+    }
+
+    [Fact]
+    public async Task Put_WhenADeletionWinsTheRace_Returns410Deleted()
+    {
+        var (response, _) = await LoseTheRace(put: true, Deletes);
+
+        await AssertProblem(response, HttpStatusCode.Gone, ProblemTypes.Deleted);
+        (await Body(response)).GetProperty("deletedAt").GetDateTimeOffset().Should().Be(RaceDeletedAt);
+    }
+
+    [Fact]
+    public async Task Delete_WhenAnUpdateWinsTheRace_Returns409WithCurrent()
+    {
+        var (response, id) = await LoseTheRace(put: false, winner: null);
+
+        await AssertProblem(response, HttpStatusCode.Conflict, ProblemTypes.VersionConflict);
+        (await Body(response)).GetProperty("current").GetProperty("id").GetGuid().Should().Be(id);
+    }
+
+    [Fact]
+    public async Task Delete_WhenACompletionWinsTheRace_Returns409Locked()
+    {
+        var (response, _) = await LoseTheRace(put: false, Completes);
+
+        await AssertProblem(response, HttpStatusCode.Conflict, ProblemTypes.Locked);
+        (await Body(response)).GetProperty("current").GetProperty("status").GetString().Should().Be("completed");
+    }
+
+    [Fact]
+    public async Task Delete_WhenAnotherDeletionWinsTheRace_Returns204()
+    {
+        var (response, _) = await LoseTheRace(put: false, Deletes);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    private static readonly DateTimeOffset RaceDeletedAt = new(2026, 10, 21, 8, 0, 0, TimeSpan.Zero);
+
+    private static readonly RaceWinner Completes = (db, id, ct) => db.Inspections.Where(i => i.Id == id)
+        .ExecuteUpdateAsync(s => s.SetProperty(i => i.Status, InspectionStatus.Completed), ct);
+
+    private static readonly RaceWinner Deletes = (db, id, ct) => db.Inspections.Where(i => i.Id == id)
+        .ExecuteUpdateAsync(s => s.SetProperty(i => i.DeletedAt, RaceDeletedAt), ct);
+
+    // Uma vistoria em andamento e um PUT (ou DELETE) com o If-Match atual, que perde para o que o vencedor gravar.
+    private async Task<(HttpResponseMessage Response, Guid Id)> LoseTheRace(bool put, RaceWinner? winner)
+    {
+        var ownerId = Guid.CreateVersion7();
+        var (id, body, etag) = await Create(factory.CreateAuthenticatedClient(ownerId), "inspections");
+        var injector = new RaceInjector();
+        await using var raceHost = RaceHost(injector);
+        var client = Authenticated(raceHost, ownerId);
+        if (put)
+        {
+            injector.LoseNextUpdate(id, winner);
+            return (await Put(client, "inspections", id, body, Strong(etag)), id);
+        }
+
+        injector.LoseNextDelete(id, winner);
+        return (await Delete(client, "inspections", id, Strong(etag)), id);
+    }
+
     // Mesma API, com o repositório que perde a corrida quando o RaceInjector mandar.
     private WebApplicationFactory<Program> RaceHost(RaceInjector injector) =>
         factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
@@ -267,6 +415,17 @@ public class OptimisticConcurrencyTests(ApiFactory factory) : IClassFixture<ApiF
         HttpClient client, string resource, Guid id, object body, string? ifMatch)
     {
         var request = WriteRequests.Put(PathOf(resource, id), body);
+        if (ifMatch is not null)
+        {
+            request.Headers.TryAddWithoutValidation("If-Match", ifMatch);
+        }
+
+        return client.SendAsync(request, Ct);
+    }
+
+    private static Task<HttpResponseMessage> Delete(HttpClient client, string resource, Guid id, string? ifMatch)
+    {
+        var request = WriteRequests.Delete(PathOf(resource, id));
         if (ifMatch is not null)
         {
             request.Headers.TryAddWithoutValidation("If-Match", ifMatch);
