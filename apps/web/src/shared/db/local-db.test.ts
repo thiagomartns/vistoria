@@ -19,6 +19,12 @@ describe("banco local por usuário", () => {
       "vistoria-bia",
     ]);
     expect(outboxName("ana")).toBe("vistoria-outbox-ana");
+    expect(vi.mocked(createIndexedDB).mock.calls[0]?.[0].stores).toEqual([
+      "clients",
+      "properties",
+      "inspections",
+      "drafts",
+    ]);
 
     await closeLocalDb("ana");
     expect(db.close).toHaveBeenCalledOnce();

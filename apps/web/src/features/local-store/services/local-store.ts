@@ -9,6 +9,14 @@ import {
 } from "@/features/clients/services/clients.collection";
 import { UPSERT_CLIENT, upsertClientMutation } from "@/features/clients/services/clients.sync";
 import {
+  type InspectionsCollection,
+  createInspectionsCollection,
+} from "@/features/inspections/services/inspections.collection";
+import {
+  UPSERT_INSPECTION,
+  upsertInspectionMutation,
+} from "@/features/inspections/services/inspections.sync";
+import {
   type PropertiesCollection,
   createPropertiesCollection,
 } from "@/features/properties/services/properties.collection";
@@ -18,11 +26,13 @@ import {
 } from "@/features/properties/services/properties.sync";
 
 // O banco local do usuário: as collections de cada feature e uma outbox só para todas. É o único módulo que junta
-// as features, porque a fila é uma: um imóvel criado com um cliente pendente sai depois dele (ADR 0034).
+// as features, porque a fila é uma: um imóvel criado com um cliente pendente sai depois dele, e uma vistoria, depois do
+// imóvel (ADR 0034).
 
 export interface LocalStore {
   clients: ClientsCollection;
   properties: PropertiesCollection;
+  inspections: InspectionsCollection;
   drafts: DraftsCollection;
   outbox: Outbox;
 }
@@ -33,18 +43,20 @@ async function open(ownerId: string): Promise<LocalStore> {
   const db = await openLocalDb(ownerId);
   const clients = createClientsCollection(db);
   const properties = createPropertiesCollection(db);
+  const inspections = createInspectionsCollection(db);
   const drafts = createDraftsCollection(db);
   const outbox = startOutbox({
     ownerId,
-    collections: { clients, properties },
+    collections: { clients, properties, inspections },
     mutationFns: {
       [UPSERT_CLIENT]: upsertClientMutation(clients, drafts),
       [UPSERT_PROPERTY]: upsertPropertyMutation(properties, drafts),
+      [UPSERT_INSPECTION]: upsertInspectionMutation(inspections, drafts),
     },
   });
   await outbox.waitForInit();
   trackOutbox(outbox);
-  return { clients, properties, drafts, outbox };
+  return { clients, properties, inspections, drafts, outbox };
 }
 
 async function close(ownerId: string, opening: Promise<LocalStore>): Promise<void> {
@@ -52,6 +64,7 @@ async function close(ownerId: string, opening: Promise<LocalStore>): Promise<voi
   store?.outbox.dispose();
   await store?.clients.cleanup();
   await store?.properties.cleanup();
+  await store?.inspections.cleanup();
   await store?.drafts.cleanup();
   await closeLocalDb(ownerId);
 }

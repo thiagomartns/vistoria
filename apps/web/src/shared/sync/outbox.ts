@@ -21,7 +21,7 @@ import { newId } from "./ids";
 
 export type Outbox = OfflineExecutor;
 
-/** Envio de uma transação; o pacote não exporta o tipo (`OfflineMutationFn`) na 1.1.1. */
+/** Envio de uma transação; o pacote não exporta o tipo (`OfflineMutationFn`) na 1.1.2. */
 export type OutboxMutationFn<T extends object> = (
   params: MutationFnParams<T> & { idempotencyKey: string },
 ) => Promise<unknown>;
@@ -81,7 +81,7 @@ export function syncFailure(result: { error: unknown; response?: Response }): Er
 const delay = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
 
 /**
- * Espera o `Retry-After` de uma falha antes de ela voltar para a fila. O executor (1.1.1) calcula o atraso só pelo
+ * Espera o `Retry-After` de uma falha antes de ela voltar para a fila. O executor (1.1.2) calcula o atraso só pelo
  * número de tentativas, sem gancho por erro; esperar dentro da mutationFn garante que a próxima tentativa nunca sai
  * antes do que o servidor pediu (o backoff dele soma depois). A fila é serial: nada que pudesse sair antes espera.
  */
@@ -148,6 +148,81 @@ export function ownerOnlineDetector(
   };
 }
 
+// Compactação (frontend.md, "Escrita (push)"): das transações do mesmo registro que nunca foram enviadas, só a mais
+// recente sai. O executor (1.1.2) não deixa tirar uma transação da fila (`removeFromOutbox` só apaga do armazenamento,
+// e ele a envia mesmo assim), então a compactação acontece quando a mais antiga chega à frente: ela termina sem rede,
+// e a mais nova, que leva o registro inteiro, sai no lugar dela.
+// "Nunca enviada" não se lê do `retryCount`: ele só sobe depois de uma falha, e uma aba fechada com o envio no ar volta
+// com 0, embora o `PUT` possa ter sido aplicado. Por isso a marca de tentativa é gravada antes do envio.
+
+const attemptKey = (idempotencyKey: string) => `vistoria-sent:${idempotencyKey}`;
+
+/** Marca a transação como tentada, antes de a requisição sair. */
+export function markAttempted(idempotencyKey: string): void {
+  try {
+    localStorage.setItem(attemptKey(idempotencyKey), "1");
+  } catch {
+    // Sem armazenamento, a marca não fica; sem ler a marca, wasAttempted diz que tentou, e nada é compactado.
+  }
+}
+
+/** A transação já teve uma tentativa. Sem conseguir ler, responde que sim: na dúvida, envia. */
+export function wasAttempted(idempotencyKey: string): boolean {
+  try {
+    return localStorage.getItem(attemptKey(idempotencyKey)) !== null;
+  } catch {
+    return true;
+  }
+}
+
+/** Apaga a marca: a transação saiu da fila. */
+export function forgetAttempt(idempotencyKey: string): void {
+  try {
+    localStorage.removeItem(attemptKey(idempotencyKey));
+  } catch {
+    // Uma marca que sobra só impede compactar uma transação que já saiu da fila.
+  }
+}
+
+const sameKeys = (a: readonly string[], b: readonly string[]) =>
+  a.length === b.length && a.every((key) => b.includes(key));
+
+/**
+ * A transação nunca tentada tem na fila uma mais nova do mesmo envio e do mesmo registro. "Mais nova" é `createdAt`
+ * estritamente maior: num empate, a ordem da fila não é garantida, e não compactar é o lado seguro.
+ */
+async function isSuperseded(outbox: Outbox | undefined, transactionId: string): Promise<boolean> {
+  const queued = (await outbox?.peekOutbox()) ?? [];
+  const self = queued.find((transaction) => transaction.id === transactionId);
+  if (!self || self.retryCount > 0) return false;
+  return queued.some(
+    (transaction) =>
+      transaction.createdAt.getTime() > self.createdAt.getTime() &&
+      transaction.mutationFnName === self.mutationFnName &&
+      sameKeys(transaction.keys, self.keys),
+  );
+}
+
+/** Embrulha um envio com a compactação e a marca de tentativa. */
+export function compacting(
+  send: OutboxMutationFn<any>,
+  outbox: () => Outbox | undefined,
+): OutboxMutationFn<any> {
+  return async (params) => {
+    const { transaction, idempotencyKey } = params;
+    if (!wasAttempted(idempotencyKey) && (await isSuperseded(outbox(), transaction.id))) return;
+    markAttempted(idempotencyKey);
+    try {
+      const result = await send(params);
+      forgetAttempt(idempotencyKey);
+      return result;
+    } catch (error) {
+      if (!(error instanceof RetryableSyncError)) forgetAttempt(idempotencyKey);
+      throw error;
+    }
+  };
+}
+
 export interface OutboxConfig {
   /** O `user.id` dono da fila: dá nome ao armazenamento e ao lock, e só a sessão dele envia. */
   ownerId: string;
@@ -159,9 +234,14 @@ export interface OutboxConfig {
 export const outboxName = (ownerId: string) => `vistoria-outbox-${ownerId}`;
 
 export function startOutbox({ ownerId, collections, mutationFns }: OutboxConfig): Outbox {
-  return startOfflineExecutor({
+  // O executor só envia depois de iniciar (assíncrono), e aí `outbox` já existe.
+  let outbox: Outbox | undefined;
+  const compacted = Object.fromEntries(
+    Object.entries(mutationFns).map(([name, send]) => [name, compacting(send, () => outbox)]),
+  );
+  outbox = startOfflineExecutor({
     collections,
-    mutationFns,
+    mutationFns: compacted,
     shouldRetry,
     // Sem IndexedDB ou Web Locks, o executor escolhe sozinho (localStorage, BroadcastChannel).
     ...(typeof indexedDB !== "undefined" && { storage: new IndexedDBAdapter(outboxName(ownerId)) }),
@@ -172,6 +252,7 @@ export function startOutbox({ ownerId, collections, mutationFns }: OutboxConfig)
     onlineDetector: ownerOnlineDetector(ownerId),
     onStorageFailure: (diagnostic) => console.warn("[outbox] sem armazenamento", diagnostic),
   });
+  return outbox;
 }
 
 /**
