@@ -140,9 +140,10 @@ public abstract class SyncEntity
 - A versão do agregado é a da raiz. Toda mudança em ambiente ou item atualiza `Inspection.UpdatedAt`, o que força a linha da raiz a mudar e o rowversion a subir. ETag e delta só olham a raiz.
 - No `PUT`, `rooms` (e `items` dentro de cada ambiente) é a lista completa. Id novo é criado; existente que não veio é marcado com `DeletedAt`; excluído desta vistoria que volta na lista é revivido (um merge pode manter o que outro aparelho apagou). Item que muda de ambiente mantém o id.
 - Ids de ambiente e de item são únicos na vistoria inteira, não só no ambiente, e pertencem a ela: id repetido ou já usado em outra vistoria (de qualquer dono, inclusive excluída) é 400 no caminho do id, como `rooms[1].items[0].id`.
-- O `PUT` não regrava o que o servidor ou outra regra define: `startedAt` fica o da criação, e `completedAt` nunca vem do cliente. `referenceInspectionId` e os campos de referência dos itens ficam fora do corpo de entrada até a regra de saída (abaixo) ser implementada. Enquanto a conclusão não existe (fase 3), `status: completed` é 400 em `status`.
+- O `PUT` não regrava o que o servidor ou outra regra define: `startedAt` fica o da criação, e `completedAt` nunca vem do cliente. `referenceInspectionId` e os campos de referência dos itens ficam fora do corpo de entrada até a regra de saída (abaixo) ser implementada.
 - `Room` e `InspectionItem` não têm `version` própria: herdam de `AggregateChild` (só `Id` do cliente e `DeletedAt`, com o mesmo filtro `SoftDelete`), não de `SyncEntity` ([ADR 0035](../decisions/0035-ambiente-e-item-do-agregado-sobre-aggregatechild-sem-syncentity.md)). No `SaveChangesAsync`, incluir, alterar ou remover um filho marca a vistoria como `Modified`, e `Remove` de filho vira `DeletedAt`. Gravar um filho sem a vistoria rastreada no mesmo contexto lança `InvalidOperationException`.
-- **Conclusão:** o `PUT` com `status: completed` só é aceito se houver ao menos um ambiente, ao menos um item por ambiente e `condition` em todos os itens. O servidor grava `CompletedAt`. Depois disso, qualquer `PUT` ou `DELETE` responde 409 `locked`.
+- **Conclusão:** o `PUT` com `status: completed` só é aceito se houver ao menos um ambiente, ao menos um item por ambiente e `condition` em todos os itens; senão, 400 na chave exata (`rooms`, `rooms[0].items`, `rooms[0].items[1].condition`). O servidor grava `CompletedAt` pelo `TimeProvider`. Vale também para um id novo (vistoria feita toda offline e enviada já concluída), que nasce com `CompletedAt`. Depois disso, qualquer `PUT` ou `DELETE` responde 409 `locked`, mesmo com `If-Match` antigo.
+- **Exclusão:** o `DELETE` marca só a raiz com `DeletedAt`. Ambientes e itens ficam como estão: o tombstone e o delta são da raiz, e os ids deles continuam usados.
 - **Saída:** `referenceInspectionId`, quando presente, precisa apontar para uma entrada concluída do mesmo imóvel e do mesmo dono.
 - `Template` guarda ambientes e itens como JSON numa coluna só: é um molde, nunca consultado por item.
 
@@ -260,7 +261,11 @@ O servidor faz duas coisas pelo front local-first. Aceita escritas que provam so
 
 > Diagrama: tratamento de um PUT no InspectionService · 7 decisões (disponível na versão original do documento)
 
-A ordem importa: idempotência primeiro (um retry nunca reexecuta nada), depois exclusão e trava de conclusão, depois versão, e validação por último. A checagem no `SaveChanges` cobre a janela entre ler e gravar, quando duas requisições correm juntas. O `DELETE` segue o mesmo caminho, com uma diferença: registro inexistente ou já excluído responde 204 direto. Os outros recursos (`clients`, `properties`, `templates`) usam o mesmo fluxo, sem a trava de conclusão.
+A ordem importa: idempotência primeiro (um retry nunca reexecuta nada), depois exclusão e trava de conclusão, depois versão, e validação por último. A checagem no `SaveChanges` cobre a janela entre ler e gravar, quando duas requisições correm juntas. O `DELETE` segue o mesmo caminho, com uma diferença: registro inexistente ou já excluído responde 204 direto. Os outros recursos (`clients`, `properties`, `templates`) usam o mesmo fluxo, sem a trava de conclusão (e sem `DELETE` na V1).
+
+- **Dono primeiro.** O 403 vem antes do 410 e do 409 `locked`, para o estado de um registro de outro dono não vazar. O `DELETE` só olha registros vivos: um excluído de outro dono responde 204, como um id inexistente. O `PUT` nesse mesmo excluído responde 403, como num registro vivo de outro dono.
+- **410 em todo recurso.** O `SyncEntityService` procura o tombstone (`IgnoreQueryFilters`) quando o id não está vivo, então `clients`, `properties` e `templates` já respondem 410 `deleted` quando ganharem `DELETE`.
+- **Corrida.** Quem perde no `SaveChanges` recebe a regra que vale para o registro do vencedor: concluído → 409 `locked`; excluído → 410 `deleted` no `PUT`, e 204 no `DELETE` (o efeito pedido já aconteceu); só regravado → 409 `version-conflict`.
 
 **Idempotência**
 
