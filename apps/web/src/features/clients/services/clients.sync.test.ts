@@ -54,6 +54,7 @@ function setup(
   const drafts = new Map<string, Record<string, unknown>>();
   const draftsCollection = {
     has: (key: string) => drafts.has(key),
+    get: (key: string) => drafts.get(key),
     insert: (draft: { id: string }) => drafts.set(draft.id, draft),
     update: (key: string, change: (draft: Record<string, unknown>) => void) =>
       change(drafts.get(key)!),

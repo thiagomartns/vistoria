@@ -12,7 +12,7 @@ A API é a única fonte de verdade e de segurança. Detalhes em [docs/vision.md]
 | --- | --- |
 | `apps/web/` | Next.js 16, static export ([CLAUDE.md](apps/web/CLAUDE.md)) |
 | `apps/api/` | .NET 10, controllers + testes; `openapi.json` gerado no build ([CLAUDE.md](apps/api/CLAUDE.md)) |
-| `scripts/` | `screens` (prints do static export), `gen-api` (gerador do contrato, com TypeScript 6), `db-init` (senha local e chave do JWT), `dev-api` (pré-check e `dotnet watch`), `outbox-spike` (roteiro dos spikes 1a e 1b, pelas telas de clientes e imóveis) e `shell-spike` (roteiro do spike 4) |
+| `scripts/` | `screens` (prints do static export), `gen-api` (gerador do contrato, com TypeScript 6), `db-init` (senha local e chave do JWT), `dev-api` (pré-check e `dotnet watch`), `outbox-spike` (roteiro dos spikes 1a e 1b e das duas entregas do M2, pelas telas de clientes, imóveis e vistorias) e `shell-spike` (roteiro do spike 4) |
 | `infra/` | `docker-compose.dev.yml` (SQL Server); senha em `infra/.env`, gerada pelo `pnpm db:init` e nunca commitada |
 | `docs/` | Visão, arquitetura e ADRs (`docs/decisions/`) — **o repositório manda** |
 | `.github/` | CI (`ci.yml`: jobs `api`, `web`, `security`, obrigatórios na `main`) e Dependabot semanal |
@@ -31,8 +31,8 @@ A API é a única fonte de verdade e de segurança. Detalhes em [docs/vision.md]
 | `pnpm gen:api` | Gera tipos, client, Zod e `ProblemType` em `apps/web/src/shared/api/generated/` a partir de `apps/api/openapi.json` |
 | `pnpm --filter web build` | Static export em `apps/web/out/`, com o service worker (`sw.js`) |
 | `pnpm test:api` | `dotnet test` na solution da API (integração com Testcontainers: exige Docker) |
-| `pnpm screens <rota…>` | Prints do static export no celular e no desktop; `--session` entra pelo `/login` (rotas do shell); `--publish` grava na branch `screens` |
-| `pnpm spike:outbox` | Roteiro Playwright dos spikes 1a e 1b contra a API real, no celular e no desktop (exige `db:up`, `dev:api` e o build do web) |
+| `pnpm screens <rota…>` | Prints do static export no celular e no desktop; `--session` entra pelo `/login` (rotas do shell); `--publish` grava na branch `screens`; `--files <dir>` publica PNGs prontos (os do `spike:outbox`) |
+| `pnpm spike:outbox` | Roteiro Playwright dos spikes 1a e 1b e das entregas do M2 (cadastro e vistoria offline) contra a API real, no celular e no desktop (exige `db:up`, `dev:api` e o build do web); com `SCREENS=1`, tira os prints dos estados da tela de campo em `.screens/campo/` |
 | `pnpm spike:shell` | Roteiro Playwright do spike 4: o shell abre em modo avião depois da primeira visita (exige o build do web; roda no CI) |
 
 `pnpm seed` chega no M2. Uma tela do Figma vira código com `/screen <link> <issue>`.

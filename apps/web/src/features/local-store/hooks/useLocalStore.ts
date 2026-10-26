@@ -3,13 +3,14 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 
 import { useSession } from "@/shared/auth/useSession";
 import { syncStatusStore } from "@/shared/sync/sync-status";
-import { recordSyncStates } from "@/shared/sync/sync-view";
+import { confirmedBases, recordSyncStates } from "@/shared/sync/sync-view";
 
 import { type LocalStore, openLocalStore } from "../services/local-store";
 
 /**
- * O banco local do dono da sessão: clients, properties e inspections (otimistas incluídos), os rascunhos recusados e o estado de
- * sync de cada registro com transação na outbox. `ready` só quando todas as collections já carregaram.
+ * O banco local do dono da sessão: clients, properties e inspections (otimistas incluídos), os rascunhos e o estado de
+ * sync de cada registro com transação na outbox, com a base confirmada dele. `ready` só quando todas as collections já
+ * carregaram.
  */
 export function useLocalStore() {
   const ownerId = useSession().user?.id;
@@ -50,5 +51,7 @@ export function useLocalStore() {
     inspections: inspections.data ?? [],
     drafts: drafts.data ?? [],
     states: recordSyncStates(snapshot),
+    /** O que o servidor confirmou de cada registro com transação na fila (vazio numa criação). */
+    bases: confirmedBases(snapshot),
   };
 }

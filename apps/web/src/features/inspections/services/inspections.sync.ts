@@ -1,6 +1,6 @@
 import { upsertInspection } from "@/shared/api/generated";
 import type { Client } from "@/shared/api/generated/client";
-import { type DraftsCollection, clearDraft } from "@/shared/sync/drafts";
+import { type DraftsCollection, clearDraft, saveDraftValues } from "@/shared/sync/drafts";
 import { type Outbox, type OutboxMutationFn, enqueue } from "@/shared/sync/outbox";
 import { registerRecordLabel } from "@/shared/sync/sync-view";
 import { upsertMutation } from "@/shared/sync/upsert";
@@ -37,7 +37,8 @@ export function upsertInspectionMutation(
 
 /**
  * Cria ou edita uma vistoria: aplica na hora e enfileira o `PUT` do agregado. A edição mantém a `version` do registro
- * (a do envio sai da store, na hora do envio); salvar de novo apaga o rascunho recusado. Devolve o id.
+ * (a do envio sai da store, na hora do envio); salvar de novo tira a recusa do rascunho, que fica com o passo da tela de
+ * campo (ADR 0036). Devolve o id.
  */
 export function saveInspection(
   {
@@ -60,4 +61,16 @@ export function saveInspection(
   });
   clearDraft(drafts, id);
   return id;
+}
+
+/**
+ * Guarda no rascunho a vistoria como está na tela de campo e o ambiente aberto, a cada mudança (frontend.md,
+ * "Formulários profundos"): fechar a aba no meio de um ambiente não perde nada, nem o lugar.
+ */
+export function saveInspectionDraft(
+  drafts: DraftsCollection,
+  values: Omit<InspectionRecord, "version">,
+  step: number,
+): void {
+  saveDraftValues(drafts, INSPECTION_ENTITY, values.id, values, step);
 }

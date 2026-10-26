@@ -21,7 +21,8 @@ import { NAV_ITEMS, navItemFor } from "./nav-items";
 import { type ShellHeader, ShellHeaderContext } from "./shell-header";
 
 // Shell do app (Figma "Shell (#7)", 14:1006): sidebar no desktop, barra inferior no celular, SyncStatus no header
-// e OfflineBanner no topo do conteúdo. Uma tela de registro troca o título do header pelo <PageHeader />. Sem sessão vai para /login; com a sessão expirada, fica offline com os dados
+// e OfflineBanner no topo do conteúdo. Uma tela de registro troca o título do header pelo <PageHeader />; no modo foco
+// (tela de campo), o celular fica sem a barra inferior e sem o avatar. Sem sessão vai para /login; com a sessão expirada, fica offline com os dados
 // locais e vai para /login quando a rede volta. O bloqueio da janela offline de 72 h é do M4.
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -71,9 +72,19 @@ export function AppShell({ children }: { children: ReactNode }) {
             </Button>
           ) : null}
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            <h1 className="min-w-0 truncate text-lg font-semibold text-foreground">
-              {header?.title ?? current?.label}
-            </h1>
+            <div className="flex min-w-0 flex-col">
+              <h1
+                className={`min-w-0 truncate font-semibold text-foreground ${header?.subtitle ? "text-sm md:text-lg" : "text-lg"}`}
+              >
+                {header?.title ?? current?.label}
+              </h1>
+              {header?.subtitle ? (
+                <p className="min-w-0 truncate text-xs text-muted-foreground md:text-sm">
+                  <span className="md:hidden">{header.compactSubtitle ?? header.subtitle}</span>
+                  <span className="hidden md:inline">{header.subtitle}</span>
+                </p>
+              ) : null}
+            </div>
             {header?.sync ? (
               <span className="hidden md:flex">
                 <SyncBadge state={header.sync} />
@@ -83,16 +94,24 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="hidden md:flex">{status("completo")}</div>
           <div className="flex items-center gap-2 md:hidden">
             {status("compacto")}
-            {user("avatar")}
+            {header?.focus ? null : user("avatar")}
           </div>
         </header>
-        <main className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4 md:gap-4 md:p-6">
-          {sync.offline ? <OfflineBanner type="aviso" /> : null}
+        <main
+          className={`flex min-h-0 flex-1 flex-col overflow-y-auto md:gap-4 md:p-6 ${header?.focus ? "" : "gap-3 p-4"}`}
+        >
+          {sync.offline ? (
+            <div className={header?.focus ? "px-4 pt-4 md:p-0" : "contents"}>
+              <OfflineBanner type="aviso" />
+            </div>
+          ) : null}
           <ShellHeaderContext value={setHeader}>{children}</ShellHeaderContext>
         </main>
-        <div className="md:hidden">
-          <BottomNav items={NAV_ITEMS} activeHref={current?.href} />
-        </div>
+        {header?.focus ? null : (
+          <div className="md:hidden">
+            <BottomNav items={NAV_ITEMS} activeHref={current?.href} />
+          </div>
+        )}
       </div>
       <OutboxPanel
         open={panelOpen}

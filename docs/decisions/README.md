@@ -40,3 +40,4 @@ uma decisão nova o substitui e diz qual substituiu. Novo ADR: `/adr <título>` 
 | [0033](0033-movimento-carregamento-e-avisos-na-ui.md) | Movimento, carregamento e avisos na UI | Proposto | 2026-10-22 |
 | [0034](0034-outbox-serial-uma-transacao-por-vez-na-ordem-de-criacao.md) | Outbox serial: uma transação por vez, na ordem de criação | Proposto | 2026-10-22 |
 | [0035](0035-ambiente-e-item-do-agregado-sobre-aggregatechild-sem-syncentity.md) | Ambiente e item do agregado sobre AggregateChild, sem SyncEntity | Proposto | 2026-10-23 |
+| [0036](0036-rascunho-da-vistoria-guarda-o-passo-e-fica-ate-concluir.md) | Rascunho da vistoria guarda o passo e fica até concluir | Proposto | 2026-10-26 |
