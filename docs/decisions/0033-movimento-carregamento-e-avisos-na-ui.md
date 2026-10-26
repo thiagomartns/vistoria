@@ -1,6 +1,6 @@
 # 0033 — Movimento, carregamento e avisos na UI
 
-- **Status:** Proposto
+- **Status:** Aceito
 - **Data:** 2026-10-22
 
 ## Contexto

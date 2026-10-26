@@ -1,6 +1,6 @@
 # 0035 — Ambiente e item do agregado sobre AggregateChild, sem SyncEntity
 
-- **Status:** Proposto
+- **Status:** Aceito
 - **Data:** 2026-10-23
 
 ## Contexto

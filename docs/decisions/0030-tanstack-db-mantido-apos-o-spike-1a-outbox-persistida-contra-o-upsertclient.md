@@ -1,6 +1,6 @@
 # 0030 — TanStack DB mantido após o spike 1a (outbox persistida contra o upsertClient)
 
-- **Status:** Proposto
+- **Status:** Aceito
 - **Data:** 2026-10-21
 
 ## Contexto

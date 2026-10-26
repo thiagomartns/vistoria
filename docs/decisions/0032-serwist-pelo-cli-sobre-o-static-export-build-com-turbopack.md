@@ -1,6 +1,6 @@
 # 0032 — Serwist pelo CLI sobre o static export, build com Turbopack
 
-- **Status:** Proposto
+- **Status:** Aceito
 - **Data:** 2026-10-22
 
 ## Contexto
