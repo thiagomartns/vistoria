@@ -89,7 +89,7 @@ O caminho feliz é invisível para o usuário. A tabela de reações abaixo cobr
 
 - Cada mudança vira uma transação na outbox: o agregado completo (vistoria com todos os ambientes e itens), a `baseVersion` e uma `Idempotency-Key` (UUID v7) gerada ao enfileirar.
 - `baseVersion` nula (registro criado offline) → `PUT` sem `If-Match`. Caso contrário, `If-Match: "<baseVersion>"`.
-- Transações do mesmo registro que **nunca foram enviadas** são compactadas na mais recente. Uma transação que já teve uma tentativa nunca é compactada, porque pode ter sido aplicada.
+- Transações do mesmo registro que **nunca foram enviadas** são compactadas na mais recente. Uma transação que já teve uma tentativa nunca é compactada, porque pode ter sido aplicada. A tentativa conta do início do envio: a marca é gravada antes da requisição sair, porque o `retryCount` do executor só sobe depois de uma falha (uma aba fechada no meio do envio volta com 0). Como o executor não deixa tirar uma transação da fila, a compactação acontece quando a mais antiga chega à frente: ela termina sem rede, e a mais nova, que leva o registro inteiro, sai no lugar dela.
 - Uma transação por vez, na ordem de criação, numa fila só para todas as entidades: a dependência entre registros (cliente antes do imóvel, roteiro antes da vistoria) vem da ordem. Recusado o registro pai, o filho volta com erro no campo e vira rascunho ([ADR 0034](../decisions/0034-outbox-serial-uma-transacao-por-vez-na-ordem-de-criacao.md)).
 - Sucesso: a `version` da resposta vira a `serverShadow` e a `baseVersion` da próxima transação daquele registro.
 - Exclusão (só de vistoria em andamento): `deleteInspection` com `If-Match`; 204 é sucesso mesmo se ela já tinha sumido.
