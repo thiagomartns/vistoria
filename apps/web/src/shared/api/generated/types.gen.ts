@@ -400,6 +400,67 @@ export type GetHealthResponses = {
 
 export type GetHealthResponse = GetHealthResponses[keyof GetHealthResponses];
 
+export type DeleteInspectionData = {
+    body?: never;
+    headers: {
+        /**
+         * ETag da versão-base. Obrigatório quando o registro já existe (ausente → 428 precondition-required); omitido na criação.
+         */
+        'If-Match'?: string;
+        /**
+         * UUID v7, um por corpo: o mesmo corpo reenviado usa a mesma chave.
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/inspections/{id}';
+};
+
+export type DeleteInspectionErrors = {
+    /**
+     * Unauthorized
+     */
+    401: ProblemDetails;
+    /**
+     * Forbidden
+     */
+    403: ProblemDetails;
+    /**
+     * Conflict
+     */
+    409: ProblemDetails;
+    /**
+     * Precondition Failed
+     */
+    412: ProblemDetails;
+    /**
+     * Unprocessable Entity
+     */
+    422: ProblemDetails;
+    /**
+     * Precondition Required
+     */
+    428: ProblemDetails;
+    /**
+     * Too Many Requests
+     */
+    429: ProblemDetails;
+};
+
+export type DeleteInspectionError = DeleteInspectionErrors[keyof DeleteInspectionErrors];
+
+export type DeleteInspectionResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type DeleteInspectionResponse = DeleteInspectionResponses[keyof DeleteInspectionResponses];
+
 export type GetInspectionData = {
     body?: never;
     path: {

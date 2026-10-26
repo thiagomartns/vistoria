@@ -274,6 +274,20 @@ export const zUpsertClientResponse = zClientDto;
  */
 export const zGetHealthResponse = zHealthDto;
 
+export const zDeleteInspectionHeaders = z.object({
+    'If-Match': z.string().optional(),
+    'Idempotency-Key': z.uuid()
+});
+
+export const zDeleteInspectionPath = z.object({
+    id: z.uuid()
+});
+
+/**
+ * No Content
+ */
+export const zDeleteInspectionResponse = z.void();
+
 export const zGetInspectionPath = z.object({
     id: z.uuid()
 });
