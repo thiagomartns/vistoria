@@ -62,17 +62,37 @@ export function parseArgs(argv) {
   let publish = false;
   let session = false;
   let out = ".screens";
+  let files = null;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--") continue;
     if (arg === "--publish") publish = true;
     else if (arg === "--session") session = true;
     else if (arg === "--out") out = argv[++i] ?? out;
+    else if (arg === "--files") files = argv[++i] ?? null;
     else if (arg.startsWith("--")) throw new Error(`Opção desconhecida: ${arg}`);
     else routes.push(arg.startsWith("/") ? arg : `/${arg}`);
   }
-  if (routes.length === 0) {
-    throw new Error("Uso: pnpm screens <rota…> [--session] [--publish] [--out dir]");
+  if (files !== null) {
+    if (routes.length > 0) throw new Error("--files publica PNGs prontos: sem rotas.");
+    return { routes, publish: true, session, out, files };
   }
-  return { routes, publish, session, out };
+  if (routes.length === 0) {
+    throw new Error("Uso: pnpm screens <rota…> [--session] [--publish] [--out dir] | --files dir");
+  }
+  return { routes, publish, session, out, files };
+}
+
+/**
+ * Os PNGs prontos de uma pasta (`<nome>-celular.png`, `<nome>-desktop.png`), gerados fora do `pnpm screens` (o roteiro
+ * da tela de campo tira os prints dos estados que dependem do servidor). O nome vira a linha da tabela do PR.
+ */
+export function readyScreens(names) {
+  const viewports = VIEWPORTS.map((viewport) => viewport.name).join("|");
+  const pattern = new RegExp(`^([a-z0-9-]+)-(${viewports})\\.png$`);
+  return names
+    .map((name) => pattern.exec(name))
+    .filter(Boolean)
+    .map(([name, route, viewport]) => ({ route, viewport, name }))
+    .toSorted((a, b) => a.route.localeCompare(b.route) || a.viewport.localeCompare(b.viewport));
 }

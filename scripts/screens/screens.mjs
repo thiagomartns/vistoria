@@ -1,11 +1,12 @@
-// `pnpm screens <rota…> [--session] [--publish] [--out dir]`
+// `pnpm screens <rota…> [--session] [--publish] [--out dir]` ou `pnpm screens --files dir`
 // Tira prints do static export (`apps/web/out`) no celular e no desktop, nos tamanhos dos frames do Figma.
 // Com --session, entra pelo /login (signin respondido aqui, sem API) e tira o print da rota do shell já logado:
 // o banco local do usuário de mentira começa vazio. Com --publish, grava os PNGs na branch órfã `screens` e imprime
-// a tabela para o corpo do PR.
+// a tabela para o corpo do PR. Com --files, publica os PNGs prontos de uma pasta (`<nome>-celular.png` e
+// `<nome>-desktop.png`), como os que o `pnpm spike:outbox` tira dos estados da tela de campo.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { extname, join, resolve } from "node:path";
 
@@ -19,6 +20,7 @@ import {
   parseArgs,
   publishPath,
   rawUrl,
+  readyScreens,
   screenshotName,
 } from "./lib.mjs";
 
@@ -181,6 +183,12 @@ function publish(files) {
   console.log(`\n${markdownTable([...rows.values()])}`);
 }
 
-const { routes, publish: shouldPublish, session, out } = parseArgs(process.argv.slice(2));
-const files = await capture(routes, resolve(process.env.INIT_CWD ?? root, out), { session });
+const { routes, publish: shouldPublish, session, out, files: ready } = parseArgs(process.argv.slice(2));
+const files = ready
+  ? readyScreens(readdirSync(resolve(process.env.INIT_CWD ?? root, ready))).map((file) => ({
+      ...file,
+      path: join(resolve(process.env.INIT_CWD ?? root, ready), file.name),
+    }))
+  : await capture(routes, resolve(process.env.INIT_CWD ?? root, out), { session });
+if (ready && files.length === 0) throw new Error(`Nenhum <nome>-celular.png ou <nome>-desktop.png em ${ready}.`);
 if (shouldPublish) publish(files);

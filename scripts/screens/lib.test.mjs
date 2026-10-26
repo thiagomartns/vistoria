@@ -6,6 +6,7 @@ import {
   markdownTable,
   parseArgs,
   publishPath,
+  readyScreens,
   rawUrl,
   routeSlug,
   screenshotName,
@@ -71,7 +72,19 @@ describe("parseArgs", () => {
       publish: true,
       session: false,
       out: "tmp",
+      files: null,
     });
+  });
+
+  it("--files: publica os PNGs de uma pasta, sem rotas", () => {
+    assert.deepEqual(parseArgs(["--files", ".screens/campo"]), {
+      routes: [],
+      publish: true,
+      session: false,
+      out: ".screens",
+      files: ".screens/campo",
+    });
+    assert.throws(() => parseArgs(["/x", "--files", "d"]), /sem rotas/);
   });
 
   it("--session: as rotas do shell com uma sessão de mentira", () => {
@@ -84,5 +97,17 @@ describe("parseArgs", () => {
 
   it("recusa opção desconhecida", () => {
     assert.throws(() => parseArgs(["/x", "--full"]), /Opção desconhecida/);
+  });
+});
+
+describe("readyScreens", () => {
+  it("os PNGs de celular e desktop, por nome; ignora o resto", () => {
+    assert.deepEqual(
+      readyScreens(["campo-0-desktop.png", "campo-0-celular.png", "notas.txt", "campo-0-tablet.png"]),
+      [
+        { route: "campo-0", viewport: "celular", name: "campo-0-celular.png" },
+        { route: "campo-0", viewport: "desktop", name: "campo-0-desktop.png" },
+      ],
+    );
   });
 });

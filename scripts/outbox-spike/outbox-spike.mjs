@@ -10,16 +10,20 @@
 // Desde o #60 (spike 1b) começa no celular (a 1ª entrega do M2) e prova o contrato com o servidor: a resposta derrubada
 // recebe a gravada sem subir a versão, duas edições seguidas saem encadeadas pelo If-Match, o 412 marca o conflito sem
 // laço e o 409 idempotency-in-progress espera o Retry-After.
+// Desde o #94 cobre a 2ª entrega do M2: no celular, a vistoria criada offline, com condições marcadas, volta do
+// rascunho ao recarregar e chega ao SQL Server uma vez só; no desktop, a tela de campo passa pelos estados do Figma
+// (sincronizado, enviando, recusado, offline e ambiente vazio) e o 400 num item volta ao chip certo. Com SCREENS=1,
+// tira os prints desses estados em `.screens/campo/` (celular e desktop), para `pnpm screens --files .screens/campo`.
 
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { createServer, request } from "node:http";
 import { extname, join, resolve } from "node:path";
 
 import { chromium } from "playwright-core";
 
-import { candidateFiles } from "../screens/lib.mjs";
+import { VIEWPORTS, candidateFiles } from "../screens/lib.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
 const outDir = join(root, "apps/web/out");
@@ -109,11 +113,15 @@ async function serverProperty(user, id) {
   return callApi(`/api/v1/properties/${id}`, { headers: { authorization: `Bearer ${user.token}` } });
 }
 
-/** Todo PUT de client e de imóvel que a página dispara, com o que interessa ao roteiro. */
+async function serverInspection(user, id) {
+  return callApi(`/api/v1/inspections/${id}`, { headers: { authorization: `Bearer ${user.token}` } });
+}
+
+/** Todo PUT de client, imóvel e vistoria que a página dispara, com o que interessa ao roteiro. */
 function watchPuts(page) {
   const puts = [];
   page.on("request", (req) => {
-    const entity = req.url().match(/\/api\/v1\/(clients|properties)\//)?.[1];
+    const entity = req.url().match(/\/api\/v1\/(clients|properties|inspections)\//)?.[1];
     if (req.method() !== "PUT" || !entity) return;
     const entry = {
       at: Date.now(),
@@ -228,6 +236,61 @@ async function editNotes(page, address, notes) {
   await page.getByRole("heading", { level: 1, name: "Imóveis" }).waitFor();
 }
 
+/** De /clients (ou outra lista) a /inspections/new: escolhe o imóvel, começa a vistoria e devolve o id dela. */
+async function createInspection(page, propertyOption) {
+  await goTo(page, "Vistorias");
+  await page.getByRole("link", { name: "Nova vistoria" }).first().click();
+  await page.getByRole("heading", { level: 1, name: "Nova vistoria" }).waitFor();
+  await page.getByLabel("Imóvel").click();
+  await page.getByRole("option", { name: propertyOption }).click();
+  await page.getByRole("button", { name: "Começar vistoria" }).click();
+  await page.waitForURL(/\/inspections\/edit\?id=/);
+  await currentRoomIs(page, "Sala");
+  return new URL(page.url()).searchParams.get("id");
+}
+
+/** Os chips de condição de um item do ambiente aberto. */
+const chipsOf = (page, item) => page.getByRole("radiogroup", { name: `Condição: ${item}` });
+
+/** Marca a condição de um item do ambiente aberto. */
+const mark = (page, item, condition) => chipsOf(page, item).getByRole("radio", { name: condition }).click();
+
+const checked = async (page, item, condition) =>
+  (await chipsOf(page, item).getByRole("radio", { name: condition }).getAttribute("aria-checked")) === "true";
+
+/** O ambiente aberto na tela de campo é `room`. */
+const currentRoomIs = (page, room) =>
+  page.getByRole("heading", { level: 2, name: room, exact: true }).waitFor();
+
+/** Vai para outro ambiente pela etapa do StepperForm. */
+async function openRoom(page, room) {
+  await page.getByRole("navigation", { name: "Ambientes" }).getByRole("button", { name: new RegExp(`^${room}`) }).click();
+  await currentRoomIs(page, room);
+}
+
+/** A tela de campo manda para a fila 1,5 s depois da última mudança: espera isso e a fila esvaziar. */
+async function inspectionSettled(page, user, what) {
+  await wait(1800);
+  await until(async () => (await outboxCount(page, user)) === 0, what, 90_000);
+}
+
+// Prints dos estados da tela de campo, com SCREENS=1: o mesmo estado no celular e no desktop, trocando o viewport.
+const shotsDir = process.env.SCREENS ? resolve(process.env.INIT_CWD ?? root, ".screens/campo") : null;
+
+async function shoot(page, name) {
+  if (!shotsDir) return;
+  mkdirSync(shotsDir, { recursive: true });
+  const original = page.viewportSize();
+  for (const viewport of VIEWPORTS) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.evaluate(() => document.fonts.ready);
+    await wait(400);
+    await page.screenshot({ path: join(shotsDir, `${name}-${viewport.name}.png`) });
+  }
+  await page.setViewportSize(original);
+  ok(`print ${name} (celular e desktop)`);
+}
+
 /** As chaves das transações na outbox do usuário, da mais antiga para a mais nova, lidas do IndexedDB dela. */
 const outboxKeys = (page, user) =>
   page.evaluate(async (name) => {
@@ -323,16 +386,77 @@ try {
   assert.deepEqual(await outboxKeys(mobile, caio), mobileKeys);
   ok("recarregado em modo avião: os dois continuam, com as mesmas chaves");
 
-  step(2, "Celular: voltar a rede e entrar de novo; os dois chegam ao SQL Server uma vez só");
+  // 2ª entrega do M2 (vistoria offline). Depois do reload, o service worker controla a página: as telas abrem do
+  // pré-cache, qualquer que seja o `?id=`.
+  step("1b", "Celular: criar a vistoria offline, marcar condições em dois ambientes e recarregar");
+  const vistoria = await createInspection(mobile, "Rua do Celular, 10 · Imobiliária Celular");
+  await mark(mobile, "Piso", "Bom");
+  await mark(mobile, "Paredes", "Regular");
+  await mobile.getByRole("button", { name: "Próximo" }).click();
+  await currentRoomIs(mobile, "Cozinha");
+  await mark(mobile, "Piso", "Novo");
+  await mobile.getByRole("button", { name: "Adicionar observação: Paredes" }).click();
+  await mobile.getByLabel("Observação: Paredes").fill("Mancha de umidade atrás da geladeira.");
+  await mobile.getByText("Não enviado").first().waitFor();
+  // Recarregar antes do debounce da fila (1,5 s): a última mudança já está no rascunho (300 ms), e é dele que ela volta.
+  await wait(500);
+  await mobile.reload();
+  await currentRoomIs(mobile, "Cozinha");
+  await until(async () => checked(mobile, "Piso", "Novo"), "o chip marcado volta do rascunho");
+  assert.equal(
+    await mobile.getByLabel("Observação: Paredes").inputValue(),
+    "Mancha de umidade atrás da geladeira.",
+  );
+  ok("recarregado no meio da Cozinha: o ambiente, o chip e a observação voltam do rascunho");
+  await mobile.getByRole("button", { name: "Anterior" }).click();
+  await currentRoomIs(mobile, "Sala");
+  assert.ok(await checked(mobile, "Piso", "Bom"));
+  assert.ok(await checked(mobile, "Paredes", "Regular"));
+  ok("a Sala também, com Bom e Regular");
+  await wait(1800);
+  const allMobileKeys = await outboxKeys(mobile, caio);
+  assert.deepEqual(allMobileKeys.slice(0, 2), mobileKeys);
+  assert.ok(allMobileKeys.length >= 3, "a vistoria entra na fila depois do imóvel");
+  assert.equal((await serverInspection(caio, vistoria)).status, 404, "a vistoria não pode estar no servidor ainda");
+  ok(`${allMobileKeys.length - 2} transações da vistoria na fila, depois do cliente e do imóvel; o servidor não a conhece`);
+
+  step(2, "Celular: voltar a rede e entrar de novo; os três chegam ao SQL Server uma vez só");
   await phone.setOffline(false);
-  await mobile.waitForURL(/\/login\?next=%2Fclients$/);
+  await mobile.waitForURL(/\/login\?next=/);
   await signIn(mobile, caio, { expired: true });
   await until(async () => (await outboxCount(mobile, caio)) === 0, "outbox do celular vazia", 90_000);
   for (const key of mobileKeys) {
     const accepted = mobilePuts.filter((put) => put.key === key && succeeded(put));
     assert.equal(accepted.length, 1, `a chave ${key} tem de ser aceita uma vez só`);
   }
+  // As transações da vistoria que nunca saíram são compactadas na mais nova (frontend.md, "Escrita (push)"): cada
+  // chave é aceita no máximo uma vez, e só uma cria a vistoria.
+  for (const key of allMobileKeys.slice(2)) {
+    const accepted = mobilePuts.filter((put) => put.key === key && succeeded(put));
+    assert.ok(accepted.length <= 1, `a chave ${key} foi aceita ${accepted.length} vezes`);
+  }
+  const inspectionPuts = mobilePuts.filter((put) => put.entity === "inspections" && put.id === vistoria && succeeded(put));
+  assert.equal(inspectionPuts.filter((put) => put.status === 201).length, 1, "a vistoria é criada uma vez só");
   const [clientPut, propertyPut] = mobileKeys.map((key) => mobilePuts.find((put) => put.key === key && succeeded(put)));
+  assert.ok(inspectionPuts[0].at > propertyPut.at, "a vistoria sai depois do imóvel");
+  const mobileInspection = await serverInspection(caio, vistoria);
+  assert.equal(mobileInspection.status, 200);
+  // Todo PUT aceito sobe a versão (ADR 0028): a do servidor ser a do último PUT aceito prova que nada mais foi aplicado.
+  assert.equal(mobileInspection.body.version, versionOf(inspectionPuts.at(-1).etag));
+  const conditions = Object.fromEntries(
+    mobileInspection.body.rooms.flatMap((room) =>
+      room.items.filter((item) => item.condition || item.notes).map((item) => [`${room.name}/${item.name}`, [item.condition, item.notes]]),
+    ),
+  );
+  assert.deepEqual(conditions, {
+    "Sala/Piso": ["good", null],
+    "Sala/Paredes": ["fair", null],
+    "Cozinha/Piso": ["new", null],
+    "Cozinha/Paredes": [null, "Mancha de umidade atrás da geladeira."],
+  });
+  ok(
+    `a vistoria chega ao SQL Server uma vez só (${inspectionPuts.length} PUT aceito, 1 criação), na version do último (${mobileInspection.body.version}), com o que foi marcado`,
+  );
   assert.deepEqual([clientPut.id, propertyPut.id], [celular, apto]);
   const mobileClient = await serverClient(caio, celular);
   const mobileProperty = await serverProperty(caio, apto);
@@ -354,6 +478,13 @@ try {
     "badge do imóvel some",
   );
   ok("os dois aparecem em /clients e /properties, sincronizados");
+  await goTo(mobile, "Vistorias");
+  await rowOf(mobile, "Rua do Celular, 10").waitFor();
+  await until(
+    async () => (await rowOf(mobile, "Rua do Celular, 10").getByText("Salvo no aparelho").count()) === 0,
+    "badge da vistoria some",
+  );
+  ok("e a vistoria aparece em /inspections, sincronizada");
   await phone.close();
 
   // Desktop: a lista é a Table, e o SyncBadge aparece na linha.
@@ -624,6 +755,113 @@ try {
   await page.getByRole("link", { name: "Voltar" }).click();
   await page.getByRole("heading", { level: 1, name: "Clientes" }).waitFor();
 
+  step("12b", "Tela de campo no desktop: sincronizada, enviando, recusada e offline; o 400 num item volta ao chip");
+  const roteiro = "Rua do Roteiro, 10";
+  const campo = await createInspection(page, `${roteiro} · Imobiliária Beta`);
+  await mark(page, "Piso", "Bom");
+  await mark(page, "Paredes", "Bom");
+  await page.getByRole("button", { name: "Próximo" }).click();
+  await currentRoomIs(page, "Cozinha");
+  await mark(page, "Piso", "Bom");
+  await mark(page, "Paredes", "Regular");
+  await page.getByRole("button", { name: "Adicionar observação: Paredes" }).click();
+  await page.getByLabel("Observação: Paredes").fill("Mancha de umidade atrás da geladeira.");
+  await mark(page, "Teto", "Bom");
+  await inspectionSettled(page, user, "a vistoria sincroniza");
+  assert.equal((await serverInspection(user, campo)).status, 200);
+  await until(async () => (await page.getByText("Não enviado").count()) === 0, "o 'Não enviado' some");
+  ok("criada e editada online: sincroniza, e nenhum item fica \"Não enviado\"");
+  await shoot(page, "campo-0-entrada");
+
+  // Estado 4: o PUT fica no ar por 8 s, e a tela fica só leitura enquanto isso (ADR 0021).
+  await context.route("**/api/v1/inspections/*", async (r) => {
+    if (r.request().method() === "PUT") await wait(8000);
+    return r.fallback();
+  });
+  await mark(page, "Armários", "Bom");
+  await until(
+    async () => chipsOf(page, "Piso").getByRole("radio", { name: "Novo" }).isDisabled(),
+    "a tela fica só leitura com o envio no ar",
+    10_000,
+  );
+  ok("com o envio no ar, os chips ficam só leitura");
+  await shoot(page, "campo-4-enviando");
+  await context.unroute("**/api/v1/inspections/*");
+  await inspectionSettled(page, user, "o envio segurado termina");
+  await until(
+    async () => !(await chipsOf(page, "Piso").getByRole("radio", { name: "Novo" }).isDisabled()),
+    "a tela volta a ser editável",
+  );
+  ok("o envio confirma e a tela volta a ser editável");
+
+  // Estado 6: o servidor recusa dois itens da Cozinha; a recusa volta ao chip certo, no ambiente certo.
+  const refusal = { "rooms[1].items[3].condition": ["Escolha a condição."], "rooms[1].items[5].condition": ["Escolha a condição."] };
+  await context.route("**/api/v1/inspections/*", (r) =>
+    r.request().method() === "PUT"
+      ? r.fulfill({
+          status: 400,
+          contentType: "application/problem+json",
+          body: problem("validation", 400, "Inválido", { errors: refusal }),
+        })
+      : r.fallback(),
+  );
+  const fromRefusal = puts.length;
+  await openRoom(page, "Sala");
+  await mark(page, "Teto", "Bom");
+  await wait(1800);
+  await settled(page, user, puts, fromRefusal, 400, "a vistoria recusada sai da fila");
+  await context.unroute("**/api/v1/inspections/*");
+  await page.getByRole("link", { name: "Voltar" }).click();
+  await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
+  await rowOf(page, roteiro).getByText("Correção necessária").waitFor();
+  ok("400 validation → a linha da vistoria fica com \"Correção necessária\"");
+  await linkOf(page, roteiro).click();
+  await currentRoomIs(page, "Cozinha");
+  await page.getByText("Cozinha: 2 itens precisam de correção. Corrija e ela é enviada de novo.").waitFor();
+  assert.equal(await chipsOf(page, "Pia e torneira").getAttribute("aria-invalid"), "true");
+  assert.equal(await chipsOf(page, "Tomadas e interruptores").getAttribute("aria-invalid"), "true");
+  assert.equal(await chipsOf(page, "Piso").getAttribute("aria-invalid"), "false");
+  assert.equal(await page.getByText("Escolha a condição.").count(), 2);
+  ok("a tela reabre na Cozinha, com os dois chips recusados marcados e \"Escolha a condição.\" embaixo deles");
+  await wait(1800);
+  assert.equal(puts.length, fromRefusal + 1, "a recusa não volta sozinha para a fila");
+  await shoot(page, "campo-6-rejeitado");
+  await mark(page, "Pia e torneira", "Bom");
+  await mark(page, "Tomadas e interruptores", "Regular");
+  await inspectionSettled(page, user, "a correção sincroniza");
+  const corrected = await serverInspection(user, campo);
+  const cozinha = corrected.body.rooms.find((room) => room.name === "Cozinha");
+  assert.deepEqual(
+    cozinha.items.map((item) => item.condition),
+    ["good", "fair", "good", "good", "good", "fair"],
+  );
+  assert.equal(corrected.body.rooms.find((room) => room.name === "Sala").items[2].condition, "good");
+  ok("corrigido, o reenvio leva a Cozinha e o Teto da Sala que a recusa tinha desfeito");
+
+  // Estado 3: offline, a tela segue editável e o que muda fica "Não enviado".
+  await context.setOffline(true);
+  await page.getByText("Você está offline").waitFor();
+  await mark(page, "Armários", "Regular");
+  await mark(page, "Teto", "Ruim");
+  await until(async () => (await page.getByText("Não enviado").count()) === 2, "dois itens não enviados");
+  await wait(1800);
+  assert.ok((await outboxCount(page, user)) >= 1, "offline, a mudança fica na fila");
+  ok("offline: segue editável, e os dois itens mudados ficam \"Não enviado\"");
+  await shoot(page, "campo-3-offline");
+  await context.setOffline(false);
+  await until(async () => (await outboxCount(page, user)) === 0, "a fila sai quando a rede volta", 90_000);
+  await until(async () => (await page.getByText("Não enviado").count()) === 0, "o 'Não enviado' some");
+  ok("a rede volta, a fila sai e o \"Não enviado\" some");
+
+  await page.getByRole("link", { name: "Voltar" }).click();
+  await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
+  await shoot(page, "inspections");
+  await page.getByRole("link", { name: "Nova vistoria" }).first().click();
+  await page.getByRole("heading", { level: 1, name: "Nova vistoria" }).waitFor();
+  await shoot(page, "inspections-new");
+  await page.getByRole("link", { name: "Cancelar" }).click();
+  await goTo(page, "Clientes");
+
   step(13, "Outro usuário entra: a fila do anterior não sai com a conta dele");
   // Com a página controlada pelo service worker, o modo avião do Playwright não barra o fetch que passa por ele;
   // a pendência nasce offline com a sessão expirada (recarregou), e a fila espera pelo token.
@@ -652,6 +890,39 @@ try {
   assert.equal((await serverClient(user, pending)).body.name, "Pendência da Ana");
   assert.equal((await serverClient(other, pending)).status, 404, "a pendência é da Ana, não da Bia");
   ok("a Ana entra de novo e a pendência dela chega ao servidor, na conta dela");
+
+  if (shotsDir) {
+    step(14, "Print do estado 2: um ambiente sem itens (o roteiro fixo não tem; entra pelo rascunho, só para o print)");
+    // Com a lista aberta (a tela de campo, ao sair, grava o rascunho por cima), o rascunho ganha uma Varanda vazia.
+    await goTo(page, "Vistorias");
+    await page.evaluate(
+      async ({ database, id }) => {
+        const request = (r) =>
+          new Promise((done, fail) => {
+            r.onsuccess = () => done(r.result);
+            r.onerror = () => fail(r.error);
+          });
+        const db = await request(indexedDB.open(database));
+        const tx = db.transaction(["drafts", "_versions"], "readwrite");
+        const draft = await request(tx.objectStore("drafts").get(id));
+        draft.data.rooms.push({ id: crypto.randomUUID(), name: "Varanda", position: draft.data.rooms.length, notes: null, items: [] });
+        tx.objectStore("drafts").put(draft, id);
+        tx.objectStore("_versions").put({ versionKey: crypto.randomUUID() }, ["drafts", id]);
+        await new Promise((done) => (tx.oncomplete = done));
+        db.close();
+        // Como outra aba avisaria: a collection relê o rascunho.
+        const channel = new BroadcastChannel(`tanstack-db:${database}`);
+        channel.postMessage({ type: "data-changed", database, name: "drafts", changedKeys: [id], tabId: "roteiro" });
+        channel.close();
+      },
+      { database: `vistoria-${user.id}`, id: campo },
+    );
+    await wait(500);
+    await linkOf(page, "Rua do Roteiro, 10").click();
+    await openRoom(page, "Varanda");
+    await page.getByText("Nenhum item neste ambiente").waitFor();
+    await shoot(page, "campo-2-vazio");
+  }
 
   console.log("\nRoteiro concluído.");
 } finally {
