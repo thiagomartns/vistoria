@@ -139,7 +139,7 @@ O formulário segue editável com transações na fila: cada edição vira trans
 | `id` | UUID v7 gerado no cliente |
 | `entity`, `entityId` | Qual agregado o rascunho cria ou edita |
 | `data` | Valores do formulário, no formato do schema da UI |
-| `step` | Etapa atual do stepper |
+| `step` | Etapa atual do stepper (o ambiente aberto na tela de campo) |
 | `baseVersion` | Versão do servidor quando a edição começou; nula em criação |
 | `status` | `draft`, `pending`, `conflict`, `rejected` |
 | `errors` | Erros por campo vindos de `validation` |
@@ -156,7 +156,7 @@ O formulário segue editável com transações na fila: cada edição vira trans
 - O Zod gerado traz o que o OpenAPI expressa (obrigatório, tamanhos, e-mail), mas não os dígitos verificadores de CPF/CNPJ. O schema da UI soma um `refine` com o mesmo cálculo do `CpfCnpjAttribute` do .NET (CPF com 11 dígitos; CNPJ com 14, alfanumérico nas 12 primeiras posições), com o valor sem máscara e `null` quando vazio. O .NET confere de novo, e o 400 em `errors.document` continua sendo tratado como qualquer erro por campo.
 - As chaves de `errors` vêm no caminho do backend (`rooms[2].items[4].condition`) e passam pela conversão para o nome de campo do formulário antes do `setError`. A UI abre o ambiente onde está o primeiro erro.
 - "Cancelar envio" só existe enquanto a transação nunca foi tentada. Depois da primeira tentativa ela pode ter sido aplicada, então o caminho é editar de novo.
-- Rascunhos não expiram sozinhos. O `DraftResume` oferece continuar ou descartar; rascunho sincronizado é apagado.
+- Rascunhos não expiram sozinhos. O `DraftResume` oferece continuar ou descartar. O rascunho do formulário profundo (com `step`) fica como `draft` até concluir ou descartar, porque guarda o ambiente aberto: o 2xx e um novo envio só tiram dele a recusa ou o conflito, e recusa e conflito mantêm os valores e o passo mais novos ([ADR 0036](../decisions/0036-rascunho-da-vistoria-guarda-o-passo-e-fica-ate-concluir.md)). Rascunho sem `step` (cliente, imóvel) é apagado quando sincroniza.
 
 ## Estrutura de pastas
 
