@@ -5,7 +5,7 @@ import { startOutbox } from "@/shared/sync/outbox";
 
 import { closeLocalStore, openLocalStore } from "./local-store";
 
-// Um banco e uma outbox por usuário, a mesma para clients e properties: trocar de dono fecha os do anterior, e a
+// Um banco e uma outbox por usuário, a mesma para clients, properties e inspections: trocar de dono fecha os do anterior, e a
 // fila dele não sai com o outro.
 
 vi.mock("@/shared/db/local-db", () => ({
@@ -19,6 +19,10 @@ vi.mock("@/features/clients/services/clients.collection", () => ({
 
 vi.mock("@/features/properties/services/properties.collection", () => ({
   createPropertiesCollection: () => ({ cleanup: vi.fn<() => Promise<void>>(async () => {}) }),
+}));
+
+vi.mock("@/features/inspections/services/inspections.collection", () => ({
+  createInspectionsCollection: () => ({ cleanup: vi.fn<() => Promise<void>>(async () => {}) }),
 }));
 
 vi.mock("@/shared/sync/drafts", () => ({
@@ -50,13 +54,17 @@ describe("openLocalStore", () => {
     expect(vi.mocked(startOutbox).mock.calls[0]?.[0]).toMatchObject({ ownerId: "ana" });
   });
 
-  it("uma outbox só, com as collections e as mutationFns de clients e properties", async () => {
+  it("uma outbox só, com as collections e as mutationFns de clients, properties e inspections", async () => {
     await openLocalStore("ana");
 
     expect(startOutbox).toHaveBeenCalledOnce();
     const [config] = vi.mocked(startOutbox).mock.calls[0]!;
-    expect(Object.keys(config.collections).toSorted()).toEqual(["clients", "properties"]);
-    expect(Object.keys(config.mutationFns).toSorted()).toEqual(["upsertClient", "upsertProperty"]);
+    expect(Object.keys(config.collections).toSorted()).toEqual(["clients", "inspections", "properties"]);
+    expect(Object.keys(config.mutationFns).toSorted()).toEqual([
+      "upsertClient",
+      "upsertInspection",
+      "upsertProperty",
+    ]);
   });
 
   it("trocar de dono fecha a outbox, as collections e o banco do anterior antes de abrir os do novo", async () => {
@@ -67,6 +75,7 @@ describe("openLocalStore", () => {
     expect(ana.outbox.dispose).toHaveBeenCalledOnce();
     expect(ana.clients.cleanup).toHaveBeenCalledOnce();
     expect(ana.properties.cleanup).toHaveBeenCalledOnce();
+    expect(ana.inspections.cleanup).toHaveBeenCalledOnce();
     expect(ana.drafts.cleanup).toHaveBeenCalledOnce();
     expect(closeLocalDb).toHaveBeenCalledExactlyOnceWith("ana");
     expect(bia).not.toBe(ana);

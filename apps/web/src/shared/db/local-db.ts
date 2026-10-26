@@ -4,8 +4,8 @@ import { type IndexedDBInstance, createIndexedDB } from "@tanstack/db";
 // collection. Versão de schema e wipe são do M4; até lá, uma store nova só sobe a versão (o IndexedDB cria as que
 // faltam no upgrade).
 
-export const LOCAL_STORES = ["clients", "properties", "drafts"] as const;
-const LOCAL_DB_VERSION = 3;
+export const LOCAL_STORES = ["clients", "properties", "inspections", "drafts"] as const;
+const LOCAL_DB_VERSION = 4;
 
 /** Nome do banco local de um usuário. */
 export const localDbName = (ownerId: string) => `vistoria-${ownerId}`;

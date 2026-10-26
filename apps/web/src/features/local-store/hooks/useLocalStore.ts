@@ -8,7 +8,7 @@ import { recordSyncStates } from "@/shared/sync/sync-view";
 import { type LocalStore, openLocalStore } from "../services/local-store";
 
 /**
- * O banco local do dono da sessão: clients e properties (otimistas incluídos), os rascunhos recusados e o estado de
+ * O banco local do dono da sessão: clients, properties e inspections (otimistas incluídos), os rascunhos recusados e o estado de
  * sync de cada registro com transação na outbox. `ready` só quando todas as collections já carregaram.
  */
 export function useLocalStore() {
@@ -29,6 +29,7 @@ export function useLocalStore() {
 
   const clients = useLiveQuery(() => store?.clients, [store]);
   const properties = useLiveQuery(() => store?.properties, [store]);
+  const inspections = useLiveQuery(() => store?.inspections, [store]);
   const drafts = useLiveQuery(() => store?.drafts, [store]);
   const snapshot = useSyncExternalStore(
     syncStatusStore.subscribe,
@@ -38,9 +39,15 @@ export function useLocalStore() {
 
   return {
     store,
-    ready: store !== undefined && clients.isReady && properties.isReady && drafts.isReady,
+    ready:
+      store !== undefined &&
+      clients.isReady &&
+      properties.isReady &&
+      inspections.isReady &&
+      drafts.isReady,
     clients: clients.data ?? [],
     properties: properties.data ?? [],
+    inspections: inspections.data ?? [],
     drafts: drafts.data ?? [],
     states: recordSyncStates(snapshot),
   };
