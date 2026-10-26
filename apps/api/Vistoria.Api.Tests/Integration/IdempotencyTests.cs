@@ -18,7 +18,7 @@ namespace Vistoria.Api.Tests.Integration;
 
 // Fase 5 (backend.md, "Idempotência" e "Testes de integração"): Idempotency-Key, 409 idempotency-in-progress, 422 e
 // a chave vencida. Cada cenário roda em clients, properties, templates e inspections, que passam pelo mesmo
-// IdempotencyFilter.
+// IdempotencyFilter; o DELETE, só em inspections.
 public class IdempotencyTests(ApiFactory factory) : IClassFixture<ApiFactory>
 {
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(30);
@@ -268,6 +268,89 @@ public class IdempotencyTests(ApiFactory factory) : IClassFixture<ApiFactory>
         authorized.StatusCode.Should().Be(HttpStatusCode.Created);
     }
 
+    // DELETE passa pelo mesmo filtro (só a vistoria tem DELETE na V1).
+    [Fact]
+    public async Task Delete_WithoutAKey_Returns428WithMissingHeader_AndDeletesNothing()
+    {
+        var client = factory.CreateAuthenticatedClient();
+        var (id, _, etag, _) = await Create(client, "inspections");
+        var request = new HttpRequestMessage(HttpMethod.Delete, PathOf("inspections", id));
+        request.Headers.TryAddWithoutValidation("If-Match", Strong(etag));
+
+        var response = await client.SendAsync(request, Ct);
+
+        await AssertProblem(response, (HttpStatusCode)428, ProblemTypes.PreconditionRequired);
+        (await Body(response)).GetProperty("missingHeader").GetString().Should().Be("Idempotency-Key");
+        ETagOf(await client.GetAsync(PathOf("inspections", id), Ct)).Should().Be(etag);
+    }
+
+    [Fact]
+    public async Task Delete_SentTwiceWithTheSameKey_ReturnsTheSame204()
+    {
+        var client = factory.CreateAuthenticatedClient();
+        var (id, _, etag, _) = await Create(client, "inspections");
+        var key = Guid.CreateVersion7();
+
+        var first = await Delete(client, id, Strong(etag), key);
+        var second = await Delete(client, id, Strong(etag), key);
+
+        first.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        await AssertSameResponse(second, first);
+        (await client.GetAsync(PathOf("inspections", id), Ct)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    // Reexecutado, o segundo DELETE traria no current a versão da edição feita no meio; gravado, traz a de antes.
+    [Fact]
+    public async Task Delete_FinalErrorSentTwiceWithTheSameKey_ReturnsTheRecordedProblem()
+    {
+        var client = factory.CreateAuthenticatedClient();
+        var (id, body, stale, _) = await Create(client, "inspections");
+        var latest = ETagOf(await Put(client, "inspections", id, Changed(body), Strong(stale)));
+        var key = Guid.CreateVersion7();
+
+        var first = await Delete(client, id, Strong(stale), key);
+        await Put(client, "inspections", id, body, Strong(latest));
+        var second = await Delete(client, id, Strong(stale), key);
+
+        await AssertProblem(first, HttpStatusCode.PreconditionFailed, ProblemTypes.VersionConflict);
+        (await Body(first)).GetProperty("current").GetProperty("version").GetString().Should().Be(latest);
+        await AssertSameResponse(second, first);
+    }
+
+    [Fact]
+    public async Task Delete_WithTheKeyOfAPut_Returns422_AndDeletesNothing()
+    {
+        var client = factory.CreateAuthenticatedClient();
+        var (id, _, etag, key) = await Create(client, "inspections");
+
+        var response = await Delete(client, id, Strong(etag), key);
+
+        await AssertProblem(response, HttpStatusCode.UnprocessableEntity, ProblemTypes.IdempotencyKeyReused);
+        ETagOf(await client.GetAsync(PathOf("inspections", id), Ct)).Should().Be(etag);
+    }
+
+    [Fact]
+    public async Task Delete_SameKeyWhileTheFirstIsProcessing_Returns409InProgress()
+    {
+        var ownerId = Guid.CreateVersion7();
+        var gate = new WriteGate();
+        await using var gatedHost = GatedHost(gate);
+        var gated = Authenticated(gatedHost, ownerId);
+        var (id, _, etag, _) = await Create(factory.CreateAuthenticatedClient(ownerId), "inspections");
+        var key = Guid.CreateVersion7();
+        var hold = gate.HoldNext(id);
+
+        var firstTask = Delete(gated, id, Strong(etag), key);
+        await hold.Entered.WaitAsync(Patience, Ct);
+        var second = await Delete(gated, id, Strong(etag), key);
+        hold.Release();
+        var first = await firstTask.WaitAsync(Patience, Ct);
+
+        await AssertProblem(second, HttpStatusCode.Conflict, ProblemTypes.IdempotencyInProgress);
+        second.Headers.RetryAfter!.Delta.Should().Be(IdempotencyConfig.InProgressRetryAfter);
+        first.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
     // Mesma API, com o repositório que passa pelo WriteGate antes de gravar.
     private WebApplicationFactory<Program> GatedHost(WriteGate gate) =>
         factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
@@ -391,6 +474,17 @@ public class IdempotencyTests(ApiFactory factory) : IClassFixture<ApiFactory>
         HttpClient client, string resource, Guid id, object body, string? ifMatch = null, Guid? key = null)
     {
         var request = WriteRequests.Put(PathOf(resource, id), body, key);
+        if (ifMatch is not null)
+        {
+            request.Headers.TryAddWithoutValidation("If-Match", ifMatch);
+        }
+
+        return client.SendAsync(request, Ct);
+    }
+
+    private static Task<HttpResponseMessage> Delete(HttpClient client, Guid id, string? ifMatch, Guid? key = null)
+    {
+        var request = WriteRequests.Delete(PathOf("inspections", id), key);
         if (ifMatch is not null)
         {
             request.Headers.TryAddWithoutValidation("If-Match", ifMatch);

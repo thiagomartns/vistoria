@@ -178,7 +178,7 @@ public class InspectionsTests(ApiFactory factory) : IClassFixture<ApiFactory>
         { "kind", null },
         { "kind", "inspection" },
         { "status", null },
-        { "status", "completed" },
+        { "status", "finished" },
         { "startedAt", null },
         { "generalNotes", new string('a', 2001) },
         { "rooms", null },

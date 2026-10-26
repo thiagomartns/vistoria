@@ -80,6 +80,23 @@ public class CommittedOpenApiTests
             .Should().Equal("id", "name", "position", "condition", "notes");
     }
 
+    // Na V1 só a vistoria é excluída (vision.md, "Regras de negócio"): 204 sem corpo e os erros da tabela de Endpoints.
+    [Fact]
+    public void DeleteInspection_Returns204WithoutBody_AndOnlyTheInspectionHasDelete()
+    {
+        var paths = Document().GetProperty("paths");
+        var operation = paths.GetProperty("/api/v1/inspections/{id}").GetProperty("delete");
+
+        operation.GetProperty("operationId").GetString().Should().Be("deleteInspection");
+        operation.GetProperty("responses").EnumerateObject().Select(r => r.Name)
+            .Should().BeEquivalentTo("204", "401", "403", "409", "412", "422", "428", "429");
+        operation.GetProperty("responses").GetProperty("204").TryGetProperty("content", out _).Should().BeFalse();
+        foreach (var resource in new[] { "clients", "properties", "templates" })
+        {
+            paths.GetProperty($"/api/v1/{resource}/{{id}}").TryGetProperty("delete", out _).Should().BeFalse(resource);
+        }
+    }
+
     // O Swagger UI lista as rotas do documento: as quatro entidades sincronizáveis com GET e PUT.
     [Fact]
     public void Document_HasGetAndPutForTheFourEntities()

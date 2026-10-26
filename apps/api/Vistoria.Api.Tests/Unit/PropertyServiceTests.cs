@@ -85,7 +85,10 @@ public class PropertyServiceTests
         public virtual Task<T?> UpdateAsync(T entity, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
-        public Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken) =>
+        public Task<Tombstone?> FindTombstoneAsync(Guid id, CancellationToken cancellationToken) =>
+            Task.FromResult<Tombstone?>(null);
+
+        public Task<bool> DeleteAsync(Guid id, byte[] version, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
     }
 }

@@ -7,7 +7,7 @@ using Vistoria.Api.Repositories;
 namespace Vistoria.Api.Services.Impl;
 
 public class InspectionService(
-    IInspectionRepository inspections, IRepository<Property> properties, IMapper mapper)
+    IInspectionRepository inspections, IRepository<Property> properties, IMapper mapper, TimeProvider time)
     : SyncEntityService<Inspection, InspectionDto>(inspections, mapper), IInspectionService
 {
     private readonly IMapper _mapper = mapper;
@@ -16,15 +16,19 @@ public class InspectionService(
         Guid ownerId, Guid id, string? ifMatch, UpsertInspectionDto request, CancellationToken cancellationToken) =>
         UpsertAsync(ownerId, id, ifMatch, _mapper.Map<Inspection>(request), cancellationToken);
 
-    // O que as Data Annotations não alcançam. A conclusão (fase 3) ainda não existe: sem ela, uma vistoria "concluída"
-    // não teria CompletedAt nem a checagem de itens avaliados. Imóvel de outro dono responde igual ao inexistente, para
-    // o id dele não vazar.
+    // Concluída não muda mais (backend.md, "Regra do agregado").
+    protected override bool IsLocked(Inspection current) => current.Status == InspectionStatus.Completed;
+
+    // O que as Data Annotations não alcançam. Imóvel de outro dono responde igual ao inexistente, para o id dele não
+    // vazar. A vistoria concluída (inclusive a que já nasce concluída, feita toda offline) ganha o CompletedAt aqui;
+    // o que o cliente mandou nele nunca chega ao modelo.
     protected override async Task ValidateAsync(Inspection proposed, Guid ownerId, CancellationToken cancellationToken)
     {
         var errors = new Dictionary<string, string[]>(StringComparer.Ordinal);
-        if (proposed.Status == InspectionStatus.Completed)
+        var completing = proposed.Status == InspectionStatus.Completed;
+        if (completing)
         {
-            errors["status"] = ["A conclusão da vistoria ainda não está disponível."];
+            CompletionErrors(proposed, errors);
         }
 
         var property = await properties.FindByIdAsync(proposed.PropertyId, cancellationToken);
@@ -50,6 +54,39 @@ public class InspectionService(
         if (errors.Count > 0)
         {
             throw new ValidationException(errors);
+        }
+
+        proposed.CompletedAt = completing ? time.GetUtcNow() : null;
+    }
+
+    // Para concluir: ao menos um ambiente, ao menos um item em cada um e todos os itens avaliados. Elemento nulo já é
+    // erro do ChildPaths.
+    private static void CompletionErrors(Inspection proposed, Dictionary<string, string[]> errors)
+    {
+        if (proposed.Rooms.Count == 0)
+        {
+            errors["rooms"] = ["Para concluir, a vistoria precisa de ao menos um ambiente."];
+        }
+
+        for (var r = 0; r < proposed.Rooms.Count; r++)
+        {
+            if (proposed.Rooms[r] is not { } room)
+            {
+                continue;
+            }
+
+            if (room.Items.Count == 0)
+            {
+                errors[$"rooms[{r}].items"] = ["Para concluir, o ambiente precisa de ao menos um item."];
+            }
+
+            for (var i = 0; i < room.Items.Count; i++)
+            {
+                if (room.Items[i] is { Condition: null })
+                {
+                    errors[$"rooms[{r}].items[{i}].condition"] = ["Para concluir, avalie a condição do item."];
+                }
+            }
         }
     }
 
