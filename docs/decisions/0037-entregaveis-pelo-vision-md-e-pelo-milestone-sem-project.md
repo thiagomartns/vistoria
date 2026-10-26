@@ -1,6 +1,6 @@
 # 0037 — Entregáveis pelo vision.md e pelo milestone, sem Project
 
-- **Status:** Proposto
+- **Status:** Aceito
 - **Data:** 2026-10-26
 
 ## Contexto
