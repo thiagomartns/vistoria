@@ -6,6 +6,7 @@ import type { OutboxEntry, SyncSnapshot } from "./sync-status";
 import {
   STUCK_AFTER_MS,
   calendarTime,
+  confirmedBases,
   describeSync,
   recordSyncStates,
   registerRecordLabel,
@@ -199,9 +200,7 @@ describe("recordSyncStates: SyncBadge por registro", () => {
   });
 
   it("transação na fila → local; a mais antiga no ar → enviando", () => {
-    const states = recordSyncStates(
-      snapshot({ entries: [of("a"), of("b"), of("c")], running: 1 }),
-    );
+    const states = recordSyncStates(snapshot({ entries: [of("a"), of("b"), of("c")], running: 1 }));
 
     expect(Object.fromEntries(states)).toEqual({ a: "enviando", b: "local", c: "local" });
   });
@@ -220,5 +219,24 @@ describe("recordSyncStates: SyncBadge por registro", () => {
 
   it("registro sem id (transação de outra forma) é ignorado", () => {
     expect(recordSyncStates(snapshot({ entries: [entry()] })).size).toBe(0);
+  });
+});
+
+describe("confirmedBases", () => {
+  it("a base de cada registro é o original da transação mais antiga dele; numa criação, vazia", () => {
+    const bases = confirmedBases(
+      snapshot({
+        entries: [
+          entry({ record: { id: "i1", v: 2 }, original: { id: "i1", v: 1 } }),
+          entry({ record: { id: "i2", v: 1 } }),
+          entry({ record: { id: "i1", v: 3 }, original: { id: "i1", v: 2 } }),
+        ],
+      }),
+    );
+
+    expect(bases.get("i1")).toEqual({ id: "i1", v: 1 });
+    expect(bases.has("i2")).toBe(true);
+    expect(bases.get("i2")).toBeUndefined();
+    expect(bases.has("i3")).toBe(false);
   });
 });

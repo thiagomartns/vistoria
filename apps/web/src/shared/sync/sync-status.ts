@@ -10,6 +10,11 @@ export interface OutboxEntry {
   mutationFnName: string;
   /** O registro enviado (o `modified` da mutação), para dar nome ao item. */
   record: Record<string, unknown> | undefined;
+  /**
+   * O registro antes da mudança (o `original`; vazio numa criação). Na transação mais antiga de um registro, é o que o
+   * servidor confirmou: a base do "Não enviado" por campo (FieldSyncIndicator).
+   */
+  original?: Record<string, unknown>;
   createdAt: Date;
   retryCount: number;
   nextAttemptAt: number;
@@ -65,6 +70,7 @@ async function readOutbox() {
       id: entry.id,
       mutationFnName: entry.mutationFnName,
       record: entry.mutations[0]?.modified as Record<string, unknown> | undefined,
+      original: entry.mutations[0]?.original as Record<string, unknown> | undefined,
       createdAt: new Date(entry.createdAt),
       retryCount: entry.retryCount,
       nextAttemptAt: entry.nextAttemptAt,

@@ -198,3 +198,18 @@ export function recordSyncStates(snapshot: SyncSnapshot): Map<string, RecordSync
   }
   return states;
 }
+
+/**
+ * A base de cada registro com transação na outbox: o `original` da transação mais antiga dele, que é o que o servidor
+ * confirmou por último (vazio numa criação). Serve ao "Não enviado" por campo.
+ */
+export function confirmedBases(
+  snapshot: SyncSnapshot,
+): Map<string, Record<string, unknown> | undefined> {
+  const bases = new Map<string, Record<string, unknown> | undefined>();
+  for (const entry of snapshot.entries) {
+    const id = entry.record?.id;
+    if (typeof id === "string" && !bases.has(id)) bases.set(id, entry.original);
+  }
+  return bases;
+}
