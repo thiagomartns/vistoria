@@ -91,7 +91,7 @@ export function upsertMutation<T extends SyncRecord>({
       throw error;
     }
     const confirmed = { ...mutation, modified: { ...mutation.modified, version: result.data.version } };
-    // Na 0.14, acceptMutations tipa as mutações como Record<string, unknown>, não pelo item da collection.
+    // Na 0.15, acceptMutations tipa as mutações como Record<string, unknown>, não pelo item da collection.
     await store.utils.acceptMutations({ mutations: [confirmed] } as unknown as {
       mutations: PendingMutation[];
     });
