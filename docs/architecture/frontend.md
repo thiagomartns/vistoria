@@ -79,6 +79,7 @@ O caminho feliz é invisível para o usuário. A tabela de reações abaixo cobr
 
 ### Leitura (pull)
 
+- Antes do delta, a leitura por id ([ADR 0038](../decisions/0038-escopo-do-m3-leitura-por-id-conflito-de-cadastro-e-exclusao.md)): abrir `/inspections/edit?id=`, `/clients/edit?id=` ou `/properties/edit?id=` com um id que não está no banco local e com rede busca por `getInspection`, `getClient` ou `getProperty`. A resposta vira a `serverShadow`, com a `version`, como depois de um envio aceito; a vistoria traz o imóvel e o cliente que faltarem. Registro com pendência nunca é sobrescrito. Sem rede, a tela explica que é preciso abrir uma vez com rede; 404 cai em "remover local". Com o delta (M4), esse `GET` fica só para o link aberto antes do primeiro pull.
 - Um laço de pull por entidade (`syncInspections`, `syncClients`, `syncProperties`, `syncTemplates`), cada um com seu cursor, repetido enquanto `hasMore` for verdadeiro. Cada página é aplicada numa transação local junto com o novo cursor; se o pull cair no meio, retoma da última página aplicada.
 - `items` fazem upsert do agregado inteiro (vistoria + ambientes + itens); `deletedIds` removem do banco local.
 - Gatilhos: abrir o app, voltar a rede, a cada intervalo de pull com o app visível e logo depois que a outbox esvazia.
@@ -121,6 +122,8 @@ Transação que falha sem sucesso além do prazo de "travada" ganha destaque no 
 3. **Reenvio.** Resolvido o merge, nasce uma transação nova: `baseVersion = current.version` e **`Idempotency-Key` nova**, porque o corpo mudou (reusar a chave daria `idempotency-key-reused`).
 4. **`deleted`.** "Excluído em outro aparelho": o usuário escolhe recriar (novo `Id`, mesmos dados) ou descartar.
 5. **Conflito num `DELETE`.** "Foi alterado depois que você abriu. Excluir mesmo assim?" Confirmado, reenvia com `current.version` e chave nova.
+
+Cliente e imóvel seguem os mesmos passos, com o merge plano por campo (sem itens) e o mesmo `ConflictResolver` ([ADR 0038](../decisions/0038-escopo-do-m3-leitura-por-id-conflito-de-cadastro-e-exclusao.md)).
 
 Regras de negócio do agregado (como exigir condição em todos os itens para concluir) são reavaliadas pelo .NET no reenvio, nunca só no cliente.
 
@@ -297,7 +300,7 @@ Quatro spikes validam as apostas antes das telas; o primeiro foi dividido em 1a 
 - [x] **Spike 1a — Outbox no aparelho:** collection de clients persistida; escrita offline, reload, volta da rede, envio com `Idempotency-Key` pelo `upsertClient`; reenvio depois de derrubar a resposta com a mesma chave. Resultado: TanStack DB mantido, com os contornos do [ADR 0030](../decisions/0030-tanstack-db-mantido-apos-o-spike-1a-outbox-persistida-contra-o-upsertclient.md); roteiro em `pnpm spike:outbox`.
 - [x] **Spike 1b — Outbox no servidor:** `If-Match`, 412/409 `version-conflict`, 428 e idempotência aplicada pelo .NET, com clientes e imóveis; o mesmo registro chega uma vez só ([ADR 0031](../decisions/0031-fatia-de-cadastro-antes-da-vistoria-no-m2.md)). Resultado: no celular, cliente e imóvel criados offline chegam ao SQL Server com um 201 por chave e a `version` do 201, e aparecem em `/clients` e `/properties`. Com a resposta derrubada, o reenvio recebe a resposta gravada, sem subir a versão, inclusive numa edição cujo `If-Match` já venceu. Duas edições seguidas saem em ordem, a segunda com a `version` da primeira. O 412 vira rascunho `conflict` com o `current` e sai da fila sem laço. Uma falha com `Retry-After` espera por ele dentro da `mutationFn` antes de voltar à fila (o executor só conhece o próprio backoff, que soma depois). Roteiro em `pnpm spike:outbox`.
 - [ ] **Spike 2 — Volume:** 10 mil vistorias (com ambientes e itens) via delta paginado; medir abertura do app e tempo de live query.
-- [ ] **Spike 3 — Conflito:** dois navegadores editam a mesma vistoria offline, inclusive o mesmo item; 412/409 `version-conflict` com `current`; merge automático, diff e reenvio com chave nova.
+- [ ] **Spike 3 — Conflito:** o segundo navegador recebe a vistoria pelo `GET` por id; os dois a editam offline, inclusive o mesmo item; 412/409 `version-conflict` com `current`; merge automático, diff e reenvio com chave nova. O mesmo vale para cliente e imóvel, com o merge plano. Exclusão de vistoria em andamento: `deleted` num `PUT` ("excluído em outro aparelho") e 412 num `DELETE` ("exclusão alterada"). `locked` fica para o M5, com concluir ([ADR 0038](../decisions/0038-escopo-do-m3-leitura-por-id-conflito-de-cadastro-e-exclusao.md)).
 - [x] **Spike 4 — Shell:** static export + Serwist + Sanjou UI + rota `?id=`; abrir em modo avião depois da primeira visita (M2). Resultado: o shell e `/clients/edit?id=` abrem offline, servidos pelo SW, com o Serwist pelo CLI ([ADR 0032](../decisions/0032-serwist-pelo-cli-sobre-o-static-export-build-com-turbopack.md)); roteiro em `pnpm spike:shell`, no CI. Fica para o M4: duas abas renovando a sessão ao mesmo tempo, que depende do refresh.
 
 Os spikes estão encaixados nos [marcos](../vision.md#marcos) do documento [Visão do Projeto](../vision.md): spike 1a antes do M2, spikes 1b e 4 na fatia de cadastro do M2 (o teste de duas abas do 4 no M4), spike 3 no M3, spike 2 no M4.
