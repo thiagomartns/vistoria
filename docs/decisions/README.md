@@ -42,3 +42,4 @@ uma decisão nova o substitui e diz qual substituiu. Novo ADR: `/adr <título>` 
 | [0035](0035-ambiente-e-item-do-agregado-sobre-aggregatechild-sem-syncentity.md) | Ambiente e item do agregado sobre AggregateChild, sem SyncEntity | Aceito | 2026-10-23 |
 | [0036](0036-rascunho-da-vistoria-guarda-o-passo-e-fica-ate-concluir.md) | Rascunho da vistoria guarda o passo e fica até concluir | Aceito | 2026-10-26 |
 | [0037](0037-entregaveis-pelo-vision-md-e-pelo-milestone-sem-project.md) | Entregáveis pelo vision.md e pelo milestone, sem Project | Aceito | 2026-10-26 |
+| [0038](0038-escopo-do-m3-leitura-por-id-conflito-de-cadastro-e-exclusao.md) | Escopo do M3: leitura por id, conflito de cadastro e exclusão | Proposto | 2026-10-27 |
