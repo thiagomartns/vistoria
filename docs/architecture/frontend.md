@@ -197,6 +197,7 @@ src/
     api/problems.ts                  # handleProblem: switch exaustivo por ProblemType
     db/                              # persistência por usuário, versão de schema, wipe
     sync/outbox.ts                   # chaves, If-Match, ordem, backoff, compactação
+    sync/merge.ts                    # escrita própria e merge de três vias por campo
     sync/scheduler.ts                # gatilhos de pull e status de rede
     auth/session.ts                  # access token em memória, janela offline
     auth/refreshLock.ts              # Web Locks + BroadcastChannel
