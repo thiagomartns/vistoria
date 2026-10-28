@@ -123,6 +123,8 @@ Transação que falha sem sucesso além do prazo de "travada" ganha destaque no 
 4. **`deleted`.** "Excluído em outro aparelho": o usuário escolhe recriar (novo `Id`, mesmos dados) ou descartar.
 5. **Conflito num `DELETE`.** "Foi alterado depois que você abriu. Excluir mesmo assim?" Confirmado, reenvia com `current.version` e chave nova.
 
+Na vistoria (`inspections.merge.ts`), ambientes e itens se casam pelo `Id`. O que foi incluído de um lado entra. O que foi removido de um lado e ficou intocado do outro sai. O que foi removido de um lado e editado do outro colide, e o registro mesclado segue o local até a escolha. Um ambiente removido de um lado e mudado do outro, mesmo que só num item, é uma colisão só, no ambiente. A `position` nunca colide: vale o local, a lista é ordenada pela posição mesclada (no empate, primeiro a ordem do servidor) e renumerada de 0 a n−1. Mudar de posição porque um vizinho saiu não conta como edição.
+
 Cliente e imóvel seguem os mesmos passos, com o merge plano por campo (sem itens) e o mesmo `ConflictResolver` ([ADR 0038](../decisions/0038-escopo-do-m3-leitura-por-id-conflito-de-cadastro-e-exclusao.md)).
 
 Regras de negócio do agregado (como exigir condição em todos os itens para concluir) são reavaliadas pelo .NET no reenvio, nunca só no cliente.

@@ -75,6 +75,14 @@ describe("mergeFields", () => {
     const server: WithRooms = { ...shadow, version: "BBB=", rooms: [{ id: "r1", name: "Living" }] };
     expect(mergeFields(shadow, local, server).collisions.map((c) => c.field)).toEqual(["rooms"]);
   });
+
+  it("registro sem version (ambiente, item) não ganha a chave", () => {
+    type Item = { id: string; notes: string | null };
+    const item: Item = { id: "t1", notes: null };
+    const result = mergeFields(item, item, { ...item, notes: "Risco." });
+    expect(result.merged).toEqual({ id: "t1", notes: "Risco." });
+    expect("version" in result.merged).toBe(false);
+  });
 });
 
 // O corpo enviado de uma vistoria e o current que o servidor devolveu para ele.
