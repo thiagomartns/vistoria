@@ -28,11 +28,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const session = useSession();
-  const sync = useSyncStatus();
+  const conflicts = useLocalOutbox();
+  const sync = useSyncStatus(conflicts);
   const [panelOpen, setPanelOpen] = useState(false);
   const [header, setHeader] = useState<ShellHeader | null>(null);
   useSessionGuard(sync.offline);
-  useLocalOutbox();
 
   const current = navItemFor(pathname);
   const user = (layout: "sidebar" | "avatar") => (
@@ -121,6 +121,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         failing={sync.panel.failing}
         waiting={sync.panel.waiting}
         onRetryNow={sync.retryNow}
+        onResolve={(item) => {
+          setPanelOpen(false);
+          if (item.href) router.push(item.href);
+        }}
       />
     </div>
   );

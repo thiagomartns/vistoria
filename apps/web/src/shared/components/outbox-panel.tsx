@@ -75,14 +75,26 @@ export function OutboxPanelItem({
   );
 }
 
-function Group({ title, items }: { title: string; items: OutboxItemView[] }) {
+function Group({
+  title,
+  items,
+  onResolve,
+}: {
+  title: string;
+  items: OutboxItemView[];
+  onResolve?: (item: OutboxItemView) => void;
+}) {
   if (items.length === 0) return null;
   return (
     <section className="flex flex-col gap-2" aria-label={title}>
       <h3 className="text-xs font-semibold text-muted-foreground uppercase">{title}</h3>
       <ul className="flex flex-col gap-2">
         {items.map((item) => (
-          <OutboxPanelItem key={item.id} {...item} />
+          <OutboxPanelItem
+            key={item.id}
+            {...item}
+            onResolve={item.href && onResolve ? () => onResolve(item) : undefined}
+          />
         ))}
       </ul>
     </section>
@@ -97,6 +109,8 @@ type OutboxPanelProps = {
   failing: OutboxItemView[];
   waiting: OutboxItemView[];
   onRetryNow: () => void;
+  /** "Resolver" num conflito: abre a tela do `href` dele. */
+  onResolve?: (item: OutboxItemView) => void;
 };
 
 export function OutboxPanel({
@@ -107,12 +121,13 @@ export function OutboxPanel({
   failing,
   waiting,
   onRetryNow,
+  onResolve,
 }: OutboxPanelProps) {
   const pending = actionNeeded.length + failing.length + waiting.length;
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title="Pendências" description={description}>
       <div className="flex flex-col gap-5 px-5 pb-5">
-        <Group title="Ação necessária" items={actionNeeded} />
+        <Group title="Ação necessária" items={actionNeeded} onResolve={onResolve} />
         <Group title="Falha no envio" items={failing} />
         <Group title="Aguardando envio" items={waiting} />
         {pending > 0 ? (

@@ -1,3 +1,4 @@
+import type { DraftRecord } from "./drafts";
 import type { OutboxEntry, SyncSnapshot } from "./sync-status";
 
 // Do estado do sync para o que o shell mostra: SyncStatus, OfflineBanner e OutboxPanel (frame "Shell (#7)").
@@ -11,6 +12,8 @@ export interface OutboxItemView {
   state: OutboxItemState;
   title: string;
   detail: string;
+  /** Conflito: a tela que o resolve. */
+  href?: string;
 }
 
 export interface SyncView {
@@ -41,6 +44,41 @@ const recordLabels = new Map<string, RecordLabel>();
 /** Como a feature nomeia um registro da sua mutationFn no painel ("Cliente · Maria Locadora"). */
 export function registerRecordLabel(mutationFnName: string, label: RecordLabel): void {
   recordLabels.set(mutationFnName, label);
+}
+
+/** Como a feature mostra um rascunho em conflito no painel: o nome do registro e a tela que resolve o conflito. */
+interface ConflictView {
+  title: RecordLabel;
+  href: (id: string) => string;
+}
+
+const conflictViews = new Map<string, ConflictView>();
+
+/** Liga os rascunhos em conflito de uma entidade (`DraftRecord.entity`) à tela que os resolve. */
+export function registerConflictView(entity: string, view: ConflictView): void {
+  conflictViews.set(entity, view);
+}
+
+export const CONFLICT_DETAIL = "Alterada também em outro aparelho";
+
+/**
+ * Os rascunhos em conflito, como itens de "Ação necessária" (Figma OutboxPanel/Item 13:932): a transação já saiu da
+ * fila, e o que pede a pessoa fica no rascunho. Só os de entidade com tela de conflito registrada.
+ */
+export function conflictItems(drafts: readonly DraftRecord[]): OutboxItemView[] {
+  return drafts.flatMap((draft) => {
+    const view = draft.status === "conflict" ? conflictViews.get(draft.entity) : undefined;
+    if (!view) return [];
+    return [
+      {
+        id: `conflict:${draft.id}`,
+        state: "conflito" as const,
+        title: view.title(draft.data),
+        detail: CONFLICT_DETAIL,
+        href: view.href(draft.id),
+      },
+    ];
+  });
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -101,7 +139,12 @@ function itemOf(entry: OutboxEntry, sending: boolean, now: Date): OutboxItemView
   };
 }
 
-export function describeSync(snapshot: SyncSnapshot, now: Date): SyncView {
+/** `actions`: o que pede a pessoa e não está na fila (os rascunhos em conflito, `conflictItems`). */
+export function describeSync(
+  snapshot: SyncSnapshot,
+  now: Date,
+  actions: readonly OutboxItemView[] = [],
+): SyncView {
   const { online, entries, running, lastSyncedAt } = snapshot;
   const pending = entries.length;
 
@@ -113,8 +156,11 @@ export function describeSync(snapshot: SyncSnapshot, now: Date): SyncView {
     return item;
   });
 
-  // Conflito e rejeitada ainda não ficam na outbox: a reação a eles chega no M3. O grupo já existe.
-  const actionNeeded = items.filter((i) => i.state === "conflito" || i.state === "rejeitada");
+  // Conflito e recusa tiram a transação da fila: o que pede a pessoa vem dos rascunhos (`actions`).
+  const actionNeeded = [
+    ...actions,
+    ...items.filter((i) => i.state === "conflito" || i.state === "rejeitada"),
+  ];
   const failing = items.filter((i) => i.state === "travada");
   const waiting = items.filter((i) => i.state === "pendente" || i.state === "enviando");
 

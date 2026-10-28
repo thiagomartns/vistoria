@@ -14,6 +14,9 @@
 // rascunho ao recarregar e chega ao SQL Server uma vez só; no desktop, a tela de campo passa pelos estados do Figma
 // (sincronizado, enviando, recusado, offline e ambiente vazio) e o 400 num item volta ao chip certo. Com SCREENS=1,
 // tira os prints desses estados em `.screens/campo/` (celular e desktop), para `pnpm screens --files .screens/campo`.
+// Desde o #105 cobre a entrega do M3 na vistoria: offline, a tela de campo e outro aparelho (um PUT direto na API)
+// mudam os mesmos itens; a volta da rede dá 412, a tela mostra o estado 5, e o ConflictResolver envia uma resolução
+// mista com If-Match do current e chave nova. Com SCREENS=1, os prints do estado 5 e do resolver também.
 
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
@@ -860,6 +863,90 @@ try {
   await page.getByRole("heading", { level: 1, name: "Nova vistoria" }).waitFor();
   await shoot(page, "inspections-new");
   await page.getByRole("link", { name: "Cancelar" }).click();
+  await goTo(page, "Clientes");
+
+  step("12c", "Conflito na vistoria: outro aparelho muda os mesmos itens; estado 5, ConflictResolver e resolução mista");
+  await goTo(page, "Vistorias");
+  await linkOf(page, roteiro).click();
+  await page.waitForURL(/\/inspections\/edit\?id=/);
+  await openRoom(page, "Cozinha");
+  await context.setOffline(true);
+  await page.getByText("Você está offline").waitFor();
+  await mark(page, "Piso", "Ruim");
+  await page.getByLabel("Observação: Paredes").fill("Mancha de umidade e rodapé solto.");
+  await wait(1800);
+  assert.ok((await outboxCount(page, user)) >= 1, "offline, a edição fica na fila");
+  // O outro aparelho: o mesmo Piso e a mesma observação de Paredes, e uma observação na Sala que só ele muda.
+  const lastSeen = (await serverInspection(user, campo)).body;
+  const otherDevice = {
+    propertyId: lastSeen.propertyId,
+    kind: lastSeen.kind,
+    status: lastSeen.status,
+    startedAt: lastSeen.startedAt,
+    generalNotes: lastSeen.generalNotes,
+    rooms: lastSeen.rooms.map((room) => ({
+      id: room.id,
+      name: room.name,
+      position: room.position,
+      notes: room.notes,
+      items: room.items.map(({ id, name, position, condition, notes }) => {
+        if (room.name === "Cozinha" && name === "Piso") return { id, name, position, condition: "absent", notes };
+        if (room.name === "Cozinha" && name === "Paredes")
+          return { id, name, position, condition, notes: "Mancha seca, sem infiltração." };
+        if (room.name === "Sala" && name === "Piso") return { id, name, position, condition, notes: "Riscos perto da porta." };
+        return { id, name, position, condition, notes };
+      }),
+    })),
+  };
+  const otherDeviceSaved = await callApi(`/api/v1/inspections/${campo}`, {
+    method: "PUT",
+    headers: {
+      authorization: `Bearer ${user.token}`,
+      "if-match": `"${lastSeen.version}"`,
+      "idempotency-key": uuidv7(),
+    },
+    body: JSON.stringify(otherDevice),
+  });
+  assert.equal(otherDeviceSaved.status, 200, `o PUT do outro aparelho respondeu ${otherDeviceSaved.status}`);
+  ok(`outro aparelho gravou a version ${otherDeviceSaved.body.version}; este ainda tem a ${lastSeen.version}`);
+  const fromFieldConflict = puts.length;
+  await context.setOffline(false);
+  await settled(page, user, puts, fromFieldConflict, 412, "o 412 tira a vistoria da fila");
+  await page.getByText("Esta vistoria foi alterada em outro aparelho").waitFor();
+  assert.equal(await page.getByText("Em conflito").count(), 2, "Piso e Paredes ficam \"Em conflito\"");
+  await wait(1800);
+  assert.equal(puts.length - fromFieldConflict, 1, "o conflito não volta sozinho para a fila");
+  ok("412 com colisão → estado 5: o aviso, \"Resolver conflito\", Piso e Paredes \"Em conflito\", sem laço");
+  await shoot(page, "campo-5-conflito");
+
+  await page.getByRole("link", { name: "Resolver conflito" }).click();
+  await page.getByRole("heading", { level: 2, name: "Resolver conflito" }).waitFor();
+  const piso = page.getByRole("radiogroup", { name: "Piso · Condição" });
+  const paredes = page.getByRole("radiogroup", { name: "Paredes · Observação" });
+  assert.equal(await page.getByRole("radiogroup").count(), 2, "só o que colidiu");
+  await piso.getByText("Ruim").click();
+  await page.getByText("1 de 2 campos resolvidos").waitFor();
+  ok("o resolver mostra só Piso e Paredes da Cozinha; Piso fica com o deste aparelho");
+  await shoot(page, "conflito-edicao");
+  await paredes.getByText("Mancha seca, sem infiltração.").click();
+  const fromResolution = puts.length;
+  await page.getByRole("button", { name: "Enviar resolução" }).click();
+  await currentRoomIs(page, "Cozinha");
+  await settled(page, user, puts, fromResolution, 200, "a resolução sincroniza");
+  const resolution = puts.slice(fromResolution);
+  assert.equal(resolution.length, 1);
+  assert.equal(resolution[0].ifMatch, `"${otherDeviceSaved.body.version}"`);
+  assert.notEqual(resolution[0].key, puts[fromFieldConflict].key, "a resolução sai com chave nova");
+  const resolved = (await serverInspection(user, campo)).body;
+  const itemIn = (roomName, itemName) =>
+    resolved.rooms.find((room) => room.name === roomName).items.find((item) => item.name === itemName);
+  assert.equal(itemIn("Cozinha", "Piso").condition, "poor");
+  assert.equal(itemIn("Cozinha", "Paredes").notes, "Mancha seca, sem infiltração.");
+  assert.equal(itemIn("Sala", "Piso").notes, "Riscos perto da porta.");
+  assert.equal(await page.getByText("Esta vistoria foi alterada em outro aparelho").count(), 0);
+  ok("misto: um PUT com If-Match do current e chave nova; o servidor fica com Piso daqui, Paredes de lá e a Sala de lá");
+  await page.getByRole("link", { name: "Voltar" }).click();
+  await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
   await goTo(page, "Clientes");
 
   step(13, "Outro usuário entra: a fila do anterior não sai com a conta dele");

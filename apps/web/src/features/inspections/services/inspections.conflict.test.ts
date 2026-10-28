@@ -3,12 +3,22 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { configureClient } from "@/shared/api/client";
 import { createClient, createConfig } from "@/shared/api/generated/client";
-import type { DraftsCollection } from "@/shared/sync/drafts";
+import type { DraftRecord, DraftsCollection } from "@/shared/sync/drafts";
 import { type Outbox, enqueue, startOutbox } from "@/shared/sync/outbox";
 
 import type { InspectionRecord, ItemRecord } from "../models/inspection";
 import type { InspectionsCollection } from "./inspections.collection";
-import { UPSERT_INSPECTION, upsertInspectionMutation } from "./inspections.sync";
+import {
+  type ConflictChoice,
+  collisionKey,
+  inspectionConflictOf,
+  resolveInspection,
+} from "./inspections.resolve";
+import {
+  UPSERT_INSPECTION,
+  resolveInspectionConflict,
+  upsertInspectionMutation,
+} from "./inspections.sync";
 
 // O version-conflict na outbox (frontend.md, "Conflito", passos 1 a 3), com o executor de verdade e a mutationFn de
 // verdade da vistoria, contra um servidor falso que, como a API, confere o If-Match e responde 412 com o current.
@@ -206,7 +216,7 @@ async function start(server: ReturnType<typeof fakeServer>, local: ReturnType<ty
   open.push(outbox);
   await outbox.waitForInit();
   await vi.waitFor(() => expect(outbox.isOfflineEnabled).toBe(true));
-  return { outbox, optimistic };
+  return { outbox, optimistic, inspections };
 }
 
 /** Uma edição da vistoria na fila, como `saveInspection`: aplica na camada otimista e enfileira o `PUT`. */
@@ -429,5 +439,142 @@ describe("version-conflict na outbox", () => {
       data: merged,
       rebasedAt: expect.any(String),
     });
+  });
+});
+
+describe("resolução no ConflictResolver", () => {
+  // O outro aparelho marcou Piso e Parede de outro jeito e escreveu a observação da Sala; aqui, a pessoa marcou Piso e
+  // Parede e as observações gerais. Piso e Parede colidem; as duas observações entram sozinhas.
+  const theirs = edited((v) => {
+    itemOf(v, "t1").condition = "poor";
+    itemOf(v, "t2").condition = "fair";
+    v.rooms[0]!.notes = "Rodapé solto.";
+    v.version = "V2";
+  });
+  const mine = edited((v) => {
+    itemOf(v, "t1").condition = "good";
+    itemOf(v, "t2").condition = "good";
+    v.generalNotes = "Duas chaves.";
+  });
+  const PISO = "room:r1:item:t1:condition";
+  const PAREDE = "room:r1:item:t2:condition";
+
+  /** A tela de campo marcou `local`, a fila mandou, e o 412 deixou o rascunho em conflito. */
+  async function conflicted(server: InspectionRecord, local: InspectionRecord) {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const api = fakeServer(server);
+    const stores = localStores();
+    const started = await start(api, stores);
+    const { version: _version, ...typed } = local;
+    stores.drafts.set(confirmedV1.id, {
+      id: confirmedV1.id,
+      entity: "inspection",
+      data: typed,
+      status: "draft",
+      step: 0,
+      errors: {},
+      updatedAt: "2026-10-27T09:00:00.000Z",
+    });
+    save(started.outbox, started.optimistic, local);
+    await drained(started.outbox, api);
+    const draft = stores.drafts.get(confirmedV1.id) as unknown as DraftRecord;
+    expect(draft.status).toBe("conflict");
+    return { api, stores, ...started, conflict: inspectionConflictOf(draft)! };
+  }
+
+  async function resolve(
+    setup: Awaited<ReturnType<typeof conflicted>>,
+    choices: Record<string, ConflictChoice>,
+  ) {
+    const { api, stores, outbox, inspections, conflict } = setup;
+    const resolved = resolveInspection(conflict, choices);
+    await resolveInspectionConflict(
+      { inspections, drafts: stores.draftsCollection, outbox },
+      { resolved, server: conflict.server },
+    );
+    await vi.waitFor(async () => expect(await outbox.peekOutbox()).toHaveLength(0), {
+      timeout: 5_000,
+    });
+    return { api, stores, resolved };
+  }
+
+  /** O que sai no PUT da resolução e fica no servidor. */
+  const body = (change: (draft: InspectionRecord) => void) =>
+    edited((v) => {
+      v.rooms[0]!.notes = "Rodapé solto.";
+      v.generalNotes = "Duas chaves.";
+      change(v);
+      v.version = "V3";
+    });
+
+  it("o merge refeito mostra só o que colidiu, por item", async () => {
+    const { conflict } = await conflicted(theirs, mine);
+    expect(conflict.collisions.map(collisionKey)).toEqual([PISO, PAREDE]);
+    expect(conflict.server.version).toBe("V2");
+  });
+
+  it.each<[string, Record<string, ConflictChoice>, (draft: InspectionRecord) => void]>([
+    [
+      "tudo meu",
+      { [PISO]: "meu", [PAREDE]: "meu" },
+      (v) => {
+        itemOf(v, "t1").condition = "good";
+        itemOf(v, "t2").condition = "good";
+      },
+    ],
+    [
+      "tudo do servidor (com a observação geral, que só mudou aqui)",
+      { [PISO]: "servidor", [PAREDE]: "servidor" },
+      (v) => {
+        itemOf(v, "t1").condition = "poor";
+        itemOf(v, "t2").condition = "fair";
+      },
+    ],
+    [
+      "misto",
+      { [PISO]: "meu", [PAREDE]: "servidor" },
+      (v) => {
+        itemOf(v, "t1").condition = "good";
+        itemOf(v, "t2").condition = "fair";
+      },
+    ],
+  ])(
+    "%s: uma transação nova, com If-Match do current e chave nova, e termina sincronizado com o escolhido",
+    async (_name, choices, chosen) => {
+      const setup = await conflicted(theirs, mine);
+      const { api, stores } = await resolve(setup, choices);
+
+      expect(api.sent).toHaveLength(2);
+      const [first, resolution] = api.sent;
+      expect(resolution?.ifMatch).toBe('"V2"');
+      expect(resolution?.key).not.toBe(first?.key);
+      const expected = body(chosen);
+      expect(api.current()).toEqual(expected);
+      expect(stores.confirmed.get(confirmedV1.id)).toMatchObject({
+        ...expected,
+        startedAt: expect.any(String),
+      });
+      const { version: _version, ...values } = expected;
+      expect(stores.drafts.get(confirmedV1.id)).toMatchObject({
+        status: "draft",
+        step: 0,
+        data: values,
+        rebasedAt: expect.any(String),
+      });
+      expect(stores.drafts.get(confirmedV1.id)).not.toHaveProperty("conflict");
+    },
+  );
+
+  it("tudo do servidor, sem mais nada daqui: só adota o current, sem PUT", async () => {
+    const setup = await conflicted(
+      theirs,
+      edited((v) => (itemOf(v, "t1").condition = "good")),
+    );
+    expect(setup.conflict.collisions.map(collisionKey)).toEqual([PISO]);
+    const { api, stores } = await resolve(setup, { [PISO]: "servidor" });
+
+    expect(api.sent).toHaveLength(1);
+    expect(stores.confirmed.get(confirmedV1.id)).toEqual(setup.conflict.server);
+    expect(stores.drafts.get(confirmedV1.id)).toMatchObject({ status: "draft" });
   });
 });

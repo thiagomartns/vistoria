@@ -1,7 +1,9 @@
 import { Alert, AlertDescription, AlertTitle } from "@sanjou/ui/alert";
+import { Button } from "@sanjou/ui/button";
 import { Form, FormControl, FormField, FormItem, FormMessage } from "@sanjou/ui/form";
 import { Textarea } from "@sanjou/ui/textarea";
-import { CircleAlert, ListChecks } from "lucide-react";
+import { CircleAlert, Info, ListChecks } from "lucide-react";
+import Link from "next/link";
 import type { UseFormReturn } from "react-hook-form";
 
 import { EmptyState } from "@/shared/components/empty-state";
@@ -12,7 +14,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/shared/components/toggle-group";
 import type { InspectionFormValues, ItemFormValues } from "../schemas/inspection.schemas";
 
 // Um ambiente da tela de campo (Figma 43:1751): o nome e o progresso, os itens com a condição em chips e a observação
-// sob demanda, e o aviso de recusa do servidor no topo (55:5920). Ambiente sem itens mostra o EmptyState (52:4071),
+// sob demanda, e no topo o aviso de recusa do servidor (55:5920) ou o de conflito, com "Resolver conflito" (55:5132). Ambiente sem itens mostra o EmptyState (52:4071),
 // sem ação: incluir itens chega com o editor de roteiros (M5). O `form` vem do hook da página.
 
 export interface RoomItemView {
@@ -38,6 +40,8 @@ type RoomStepProps = {
   items: RoomItemView[];
   readOnly: boolean;
   rejection: { title: string; description: string } | null;
+  /** Estado 5: a vistoria mudou em outro aparelho; o botão abre o ConflictResolver. */
+  conflict?: { title: string; description: string; href: string } | null;
 };
 
 export function RoomStep({
@@ -50,6 +54,7 @@ export function RoomStep({
   items,
   readOnly,
   rejection,
+  conflict,
 }: RoomStepProps) {
   return (
     <Form {...form}>
@@ -63,6 +68,18 @@ export function RoomStep({
             <AlertTitle>{rejection.title}</AlertTitle>
             <AlertDescription>{rejection.description}</AlertDescription>
           </Alert>
+        ) : null}
+        {conflict ? (
+          <div className="mb-2 flex flex-col items-start gap-2">
+            <Alert variant="warning">
+              <Info aria-hidden="true" />
+              <AlertTitle>{conflict.title}</AlertTitle>
+              <AlertDescription>{conflict.description}</AlertDescription>
+            </Alert>
+            <Button asChild size="lg" className="w-full md:h-8 md:w-auto md:px-3">
+              <Link href={conflict.href}>Resolver conflito</Link>
+            </Button>
+          </div>
         ) : null}
         <div className="flex flex-col gap-0.5">
           <h2 id="ambiente" className="text-lg font-semibold text-foreground">

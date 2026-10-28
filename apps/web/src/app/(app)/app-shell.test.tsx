@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { accessToken } from "@/shared/api/client";
 import { resetSession } from "@/shared/auth/session";
 import { resetSyncStatus } from "@/shared/sync/sync-status";
+import type { OutboxItemView } from "@/shared/sync/sync-view";
 
 import { AppShell } from "./app-shell";
 import { PageHeader } from "./shell-header";
@@ -20,8 +21,11 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: navigation.push, replace: navigation.replace }),
 }));
 
-// A outbox real precisa do IndexedDB; aqui o shell só a abre.
-vi.mock("@/features/local-store/hooks/useLocalOutbox", () => ({ useLocalOutbox: () => {} }));
+// A outbox real precisa do IndexedDB; aqui o shell só a abre, e os rascunhos em conflito vêm daqui.
+const outbox = vi.hoisted(() => ({ conflicts: [] as OutboxItemView[] }));
+vi.mock("@/features/local-store/hooks/useLocalOutbox", () => ({
+  useLocalOutbox: () => outbox.conflicts,
+}));
 
 const owner = { id: "0199a0b2-7c1e-7f3a-9b2d-1c2d3e4f5a6b", name: "Ana Souza" };
 
@@ -43,6 +47,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   navigation.push.mockReset();
   navigation.replace.mockReset();
+  outbox.conflicts = [];
 });
 
 describe("AppShell", () => {
@@ -103,6 +108,32 @@ describe("AppShell", () => {
     expect(screen.getByRole("dialog", { name: "Pendências" }).textContent).toContain(
       "Tudo sincronizado. Último sync: nenhum ainda.",
     );
+  });
+
+  it("conflito: 'Requer ação · 1', o item em 'Ação necessária', e 'Resolver' abre o resolver da vistoria", async () => {
+    const user = userEvent.setup();
+    outbox.conflicts = [
+      {
+        id: "conflict:i1",
+        state: "conflito",
+        title: "Vistoria · 3 ambientes",
+        detail: "Alterada também em outro aparelho",
+        href: "/inspections/conflict?id=i1",
+      },
+    ];
+    render(<AppShell>conteúdo</AppShell>);
+
+    const [status] = screen.getAllByRole("button", { name: /^Pendências/ });
+    expect(status?.textContent).toContain("Requer ação");
+    await user.click(status as HTMLElement);
+    const actions = within(screen.getByRole("dialog", { name: "Pendências" })).getByRole("region", {
+      name: "Ação necessária",
+    });
+    expect(within(actions).getByText("Vistoria · 3 ambientes")).toBeDefined();
+    await user.click(within(actions).getByRole("button", { name: "Resolver" }));
+
+    expect(navigation.push).toHaveBeenCalledWith("/inspections/conflict?id=i1");
+    expect(screen.queryByRole("dialog", { name: "Pendências" })).toBeNull();
   });
 
   it("sem sessão, Entrar leva ao login", async () => {
