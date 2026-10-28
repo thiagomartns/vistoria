@@ -22,8 +22,13 @@ export interface DraftRecord {
   step?: number;
   /** Erros por campo, com as chaves do backend (`document`, `rooms[2].items[4].condition`). Vazio no conflito. */
   errors: Record<string, string[]>;
-  /** Só no conflito: o registro como está no servidor (`current`; ausente em `deleted`). */
-  conflict?: { current: unknown };
+  /**
+   * Só no conflito: o registro como está no servidor (`current`; ausente em `deleted`), a `serverShadow` que serviu
+   * de base ao merge (ausente sem ela) e os campos que os dois lados mudaram, para o ConflictResolver.
+   */
+  conflict?: ConflictDetail;
+  /** Só no formulário profundo: quando um merge sem colisão regravou `data`; a tela aberta recarrega o formulário. */
+  rebasedAt?: string;
   updatedAt: string;
 }
 
@@ -40,6 +45,13 @@ export function createDraftsCollection(db: IndexedDBInstance) {
 export type DraftsCollection = ReturnType<typeof createDraftsCollection>;
 
 type SentRecord = { id: string } & Record<string, unknown>;
+
+/** O que o ConflictResolver precisa para mostrar só o que colidiu. */
+export interface ConflictDetail {
+  current: unknown;
+  base?: unknown;
+  collisions: unknown[];
+}
 
 /** Guarda o registro recusado com os erros do `validation`. Substitui um rascunho anterior do mesmo registro. */
 export function recordRejection(
@@ -60,14 +72,15 @@ export function recordRejection(
 }
 
 /**
- * Marca o conflito (`version-conflict` ou `deleted`): guarda o registro enviado com o `current` do servidor. Não
- * reenvia: resolver é decisão da pessoa (ConflictResolver, M3). Substitui um rascunho anterior do mesmo registro.
+ * Marca o conflito que pede a pessoa: um `version-conflict` com colisão, ou `deleted`. Guarda o registro local mais
+ * novo com o `current`, a base e as colisões. Não reenvia: resolver é decisão da pessoa (ConflictResolver).
+ * Substitui um rascunho anterior do mesmo registro.
  */
 export function recordConflict(
   drafts: DraftsCollection,
   entity: string,
   record: SentRecord,
-  failure: ApiFailure,
+  conflict: ConflictDetail,
   now: Date = new Date(),
 ): void {
   save(drafts, {
@@ -76,10 +89,14 @@ export function recordConflict(
     data: record,
     status: "conflict",
     errors: {},
-    conflict: { current: failure.kind === "problem" ? failure.problem.current : undefined },
+    conflict,
     updatedAt: now.toISOString(),
   });
 }
+
+/** O `current` que veio na falha (ausente em `deleted`). */
+export const currentOf = (failure: ApiFailure): unknown =>
+  failure.kind === "problem" ? failure.problem.current : undefined;
 
 /** O rascunho do formulário profundo, que guarda o passo e fica até concluir. */
 const keepsStep = (draft: DraftRecord | undefined): draft is DraftRecord & { step: number } =>
@@ -135,6 +152,36 @@ export function clearDraft(drafts: DraftsCollection, id: string): void {
       Object.assign(current, { status: "draft", errors: {} });
     });
   }
+}
+
+/**
+ * Um merge sem colisão foi para a fila: o rascunho do formulário profundo passa a ter o registro mesclado, sem recusa
+ * nem conflito, e marca `rebasedAt` para a tela aberta recarregar o formulário (senão o próximo envio levaria os
+ * valores de antes por cima do que veio do servidor). Rascunho sem `step` é apagado, como em `clearDraft`.
+ */
+export function rebaseDraft(
+  drafts: DraftsCollection,
+  id: string,
+  data: Record<string, unknown>,
+  now: Date = new Date(),
+): void {
+  const draft = drafts.get(id);
+  if (!draft) return;
+  if (!keepsStep(draft)) {
+    drafts.delete(id);
+    return;
+  }
+  const at = now.toISOString();
+  drafts.update(id, (current) => {
+    delete current.conflict;
+    Object.assign(current, { data, status: "draft", errors: {}, rebasedAt: at, updatedAt: at });
+  });
+}
+
+/** O que a pessoa deixou no formulário profundo: mais novo que a fila (o rascunho é gravado antes). */
+export function workingCopy(drafts: DraftsCollection, id: string): Record<string, unknown> | undefined {
+  const draft = drafts.get(id);
+  return keepsStep(draft) ? draft.data : undefined;
 }
 
 /** O rascunho pede uma ação da pessoa (recusado ou em conflito): na lista, ele vence o registro. */

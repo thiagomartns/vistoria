@@ -8,9 +8,11 @@ import {
   type DraftsCollection,
   clearDraft,
   needsAction,
+  rebaseDraft,
   recordConflict,
   recordRejection,
   saveDraftValues,
+  workingCopy,
 } from "./drafts";
 
 // O rascunho do formulário profundo (ADR 0036): guarda o passo e os valores, e recusa e conflito mudam só o status.
@@ -99,20 +101,11 @@ describe("recusa e conflito no formulário profundo", () => {
   it("o conflito também", () => {
     const { drafts, fake } = collection();
     saveDraftValues(fake, "inspection", "i1", { id: "i1", v: "novo" }, 1, now);
-    const failure = {
-      kind: "problem",
-      status: 412,
-      problem: {
-        type: "urn:vistoria:problem:version-conflict",
-        title: "Conflito",
-        status: 412,
-        current: { v: "servidor" },
-      },
-    } as unknown as ApiFailure;
+    const conflict = { current: { v: "servidor" }, base: { v: "antes" }, collisions: [{ field: "v" }] };
 
-    recordConflict(fake, "inspection", { id: "i1", v: "enviado" }, failure);
+    recordConflict(fake, "inspection", { id: "i1", v: "enviado" }, conflict);
 
-    expect(drafts.get("i1")).toMatchObject({ data: { v: "novo" }, step: 1, status: "conflict" });
+    expect(drafts.get("i1")).toMatchObject({ data: { v: "novo" }, step: 1, status: "conflict", conflict });
   });
 
   it("sem passo (cliente, imóvel), a recusa guarda o que foi enviado, como antes", () => {
@@ -158,5 +151,48 @@ describe("clearDraft", () => {
     clearDraft(fake, "x");
 
     expect(drafts.size).toBe(0);
+  });
+});
+
+describe("rebaseDraft", () => {
+  it("o rascunho com passo passa a ter o merge, como `draft`, e marca rebasedAt para a tela recarregar", () => {
+    const { drafts, fake } = collection();
+    saveDraftValues(fake, "inspection", "i1", { id: "i1", v: "meu" }, 3, now);
+    recordConflict(fake, "inspection", { id: "i1" }, { current: {}, collisions: [] });
+
+    rebaseDraft(fake, "i1", { id: "i1", v: "mesclado" }, later);
+
+    expect(drafts.get("i1")).toEqual({
+      id: "i1",
+      entity: "inspection",
+      data: { id: "i1", v: "mesclado" },
+      status: "draft",
+      step: 3,
+      errors: {},
+      rebasedAt: later.toISOString(),
+      updatedAt: later.toISOString(),
+    });
+  });
+
+  it("sem passo, apaga, e sem rascunho, nada", () => {
+    const { drafts, fake } = collection();
+    recordConflict(fake, "client", { id: "c1" }, { current: {}, collisions: [] });
+
+    rebaseDraft(fake, "c1", { id: "c1" });
+    rebaseDraft(fake, "x", { id: "x" });
+
+    expect(drafts.size).toBe(0);
+  });
+});
+
+describe("workingCopy", () => {
+  it("só o formulário profundo tem uma cópia de trabalho", () => {
+    const { fake } = collection();
+    saveDraftValues(fake, "inspection", "i1", { id: "i1", v: "meu" }, 0, now);
+    recordRejection(fake, "client", { id: "c1" }, validation({ name: ["Curto."] }));
+
+    expect(workingCopy(fake, "i1")).toEqual({ id: "i1", v: "meu" });
+    expect(workingCopy(fake, "c1")).toBeUndefined();
+    expect(workingCopy(fake, "x")).toBeUndefined();
   });
 });

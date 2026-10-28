@@ -119,7 +119,7 @@ Transação que falha sem sucesso além do prazo de "travada" ganha destaque no 
 
 1. **Escrita própria.** Antes de qualquer merge, compara `current` (sem `version` e datas) com o corpo enviado. Se forem iguais, era a própria escrita cuja resposta se perdeu: é sucesso, e o front adota `current.version`.
 2. **Merge de três vias** por campo, e por item via `Id`: base = `serverShadow`, local = rascunho, servidor = `current`. Campo que só um lado mudou é aceito automaticamente. Campo que os dois mudaram para valores diferentes vai para o `ConflictResolver`.
-3. **Reenvio.** Resolvido o merge, nasce uma transação nova: `baseVersion = current.version` e **`Idempotency-Key` nova**, porque o corpo mudou (reusar a chave daria `idempotency-key-reused`).
+3. **Reenvio.** Resolvido o merge, o `current` vai para a store confirmada e nasce uma transação nova: `baseVersion = current.version` e **`Idempotency-Key` nova**, porque o corpo mudou (reusar a chave daria `idempotency-key-reused`). O "local" do merge é o mais novo do aparelho, não o corpo da transação que deu conflito: o rascunho do formulário profundo ou a camada otimista, que tem a transação mais nova da fila. Assim a transação do merge compacta as do mesmo registro que estavam atrás, que levariam a versão nova sem o que veio do servidor. Merge igual ao servidor não sai: só adota o `current`. Com colisão, nada é adotado nem reenviado; a pessoa decide. Na tela de campo aberta, o formulário recarrega com o merge (`rebasedAt`).
 4. **`deleted`.** "Excluído em outro aparelho": o usuário escolhe recriar (novo `Id`, mesmos dados) ou descartar.
 5. **Conflito num `DELETE`.** "Foi alterado depois que você abriu. Excluir mesmo assim?" Confirmado, reenvia com `current.version` e chave nova.
 
@@ -148,7 +148,8 @@ O formulário segue editável com transações na fila: cada edição vira trans
 | `baseVersion` | Versão do servidor quando a edição começou; nula em criação |
 | `status` | `draft`, `pending`, `conflict`, `rejected` |
 | `errors` | Erros por campo vindos de `validation` |
-| `conflict` | `current` do servidor e a lista de campos em disputa |
+| `conflict` | `current` do servidor, a `serverShadow` que serviu de base e as colisões (campo, ambiente e item) |
+| `rebasedAt` | Quando um merge sem colisão regravou `data`: a tela aberta recarrega o formulário |
 | `updatedAt` | Para o `DraftResume` |
 
 **Regras**

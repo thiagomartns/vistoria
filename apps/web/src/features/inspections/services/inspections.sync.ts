@@ -1,12 +1,14 @@
-import { upsertInspection } from "@/shared/api/generated";
+import { type InspectionDto, upsertInspection } from "@/shared/api/generated";
 import type { Client } from "@/shared/api/generated/client";
 import { type DraftsCollection, clearDraft, saveDraftValues } from "@/shared/sync/drafts";
 import { type Outbox, type OutboxMutationFn, enqueue } from "@/shared/sync/outbox";
 import { registerRecordLabel } from "@/shared/sync/sync-view";
-import { upsertMutation } from "@/shared/sync/upsert";
+import { type MergeStrategy, upsertMutation } from "@/shared/sync/upsert";
 
 import { INSPECTION_ENTITY, type InspectionRecord } from "../models/inspection";
 import type { InspectionsCollection } from "./inspections.collection";
+import { inspectionRecordOf } from "./inspections.mappers";
+import { mergeInspection } from "./inspections.merge";
 
 export const UPSERT_INSPECTION = "upsertInspection";
 
@@ -14,6 +16,12 @@ registerRecordLabel(UPSERT_INSPECTION, (record) => {
   const rooms = Array.isArray(record.rooms) ? record.rooms.length : 0;
   return `Vistoria · ${rooms} ${rooms === 1 ? "ambiente" : "ambientes"}`;
 });
+
+/** No conflito, o agregado se mescla por ambiente e item (#103), com o `current` na forma do registro. */
+const inspectionMerge: MergeStrategy<InspectionRecord> = {
+  shape: (current) => inspectionRecordOf(current as unknown as InspectionDto),
+  merge: mergeInspection,
+};
 
 /**
  * Envia a transação como `PUT /api/v1/inspections/{id}` (`upsertMutation`), com o agregado inteiro: a lista de
@@ -32,6 +40,7 @@ export function upsertInspectionMutation(
     drafts,
     entity: INSPECTION_ENTITY,
     send: (request) => upsertInspection({ client, ...request }),
+    strategy: inspectionMerge,
   });
 }
 
