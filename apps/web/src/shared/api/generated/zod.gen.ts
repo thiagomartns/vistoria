@@ -9,7 +9,7 @@ export const zAuthUserDto = z.object({
 
 export const zAuthDto = z.object({
     accessToken: z.string(),
-    expiresAt: z.iso.datetime(),
+    expiresAt: z.iso.datetime({ offset: true }),
     user: zAuthUserDto
 });
 
@@ -20,8 +20,8 @@ export const zClientDto = z.object({
     email: z.string().nullable(),
     phone: z.string().nullable(),
     version: z.string(),
-    createdAt: z.iso.datetime(),
-    updatedAt: z.iso.datetime()
+    createdAt: z.iso.datetime({ offset: true }),
+    updatedAt: z.iso.datetime({ offset: true })
 });
 
 export const zHealthDto = z.object({
@@ -83,7 +83,7 @@ export const zProblemDetails = z.object({
     traceId: z.string(),
     errors: z.record(z.string(), z.array(z.string())).optional(),
     current: z.unknown().optional(),
-    deletedAt: z.iso.datetime().optional(),
+    deletedAt: z.iso.datetime({ offset: true }).optional(),
     missingHeader: z.string().optional()
 });
 
@@ -107,8 +107,8 @@ export const zPropertyDto = z.object({
     type: zPropertyType,
     notes: z.string().nullable(),
     version: z.string(),
-    createdAt: z.iso.datetime(),
-    updatedAt: z.iso.datetime()
+    createdAt: z.iso.datetime({ offset: true }),
+    updatedAt: z.iso.datetime({ offset: true })
 });
 
 export const zRoomDto = z.object({
@@ -125,13 +125,13 @@ export const zInspectionDto = z.object({
     kind: zInspectionKind,
     status: zInspectionStatus,
     referenceInspectionId: z.uuid().nullable(),
-    startedAt: z.iso.datetime(),
-    completedAt: z.iso.datetime().nullable(),
+    startedAt: z.iso.datetime({ offset: true }),
+    completedAt: z.iso.datetime({ offset: true }).nullable(),
     generalNotes: z.string().nullable(),
     rooms: z.array(zRoomDto),
     version: z.string(),
-    createdAt: z.iso.datetime(),
-    updatedAt: z.iso.datetime()
+    createdAt: z.iso.datetime({ offset: true }),
+    updatedAt: z.iso.datetime({ offset: true })
 });
 
 export const zSignInDto = z.object({
@@ -163,8 +163,8 @@ export const zTemplateDto = z.object({
     name: z.string(),
     rooms: z.array(zTemplateRoomDto),
     version: z.string(),
-    createdAt: z.iso.datetime(),
-    updatedAt: z.iso.datetime()
+    createdAt: z.iso.datetime({ offset: true }),
+    updatedAt: z.iso.datetime({ offset: true })
 });
 
 export const zUpsertClientDto = z.object({
@@ -207,7 +207,7 @@ export const zUpsertInspectionDto = z.object({
     propertyId: z.uuid().nullable(),
     kind: zInspectionKind.nullable(),
     status: zInspectionStatus.nullable(),
-    startedAt: z.iso.datetime().nullable(),
+    startedAt: z.iso.datetime({ offset: true }).nullable(),
     generalNotes: z.string().max(2000).nullish(),
     rooms: z.array(zUpsertRoomDto).max(40)
 });
