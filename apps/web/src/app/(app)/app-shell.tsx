@@ -91,6 +91,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               </span>
             ) : null}
           </div>
+          {header?.actions ? <div className="flex shrink-0">{header.actions}</div> : null}
           <div className="hidden md:flex">{status("completo")}</div>
           <div className="flex items-center gap-2 md:hidden">
             {status("compacto")}

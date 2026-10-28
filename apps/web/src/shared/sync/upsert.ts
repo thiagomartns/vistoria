@@ -25,8 +25,12 @@ import { recordSyncSuccess } from "./sync-status";
 // O envio de um registro pelo `PUT` de upsert (ADR 0028), igual em toda entidade: a feature só diz qual chamada do
 // client gerado faz o `PUT` e, se o registro não for plano, como fazer o merge dele.
 
-/** Um registro no banco local: o corpo do `PUT`, o `id` gerado no aparelho e a `version` que o servidor confirmou. */
-export type SyncRecord = { id: string; version: string | null };
+/**
+ * Um registro no banco local: o corpo do `PUT`, o `id` gerado no aparelho e a `version` que o servidor confirmou.
+ * `deleting` só existe na camada otimista, enquanto a exclusão do registro está na fila (`remove.ts`), e nunca vai num
+ * corpo.
+ */
+export type SyncRecord = { id: string; version: string | null; deleting?: true };
 
 /** A store onde o registro vai depois do 2xx (as `utils` de uma collection IndexedDB). */
 export interface ConfirmedStore<T> {
@@ -50,7 +54,7 @@ export interface LocalCollection<T> extends ConfirmedStore<T> {
 /** A chamada gerada do `PUT /api/v1/<entidade>/{id}`. */
 export type UpsertCall<T extends SyncRecord> = (request: {
   path: { id: string };
-  body: Omit<T, "id" | "version">;
+  body: Omit<T, "id" | "version" | "deleting">;
   headers: ReturnType<typeof outboxHeaders>;
 }) => Promise<{ data?: { version: string }; error?: unknown; response?: Response }>;
 
@@ -70,7 +74,7 @@ export const flatMerge: MergeStrategy<any> = { shape: recordShape, merge: mergeF
  * devolveu. Vale porque a store só recebe o que o servidor confirmou; o pull do M4 não pode sobrescrever registro
  * com pendência (frontend.md, "Leitura").
  */
-async function confirmedOf<T extends SyncRecord>(
+export async function confirmedOf<T extends SyncRecord>(
   store: ConfirmedStore<T>,
   id: string,
 ): Promise<T | undefined> {
@@ -109,7 +113,8 @@ function versionConflictCurrent(failure: ApiFailure): Record<string, unknown> | 
  * no servidor. Só depois do 2xx o registro vai para a store local, com a `version` da resposta; antes disso ele vive
  * na outbox. Um 400 `validation` vira rascunho recusado da `entity`, para o formulário reabrir com os erros por campo.
  * Um `version-conflict` (409 ou 412) passa pelo `settleConflict`; `deleted` vira rascunho em conflito e sai da fila
- * sem laço. Uma falha com `Retry-After` só volta para a fila depois dele.
+ * sem laço. Com uma exclusão do registro na fila, os dois só saem da fila: um merge reenviado sairia depois dela, e o
+ * que pede a pessoa passa a ser a exclusão (ADR 0039). Uma falha com `Retry-After` só volta para a fila depois dele.
  */
 export function upsertMutation<T extends SyncRecord>({
   store,
@@ -124,7 +129,7 @@ export function upsertMutation<T extends SyncRecord>({
   send: UpsertCall<T>;
   strategy?: MergeStrategy<T>;
 }): OutboxMutationFn<T> {
-  return async ({ transaction, idempotencyKey, requeue }) => {
+  return async ({ transaction, idempotencyKey, requeue, removalQueued }) => {
     // Uma chave vale para um corpo só; enqueue nunca junta dois registros na mesma transação.
     const [mutation, ...rest] = transaction.mutations;
     if (!mutation || rest.length > 0) {
@@ -134,7 +139,7 @@ export function upsertMutation<T extends SyncRecord>({
         body: `transação com ${transaction.mutations.length} mutações`,
       });
     }
-    const { id, version: _local, ...body } = mutation.modified;
+    const { id, version: _local, deleting: _deleting, ...body } = mutation.modified;
     const result = await send({
       path: { id },
       body,
@@ -146,6 +151,7 @@ export function upsertMutation<T extends SyncRecord>({
         recordRejection(drafts, entity, mutation.modified, error.failure);
       }
       if (error instanceof RejectedSyncError && error.group === "user-decision") {
+        if (await removalQueued?.()) return;
         const current = versionConflictCurrent(error.failure);
         const settled =
           current &&

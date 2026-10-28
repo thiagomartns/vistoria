@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   type Outbox,
+  type OutboxMutationFn,
   RejectedSyncError,
   RetryableSyncError,
   compacting,
@@ -143,6 +144,86 @@ describe("compacting", () => {
     await compacting(send, () => queued(entries))(params("t1", "k1"));
 
     expect(send).toHaveBeenCalledOnce();
+  });
+
+  it("nunca tentada, com uma exclusão mais nova do mesmo registro na fila: termina sem enviar", async () => {
+    const send = vi.fn<() => Promise<void>>(async () => {});
+    const outbox = queued([
+      { id: "t1", createdAt: 1 },
+      { id: "t2", createdAt: 2, mutationFnName: "deleteInspection" },
+    ]);
+
+    await compacting(send, () => outbox, new Set(["deleteInspection"]))(params("t1", "k1"));
+
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      "já foi tentada",
+      [
+        { id: "t1", createdAt: 1, retryCount: 1 },
+        { id: "t2", createdAt: 2, mutationFnName: "deleteInspection" },
+      ],
+    ],
+    [
+      "a exclusão é de outro registro",
+      [
+        { id: "t1", createdAt: 1 },
+        { id: "t2", createdAt: 2, mutationFnName: "deleteInspection", keys: ["inspections:i2"] },
+      ],
+    ],
+    [
+      "a exclusão é mais antiga",
+      [
+        { id: "t0", createdAt: 0, mutationFnName: "deleteInspection" },
+        { id: "t1", createdAt: 1 },
+      ],
+    ],
+  ])("com uma exclusão na fila, envia quando %s", async (_case, entries) => {
+    const send = vi.fn<() => Promise<void>>(async () => {});
+
+    await compacting(
+      send,
+      () => queued(entries),
+      new Set(["deleteInspection"]),
+    )(params("t1", "k1"));
+
+    expect(send).toHaveBeenCalledOnce();
+  });
+
+  it("removalQueued: diz ao envio se há outra exclusão do mesmo registro na fila", async () => {
+    const answers: boolean[] = [];
+    const send = vi.fn<OutboxMutationFn<any>>(async ({ removalQueued }) => {
+      answers.push(await removalQueued!());
+    });
+    const removals = new Set(["deleteInspection"]);
+
+    await compacting(
+      send,
+      () =>
+        queued([
+          { id: "t1", createdAt: 1, retryCount: 1 },
+          { id: "t2", createdAt: 2, mutationFnName: "deleteInspection" },
+        ]),
+      removals,
+    )(params("t1", "k1"));
+    await compacting(
+      send,
+      () =>
+        queued([
+          { id: "t1", createdAt: 1 },
+          { id: "t2", createdAt: 2, mutationFnName: "deleteInspection", keys: ["inspections:i2"] },
+        ]),
+      removals,
+    )(params("t1", "k2"));
+    await compacting(
+      send,
+      () => queued([{ id: "t1", createdAt: 1, mutationFnName: "deleteInspection" }]),
+      removals,
+    )(params("t1", "k3"));
+
+    expect(answers).toEqual([true, false, false]);
   });
 
   it("aba fechada no meio do envio (marca gravada, retryCount 0): reenvia, não compacta", async () => {

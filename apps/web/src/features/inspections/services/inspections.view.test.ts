@@ -6,9 +6,12 @@ import type { DraftRecord } from "@/shared/sync/drafts";
 
 import type { InspectionRecord } from "../models/inspection";
 import {
+  deletionSubject,
   fieldHeader,
+  hasUnsent,
   inspectionRowOf,
   inspectionRows,
+  isDeletable,
   pendingItemIds,
   roomViews,
   roomsSummary,
@@ -84,6 +87,39 @@ describe("inspectionRowOf", () => {
       kindLabel: "Saída",
       sync: "rejeitado",
     });
+  });
+});
+
+describe("exclusão", () => {
+  it("com a exclusão na fila, a linha fica 'Excluindo', mesmo com o envio no ar", () => {
+    expect(
+      inspectionRowOf(inspection("i1", { deleting: true }), undefined, "enviando", addresses)?.sync,
+    ).toBe("excluindo");
+  });
+
+  it("só a em andamento pode ser excluída, e só uma vez", () => {
+    expect(isDeletable({ status: "inProgress", sync: "sincronizado" })).toBe(true);
+    expect(isDeletable({ status: "inProgress", sync: "conflito" })).toBe(true);
+    expect(isDeletable({ status: "completed", sync: "sincronizado" })).toBe(false);
+    expect(isDeletable({ status: "inProgress", sync: "excluindo" })).toBe(false);
+  });
+
+  it("alteração não enviada: na fila, recusada ou em conflito", () => {
+    expect(
+      ["local", "enviando", "conflito", "rejeitado"].every((sync) => hasUnsent(sync as never)),
+    ).toBe(true);
+    expect(hasUnsent("sincronizado")).toBe(false);
+    expect(hasUnsent("excluindo")).toBe(false);
+    expect(hasUnsent(undefined)).toBe(false);
+  });
+
+  it("o Dialog nomeia o endereço e o tipo", () => {
+    expect(deletionSubject("Rua das Flores, 120 · ap 32", "Entrada")).toBe(
+      "Rua das Flores, 120 · ap 32 · Vistoria de entrada",
+    );
+    expect(deletionSubject("Rua das Flores, 120 · ap 32", null)).toBe(
+      "Rua das Flores, 120 · ap 32",
+    );
   });
 });
 

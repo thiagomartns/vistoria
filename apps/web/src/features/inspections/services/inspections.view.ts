@@ -21,8 +21,8 @@ import { type InspectionConflict, collisionKey } from "./inspections.resolve";
 // Do banco local para o que a lista de vistorias e a tela de campo mostram. Funções puras: cada estado cabe num
 // teste, e os componentes recebem só o resultado.
 
-/** O estado do SyncBadge de uma vistoria. */
-export type InspectionSyncState = RecordSyncState | "sincronizado" | DraftSyncState;
+/** O estado do SyncBadge de uma vistoria. "excluindo": a exclusão está na fila (ADR 0039). */
+export type InspectionSyncState = RecordSyncState | "sincronizado" | DraftSyncState | "excluindo";
 
 export const INSPECTION_KINDS: Record<InspectionKind, string> = {
   moveIn: "Entrada",
@@ -94,9 +94,9 @@ function fieldsOf(
 }
 
 /**
- * Uma vistoria como a lista mostra. O rascunho recusado ou em conflito vence: ele tem o que a pessoa fez e o servidor
- * não aceitou (e, numa criação recusada, é o único lugar onde a vistoria ainda existe). O rascunho que só guarda o
- * passo da tela de campo (`draft`) não muda nada.
+ * Uma vistoria como a lista mostra. Com a exclusão na fila, ela fica "Excluindo" até o 204. Fora isso, o rascunho
+ * recusado ou em conflito vence: ele tem o que a pessoa fez e o servidor não aceitou (e, numa criação recusada, é o
+ * único lugar onde a vistoria ainda existe). O rascunho que só guarda o passo da tela de campo (`draft`) não muda nada.
  */
 export function inspectionRowOf(
   inspection: InspectionRecord | undefined,
@@ -104,6 +104,8 @@ export function inspectionRowOf(
   syncState: RecordSyncState | undefined,
   places: ReadonlyMap<string, PlaceView> = new Map(),
 ): InspectionRow | undefined {
+  if (inspection?.deleting)
+    return { ...fieldsOf(inspection, inspection.id, places), sync: "excluindo" };
   if (needsAction(draft))
     return { ...fieldsOf(draft.data, draft.id, places), sync: draftSyncState(draft) };
   if (!inspection) return undefined;
@@ -133,6 +135,19 @@ export function inspectionRows(
   return rows
     .filter((row) => row !== undefined)
     .toSorted((a, b) => rank(a) - rank(b) || b.startedAt.localeCompare(a.startedAt));
+}
+
+/** Só a vistoria em andamento pode ser excluída, e só uma vez: a que já está saindo não mostra o "···". */
+export const isDeletable = (row: Pick<InspectionRow, "status" | "sync">): boolean =>
+  row.status === "inProgress" && row.sync !== "excluindo";
+
+/** Há alteração que o servidor ainda não tem (o Dialog avisa que ela é descartada). */
+export const hasUnsent = (sync: InspectionSyncState | undefined): boolean =>
+  sync !== undefined && sync !== "sincronizado" && sync !== "excluindo";
+
+/** O que o Dialog de exclusão nomeia: "Rua das Flores, 120 · ap 32 · Vistoria de entrada". */
+export function deletionSubject(address: string, kindLabel: string | null): string {
+  return kindLabel ? `${address} · Vistoria de ${kindLabel.toLowerCase()}` : address;
 }
 
 /** "19/10/2026". */

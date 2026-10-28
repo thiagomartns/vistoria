@@ -23,11 +23,16 @@ export type Outbox = OfflineExecutor;
 
 /**
  * Envio de uma transação; o pacote não exporta o tipo (`OfflineMutationFn`) na 1.1.2. `requeue` põe na fila uma
- * transação nova desta mesma mutationFn, com chave nova: o reenvio de um merge (frontend.md, "Conflito"). O
- * `startOutbox` sempre o passa; quem chama a mutationFn direto (testes) pode não passar.
+ * transação nova desta mesma mutationFn, com chave nova: o reenvio de um merge (frontend.md, "Conflito").
+ * `removalQueued` diz se há na fila uma exclusão do mesmo registro: aí um conflito não vira reenvio, porque ele sairia
+ * depois da exclusão. O `startOutbox` sempre passa os dois; quem chama a mutationFn direto (testes) pode não passar.
  */
 export type OutboxMutationFn<T extends object> = (
-  params: MutationFnParams<T> & { idempotencyKey: string; requeue?: (mutate: () => void) => void },
+  params: MutationFnParams<T> & {
+    idempotencyKey: string;
+    requeue?: (mutate: () => void) => void;
+    removalQueued?: () => Promise<boolean>;
+  },
 ) => Promise<unknown>;
 
 /**
@@ -153,7 +158,7 @@ export function ownerOnlineDetector(
 }
 
 // Compactação (frontend.md, "Escrita (push)"): das transações do mesmo registro que nunca foram enviadas, só a mais
-// recente sai. O executor (1.1.2) não deixa tirar uma transação da fila (`removeFromOutbox` só apaga do armazenamento,
+// recente sai, e uma exclusão mais nova do registro leva todas as de antes (ADR 0039). O executor (1.1.2) não deixa tirar uma transação da fila (`removeFromOutbox` só apaga do armazenamento,
 // e ele a envia mesmo assim), então a compactação acontece quando a mais antiga chega à frente: ela termina sem rede,
 // e a mais nova, que leva o registro inteiro, sai no lugar dela.
 // "Nunca enviada" não se lê do `retryCount`: ele só sobe depois de uma falha, e uma aba fechada com o envio no ar volta
@@ -192,32 +197,60 @@ const sameKeys = (a: readonly string[], b: readonly string[]) =>
   a.length === b.length && a.every((key) => b.includes(key));
 
 /**
- * A transação nunca tentada tem na fila uma mais nova do mesmo envio e do mesmo registro. "Mais nova" é `createdAt`
- * estritamente maior: num empate, a ordem da fila não é garantida, e não compactar é o lado seguro.
+ * A transação nunca tentada tem na fila uma mais nova do mesmo registro e do mesmo envio, ou uma exclusão (`removals`)
+ * mais nova dele. "Mais nova" é `createdAt` estritamente maior: num empate, a ordem da fila não é garantida, e não
+ * compactar é o lado seguro.
  */
-async function isSuperseded(outbox: Outbox | undefined, transactionId: string): Promise<boolean> {
+async function isSuperseded(
+  outbox: Outbox | undefined,
+  transactionId: string,
+  removals: ReadonlySet<string>,
+): Promise<boolean> {
   const queued = (await outbox?.peekOutbox()) ?? [];
   const self = queued.find((transaction) => transaction.id === transactionId);
   if (!self || self.retryCount > 0) return false;
   return queued.some(
     (transaction) =>
       transaction.createdAt.getTime() > self.createdAt.getTime() &&
-      transaction.mutationFnName === self.mutationFnName &&
+      (transaction.mutationFnName === self.mutationFnName ||
+        removals.has(transaction.mutationFnName)) &&
       sameKeys(transaction.keys, self.keys),
   );
 }
 
-/** Embrulha um envio com a compactação e a marca de tentativa. */
+/** Há na fila, além desta, uma exclusão (`removals`) do mesmo registro. */
+async function isRemovalQueued(
+  outbox: Outbox | undefined,
+  transactionId: string,
+  removals: ReadonlySet<string>,
+): Promise<boolean> {
+  const queued = (await outbox?.peekOutbox()) ?? [];
+  const self = queued.find((transaction) => transaction.id === transactionId);
+  if (!self) return false;
+  return queued.some(
+    (transaction) =>
+      transaction.id !== self.id &&
+      removals.has(transaction.mutationFnName) &&
+      sameKeys(transaction.keys, self.keys),
+  );
+}
+
+/** Embrulha um envio com a compactação e a marca de tentativa. `removals`: os envios que excluem o registro. */
 export function compacting(
   send: OutboxMutationFn<any>,
   outbox: () => Outbox | undefined,
+  removals: ReadonlySet<string> = new Set(),
 ): OutboxMutationFn<any> {
   return async (params) => {
     const { transaction, idempotencyKey } = params;
-    if (!wasAttempted(idempotencyKey) && (await isSuperseded(outbox(), transaction.id))) return;
+    if (!wasAttempted(idempotencyKey) && (await isSuperseded(outbox(), transaction.id, removals)))
+      return;
     markAttempted(idempotencyKey);
     try {
-      const result = await send(params);
+      const result = await send({
+        ...params,
+        removalQueued: () => isRemovalQueued(outbox(), transaction.id, removals),
+      });
       forgetAttempt(idempotencyKey);
       return result;
     } catch (error) {
@@ -232,12 +265,19 @@ export interface OutboxConfig {
   ownerId: string;
   collections: Record<string, Collection<any, any, any, any, any>>;
   mutationFns: Record<string, OutboxMutationFn<any>>;
+  /** As mutationFns que excluem o registro: compactam as escritas nunca tentadas dele que estão antes na fila. */
+  removals?: ReadonlySet<string>;
 }
 
 /** Nome do armazenamento e do lock da outbox de um usuário. */
 export const outboxName = (ownerId: string) => `vistoria-outbox-${ownerId}`;
 
-export function startOutbox({ ownerId, collections, mutationFns }: OutboxConfig): Outbox {
+export function startOutbox({
+  ownerId,
+  collections,
+  mutationFns,
+  removals = new Set(),
+}: OutboxConfig): Outbox {
   // O executor só envia depois de iniciar (assíncrono), e aí `outbox` já existe.
   let outbox: Outbox | undefined;
   const compacted = Object.fromEntries(
@@ -245,7 +285,10 @@ export function startOutbox({ ownerId, collections, mutationFns }: OutboxConfig)
       const requeue = (mutate: () => void) => {
         if (outbox) enqueue(outbox, name, mutate);
       };
-      return [name, compacting((params) => send({ ...params, requeue }), () => outbox)];
+      return [
+        name,
+        compacting((params) => send({ ...params, requeue }), () => outbox, removals),
+      ];
     }),
   );
   outbox = startOfflineExecutor({

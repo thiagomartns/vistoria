@@ -5,13 +5,21 @@ import {
   CloudAlert,
   type LucideIcon,
   RefreshCw,
+  Trash2,
 } from "lucide-react";
 
 // Estado de sync de um registro (Figma SyncBadge 25:1053), na linha de lista e no cabeçalho do registro. Os tokens
 // do Badge do Sanjou (h-5, px-1.5, gap-1, text-xs medium, rounded-sm) com ícone de 12 px, porque o Badge não aceita
 // ícone. Sempre ícone + texto. Na lista, sincronizado não aparece (silêncio no caminho feliz): quem decide é a tela.
+// "Excluindo" (nó 139:1821) é a exclusão na fila, até o 204.
 
-export type SyncBadgeState = "local" | "enviando" | "sincronizado" | "conflito" | "rejeitado";
+export type SyncBadgeState =
+  | "local"
+  | "enviando"
+  | "sincronizado"
+  | "conflito"
+  | "rejeitado"
+  | "excluindo";
 
 const LOOK: Record<SyncBadgeState, { icon: LucideIcon; label: string; box: string }> = {
   local: {
@@ -31,9 +39,16 @@ const LOOK: Record<SyncBadgeState, { icon: LucideIcon; label: string; box: strin
     label: "Correção necessária",
     box: "bg-danger-subtle text-danger-text",
   },
+  excluindo: { icon: Trash2, label: "Excluindo", box: "bg-secondary text-secondary-foreground" },
 };
 
-export function SyncBadge({ state, className = "" }: { state: SyncBadgeState; className?: string }) {
+export function SyncBadge({
+  state,
+  className = "",
+}: {
+  state: SyncBadgeState;
+  className?: string;
+}) {
   const { icon: Icon, label, box } = LOOK[state];
   return (
     <span

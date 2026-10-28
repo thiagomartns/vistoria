@@ -13,17 +13,25 @@ type ListRowProps = {
   meta?: string;
   /** Badges à direita (status, SyncBadge). */
   trailing?: ReactNode;
+  /** O registro está saindo (uma exclusão pendente): o título fica apagado. */
+  muted?: boolean;
 };
 
-export function ListRow({ href, title, subtitle, meta, trailing }: ListRowProps) {
+export function ListRow({ href, title, subtitle, meta, trailing, muted }: ListRowProps) {
   return (
     <Link
       href={href}
       className="flex min-h-16 w-full items-center gap-3 border-b border-border bg-background px-4 py-3 outline-none hover:bg-accent focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
     >
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="truncate text-base font-medium text-foreground">{title}</span>
-        {subtitle ? <span className="truncate text-sm text-muted-foreground">{subtitle}</span> : null}
+        <span
+          className={`truncate text-base font-medium ${muted ? "text-muted-foreground" : "text-foreground"}`}
+        >
+          {title}
+        </span>
+        {subtitle ? (
+          <span className="truncate text-sm text-muted-foreground">{subtitle}</span>
+        ) : null}
         {meta ? <span className="truncate text-xs text-muted-foreground">{meta}</span> : null}
       </span>
       {trailing ? <span className="flex shrink-0 flex-col items-end gap-1">{trailing}</span> : null}

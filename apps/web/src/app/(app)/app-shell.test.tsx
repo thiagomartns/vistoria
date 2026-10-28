@@ -81,6 +81,22 @@ describe("AppShell", () => {
     expect(screen.queryByText("Salvo no aparelho")).toBeNull();
   });
 
+  it("as ações do registro vão para o header, uma vez só, antes do SyncStatus", () => {
+    render(
+      <AppShell>
+        <PageHeader title="Vistoria" actions={<button type="button">Mais ações</button>} focus />
+      </AppShell>,
+    );
+
+    const header = screen.getByRole("banner");
+    const [actions] = within(header).getAllByRole("button", { name: "Mais ações" });
+    expect(within(header).getAllByRole("button", { name: "Mais ações" })).toHaveLength(1);
+    const [status] = within(header).getAllByRole("button", { name: /^Pendências/ });
+    expect(
+      actions!.compareDocumentPosition(status!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it("reflete a rede: offline mostra o banner e o SyncStatus offline; online, some", () => {
     render(<AppShell>conteúdo</AppShell>);
     expect(screen.queryByText("Você está offline")).toBeNull();

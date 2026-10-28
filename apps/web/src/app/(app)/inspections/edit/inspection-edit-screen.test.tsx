@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ClientRecord } from "@/features/clients/models/client";
 import type { InspectionRecord } from "@/features/inspections/models/inspection";
 import {
+  deleteInspection,
   saveInspection,
   saveInspectionDraft,
 } from "@/features/inspections/services/inspections.sync";
@@ -20,11 +21,11 @@ import { InspectionEditScreen } from "./inspection-edit-screen";
 // A tela de campo dentro do shell (Figma 43:1748, estados 0, 2, 3, 4 e 6), com o banco local simulado no hook e o
 // rascunho e a fila espionados. Os debounces são os de verdade: 300 ms para o rascunho, 1,5 s para a fila.
 
-const navigation = vi.hoisted(() => ({ search: "" }));
+const navigation = vi.hoisted(() => ({ search: "", push: vi.fn<(href: string) => void>() }));
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/inspections/edit",
-  useRouter: () => ({ push: vi.fn<() => void>(), replace: vi.fn<() => void>() }),
+  useRouter: () => ({ push: navigation.push, replace: vi.fn<() => void>() }),
   useSearchParams: () => new URLSearchParams(navigation.search),
 }));
 
@@ -50,6 +51,7 @@ vi.mock("@/features/local-store/hooks/useLocalStore", () => ({
 vi.mock("@/features/inspections/services/inspections.sync", () => ({
   saveInspection: vi.fn<() => string>(() => "i1"),
   saveInspectionDraft: vi.fn<() => void>(),
+  deleteInspection: vi.fn<() => Promise<void>>(async () => {}),
 }));
 
 const lar: ClientRecord = {
@@ -151,6 +153,8 @@ const draftOf = (over: Partial<DraftRecord>): DraftRecord => ({
 afterEach(() => {
   vi.mocked(saveInspection).mockClear();
   vi.mocked(saveInspectionDraft).mockClear();
+  vi.mocked(deleteInspection).mockClear();
+  navigation.push.mockClear();
   resetSyncStatus();
   resetSession();
 });
@@ -396,7 +400,13 @@ describe("InspectionEditScreen", () => {
     const sent = structuredClone(vistoria);
     sent.rooms[0]!.items[1]!.condition = "poor";
     open({
-      drafts: [draftOf({ data: sent, status: "rejected", errors: { "rooms[1].items[2].condition": ["Escolha a condição."] } })],
+      drafts: [
+        draftOf({
+          data: sent,
+          status: "rejected",
+          errors: { "rooms[1].items[2].condition": ["Escolha a condição."] },
+        }),
+      ],
     });
     await screen.findByText("Escolha a condição.");
 
@@ -472,6 +482,64 @@ describe("InspectionEditScreen", () => {
       await new Promise((done) => setTimeout(done, 1700));
       expect(saveInspection).not.toHaveBeenCalled();
     });
+  });
+
+  it("excluir (#107): o ··· do header, o Dialog com a alteração não enviada; confirmada, a tela volta à lista e nada mais vai para a fila", async () => {
+    const user = userEvent.setup();
+    const view = open();
+    await user.click(chip("Paredes", "Ruim"));
+
+    const header = screen.getByRole("banner");
+    await user.click(within(header).getByRole("button", { name: "Mais ações" }));
+    await user.click(screen.getByRole("menuitem", { name: "Excluir vistoria" }));
+    const dialog = screen.getByRole("dialog", { name: "Excluir esta vistoria?" });
+    expect(dialog.textContent).toContain(
+      "R. das Flores, 120 · Apto 302 · Vistoria de entrada. Ela sai deste aparelho e do servidor, e não dá para desfazer. As alterações ainda não enviadas também são descartadas. Sem rede, a exclusão sai quando a conexão voltar.",
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Excluir vistoria" }));
+
+    await vi.waitFor(() => expect(navigation.push).toHaveBeenCalledWith("/inspections"));
+    expect(deleteInspection).toHaveBeenCalledWith(local.value.store, "i1");
+    const drafted = vi.mocked(saveInspectionDraft).mock.calls.length;
+    view.unmount();
+    await new Promise((done) => setTimeout(done, 1700));
+    expect(saveInspection).not.toHaveBeenCalled();
+    expect(vi.mocked(saveInspectionDraft).mock.calls).toHaveLength(drafted);
+  });
+
+  it("sincronizada e sem mudança: o Dialog não fala de alteração não enviada", async () => {
+    const user = userEvent.setup();
+    open();
+
+    await user.click(screen.getByRole("button", { name: "Mais ações" }));
+    await user.click(screen.getByRole("menuitem", { name: "Excluir vistoria" }));
+
+    expect(screen.getByRole("dialog").textContent).not.toContain("não enviadas");
+  });
+
+  it("concluída: sem o ···", () => {
+    open({ inspections: [{ ...vistoria, status: "completed" }] });
+
+    expect(screen.queryByRole("button", { name: "Mais ações" })).toBeNull();
+  });
+
+  it("estado 6 do #107 (exclusão na fila): só leitura, com o aviso, 'Excluindo' e sem o ···", () => {
+    // Uma edição já tentada ainda está na fila, antes da exclusão: o item não fica "Não enviado".
+    const edited = structuredClone(vistoria);
+    edited.rooms[0]!.items[1]!.condition = "poor";
+    open({
+      inspections: [{ ...edited, deleting: true }],
+      states: new Map([["i1", "local"]]),
+      bases: new Map([["i1", vistoria]]),
+    });
+
+    const notice = screen.getByRole("status");
+    expect(notice.textContent).toContain("Exclusão aguardando envio");
+    expect(notice.textContent).toContain("Esta vistoria será excluída quando a conexão voltar.");
+    expect((chip("Piso", "Novo") as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText("Excluindo")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Mais ações" })).toBeNull();
+    expect(screen.queryByText("Não enviado")).toBeNull();
   });
 
   it("vistoria que não está no aparelho", () => {
