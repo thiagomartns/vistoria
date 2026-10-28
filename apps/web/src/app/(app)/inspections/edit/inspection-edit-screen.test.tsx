@@ -542,6 +542,49 @@ describe("InspectionEditScreen", () => {
     expect(screen.queryByText("Não enviado")).toBeNull();
   });
 
+  it("excluída em outro aparelho (#109): o aviso do tipo excluído com 'Resolver conflito', e segue editável", () => {
+    open({
+      drafts: [
+        draftOf({
+          data: vistoria,
+          status: "conflict",
+          step: 0,
+          conflict: { type: "deleted", current: undefined, base: vistoria, collisions: [] },
+        }),
+      ],
+    });
+
+    expect(screen.getByText("Esta vistoria foi excluída em outro aparelho")).toBeDefined();
+    expect(screen.getByRole("link", { name: "Resolver conflito" }).getAttribute("href")).toBe(
+      "/inspections/conflict?id=i1",
+    );
+    expect((chip("Piso", "Novo") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("exclusão alterada (#109): só leitura, com o que o servidor tem, o aviso com 'Resolver conflito' e sem o ···", () => {
+    const theirs = structuredClone(vistoria);
+    theirs.rooms[0]!.items[0]!.condition = "absent";
+    theirs.version = "V9";
+    open({
+      inspections: [theirs],
+      drafts: [
+        draftOf({
+          data: theirs,
+          status: "conflict",
+          conflict: { type: "removal", current: theirs, collisions: [] },
+        }),
+      ],
+    });
+
+    expect(screen.getByText("Esta vistoria foi alterada antes da exclusão")).toBeDefined();
+    expect(screen.getByRole("link", { name: "Resolver conflito" }).getAttribute("href")).toBe(
+      "/inspections/conflict?id=i1",
+    );
+    expect(chip("Piso", "Ausente").getAttribute("aria-checked")).toBe("true");
+    expect((chip("Piso", "Novo") as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: "Mais ações" })).toBeNull();
+  });
+
   it("vistoria que não está no aparelho", () => {
     open({ inspections: [] });
 
