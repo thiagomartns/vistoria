@@ -1,11 +1,10 @@
 import { Alert, AlertDescription, AlertTitle } from "@sanjou/ui/alert";
-import { Button } from "@sanjou/ui/button";
 import { Form, FormControl, FormField, FormItem, FormMessage } from "@sanjou/ui/form";
 import { Textarea } from "@sanjou/ui/textarea";
-import { CircleAlert, Info, ListChecks } from "lucide-react";
-import Link from "next/link";
+import { CircleAlert, ListChecks } from "lucide-react";
 import type { UseFormReturn } from "react-hook-form";
 
+import { ConflictNotice } from "@/shared/components/conflict-notice";
 import { EmptyState } from "@/shared/components/empty-state";
 import type { FieldSyncState } from "@/shared/components/field-sync-indicator";
 import { InspectionItem } from "@/shared/components/inspection-item";
@@ -69,18 +68,7 @@ export function RoomStep({
             <AlertDescription>{rejection.description}</AlertDescription>
           </Alert>
         ) : null}
-        {conflict ? (
-          <div className="mb-2 flex flex-col items-start gap-2">
-            <Alert variant="warning">
-              <Info aria-hidden="true" />
-              <AlertTitle>{conflict.title}</AlertTitle>
-              <AlertDescription>{conflict.description}</AlertDescription>
-            </Alert>
-            <Button asChild size="lg" className="w-full md:h-8 md:w-auto md:px-3">
-              <Link href={conflict.href}>Resolver conflito</Link>
-            </Button>
-          </div>
-        ) : null}
+        {conflict ? <ConflictNotice {...conflict} className="mb-2" /> : null}
         <div className="flex flex-col gap-0.5">
           <h2 id="ambiente" className="text-lg font-semibold text-foreground">
             {name}

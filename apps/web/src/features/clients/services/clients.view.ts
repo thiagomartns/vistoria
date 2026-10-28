@@ -1,8 +1,10 @@
 import { fold } from "@/shared/search";
 import { type DraftRecord, type DraftSyncState, draftSyncState } from "@/shared/sync/drafts";
+import { type FlatConflict, type FlatConflictGroup, flatConflictGroups } from "@/shared/sync/flat-conflict";
 import type { RecordSyncState } from "@/shared/sync/sync-view";
 
 import { CLIENT_ENTITY, type ClientRecord } from "../models/client";
+import { formatDocument } from "../schemas/client.schemas";
 
 // Do banco local para o que a lista de clientes e o cabeçalho do registro mostram. Função pura: cada estado cabe
 // num teste, e os componentes recebem só o resultado.
@@ -76,4 +78,16 @@ export function clientRows(
   return rows
     .filter((row) => row !== undefined)
     .toSorted((a, b) => a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" }));
+}
+
+/**
+ * Os campos em disputa de um cliente, num grupo só ("Cliente"), com os nomes e a ordem do formulário. O documento
+ * aparece com a máscara.
+ */
+export function clientConflictGroups(conflict: FlatConflict<ClientRecord>): FlatConflictGroup[] {
+  return flatConflictGroups(conflict, {
+    title: "Cliente",
+    labels: { name: "Nome", document: "CPF ou CNPJ", email: "E-mail", phone: "Telefone" },
+    format: (field, value) => (field === "document" ? formatDocument(String(value)) : String(value)),
+  });
 }

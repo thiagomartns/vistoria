@@ -17,6 +17,8 @@
 // Desde o #105 cobre a entrega do M3 na vistoria: offline, a tela de campo e outro aparelho (um PUT direto na API)
 // mudam os mesmos itens; a volta da rede dá 412, a tela mostra o estado 5, e o ConflictResolver envia uma resolução
 // mista com If-Match do current e chave nova. Com SCREENS=1, os prints do estado 5 e do resolver também.
+// Desde o #106 cobre o conflito de cliente (ADR 0038): campos diferentes convergem num reenvio sem perguntar, e o mesmo
+// campo dos dois lados sai do formulário por "Resolver conflito" (/clients/conflict), com a escolha no servidor.
 
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
@@ -694,6 +696,58 @@ try {
   assert.equal(kept.body.email, "outro@aparelho.com");
   assert.notEqual(kept.body.phone, "(71) 4444-0000", "a edição em conflito não chega ao servidor");
   ok("PUT com If-Match antigo → 412; 1 envio em 5 s, a outbox vazia e a linha com \"Conflito\"; o servidor fica com a do outro aparelho");
+  await rowOf(page, "Imobiliária Alfa").getByRole("link").click();
+  await page.getByText("Este cliente foi alterado em outro aparelho").waitFor();
+  await shoot(page, "clients-conflito");
+  await page.getByRole("link", { name: "Resolver conflito" }).click();
+  await page.getByRole("heading", { level: 2, name: "Resolver conflito" }).waitFor();
+  assert.equal(await page.getByRole("radiogroup").count(), 1, "só o telefone colide; o e-mail entra sozinho");
+  const phoneField = page.getByRole("radiogroup", { name: "Telefone" });
+  await phoneField.getByText("(71) 4444-0000").click();
+  await shoot(page, "clients-conflito-resolver");
+  const fromClientResolution = puts.length;
+  await page.getByRole("button", { name: "Enviar resolução" }).click();
+  await page.getByRole("heading", { level: 1, name: "Imobiliária Alfa" }).waitFor();
+  await settled(page, user, puts, fromClientResolution, 200, "a resolução do cliente sincroniza");
+  const clientResolution = puts.slice(fromClientResolution);
+  assert.equal(clientResolution.length, 1);
+  assert.equal(clientResolution[0].ifMatch, `"${elsewhere.body.version}"`);
+  assert.notEqual(clientResolution[0].key, conflictPuts[0].key, "a resolução sai com chave nova");
+  const resolvedClient = await serverClient(user, alfa);
+  assert.equal(resolvedClient.body.phone, "(71) 4444-0000", "a escolha chega ao servidor");
+  assert.equal(resolvedClient.body.email, "outro@aparelho.com", "o que só o outro aparelho mudou fica");
+  await goTo(page, "Clientes");
+  assert.equal(await rowOf(page, "Imobiliária Alfa").getByText("Conflito").count(), 0);
+  ok(`"Resolver conflito" → só Telefone; "Neste aparelho" → PUT com If-Match ${clientResolution[0].ifMatch} e chave nova → 200; servidor com o telefone daqui e o e-mail de lá`);
+
+  step("10b", "412 em campos diferentes do client: converge sem perguntar, num reenvio com chave nova");
+  const lastClient = (await serverClient(user, alfa)).body;
+  const otherClient = await callApi(`/api/v1/clients/${alfa}`, {
+    method: "PUT",
+    headers: {
+      authorization: `Bearer ${user.token}`,
+      "if-match": `"${lastClient.version}"`,
+      "idempotency-key": uuidv7(),
+    },
+    body: JSON.stringify({ name: lastClient.name, document: null, email: "vendas@alfa.com", phone: lastClient.phone }),
+  });
+  assert.equal(otherClient.status, 200, `o PUT do outro aparelho respondeu ${otherClient.status}`);
+  await rowOf(page, "Imobiliária Alfa").getByRole("link").click();
+  await page.getByRole("heading", { level: 1, name: "Imobiliária Alfa" }).waitFor();
+  await page.getByLabel("Telefone").fill("(71) 5555-0000");
+  const fromMerge = puts.length;
+  await page.getByRole("button", { name: "Salvar" }).click();
+  await page.getByRole("heading", { level: 1, name: "Clientes" }).waitFor();
+  await settled(page, user, puts, fromMerge, 200, "o merge sincroniza");
+  const mergePuts = puts.slice(fromMerge);
+  assert.deepEqual(mergePuts.map((put) => put.status), [412, 200], "um 412 e um reenvio");
+  assert.equal(mergePuts[1].ifMatch, `"${otherClient.body.version}"`);
+  assert.notEqual(mergePuts[1].key, mergePuts[0].key, "o reenvio sai com chave nova");
+  const merged = await serverClient(user, alfa);
+  assert.equal(merged.body.phone, "(71) 5555-0000");
+  assert.equal(merged.body.email, "vendas@alfa.com");
+  assert.equal(await rowOf(page, "Imobiliária Alfa").getByText("Conflito").count(), 0);
+  ok(`412 → reenvio com If-Match ${mergePuts[1].ifMatch} e chave nova → 200; servidor com o telefone daqui e o e-mail de lá, sem perguntar`);
 
   step(11, "409 idempotency-in-progress: a nova tentativa espera o Retry-After, com a mesma chave");
   let inProgress = 0;

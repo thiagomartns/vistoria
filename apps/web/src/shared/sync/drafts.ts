@@ -178,6 +178,23 @@ export function rebaseDraft(
   });
 }
 
+/**
+ * O formulário de um registro plano foi salvo com o rascunho em conflito: os valores ficam só no rascunho, que segue em
+ * conflito e vira o local do próximo merge no ConflictResolver. Enfileirar levaria a versão de antes do conflito, e o
+ * 412 voltaria a cada "Salvar".
+ */
+export function keepConflictData(
+  drafts: DraftsCollection,
+  id: string,
+  data: Record<string, unknown>,
+  now: Date = new Date(),
+): void {
+  if (drafts.get(id)?.status !== "conflict") return;
+  drafts.update(id, (current) => {
+    Object.assign(current, { data, updatedAt: now.toISOString() });
+  });
+}
+
 /** O que a pessoa deixou no formulário profundo: mais novo que a fila (o rascunho é gravado antes). */
 export function workingCopy(drafts: DraftsCollection, id: string): Record<string, unknown> | undefined {
   const draft = drafts.get(id);

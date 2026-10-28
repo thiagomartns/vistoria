@@ -128,7 +128,7 @@ Transação que falha sem sucesso além do prazo de "travada" ganha destaque no 
 
 Na vistoria (`inspections.merge.ts`), ambientes e itens se casam pelo `Id`. O que foi incluído de um lado entra. O que foi removido de um lado e ficou intocado do outro sai. O que foi removido de um lado e editado do outro colide, e o registro mesclado segue o local até a escolha. Um ambiente removido de um lado e mudado do outro, mesmo que só num item, é uma colisão só, no ambiente. A `position` nunca colide: vale o local, a lista é ordenada pela posição mesclada (no empate, primeiro a ordem do servidor) e renumerada de 0 a n−1. Mudar de posição porque um vizinho saiu não conta como edição.
 
-Cliente e imóvel seguem os mesmos passos, com o merge plano por campo (sem itens) e o mesmo `ConflictResolver` ([ADR 0038](../decisions/0038-escopo-do-m3-leitura-por-id-conflito-de-cadastro-e-exclusao.md)).
+Cliente e imóvel seguem os mesmos passos, com o merge plano por campo (sem itens) e o mesmo `ConflictResolver` ([ADR 0038](../decisions/0038-escopo-do-m3-leitura-por-id-conflito-de-cadastro-e-exclusao.md)), em `/clients/conflict?id=` e `/properties/conflict?id=`, com os campos em disputa num grupo só. Com colisão, o formulário mostra o aviso e "Resolver conflito"; salvar nele grava só no rascunho, que segue em conflito e é o local do merge refeito no resolver, e leva a ele.
 
 Regras de negócio do agregado (como exigir condição em todos os itens para concluir) são reavaliadas pelo .NET no reenvio, nunca só no cliente.
 
