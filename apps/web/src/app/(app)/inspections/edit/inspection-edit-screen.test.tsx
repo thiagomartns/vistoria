@@ -524,8 +524,11 @@ describe("InspectionEditScreen", () => {
   });
 
   it("estado 6 do #107 (exclusão na fila): só leitura, com o aviso, 'Excluindo' e sem o ···", () => {
+    // Uma edição já tentada ainda está na fila, antes da exclusão: o item não fica "Não enviado".
+    const edited = structuredClone(vistoria);
+    edited.rooms[0]!.items[1]!.condition = "poor";
     open({
-      inspections: [{ ...vistoria, deleting: true }],
+      inspections: [{ ...edited, deleting: true }],
       states: new Map([["i1", "local"]]),
       bases: new Map([["i1", vistoria]]),
     });
@@ -536,6 +539,7 @@ describe("InspectionEditScreen", () => {
     expect((chip("Piso", "Novo") as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText("Excluindo")).toBeDefined();
     expect(screen.queryByRole("button", { name: "Mais ações" })).toBeNull();
+    expect(screen.queryByText("Não enviado")).toBeNull();
   });
 
   it("vistoria que não está no aparelho", () => {

@@ -19,6 +19,9 @@
 // mista com If-Match do current e chave nova. Com SCREENS=1, os prints do estado 5 e do resolver também.
 // Desde o #106 cobre o conflito de cliente (ADR 0038): campos diferentes convergem num reenvio sem perguntar, e o mesmo
 // campo dos dois lados sai do formulário por "Resolver conflito" (/clients/conflict), com a escolha no servidor.
+// Desde o #108 cobre a exclusão de vistoria (ADR 0039): online pela lista, com a linha "Excluindo" até o 204; offline
+// pela tela de campo, com uma edição pendente que nunca chega ao servidor; e a criada offline, que sai sem DELETE. Nos
+// três, o GET da vistoria responde 404. Com SCREENS=1, os prints do menu, das confirmações e dos dois "Excluindo".
 
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
@@ -153,6 +156,37 @@ function watchPuts(page) {
   });
   return puts;
 }
+
+/** Todo DELETE de vistoria que a página dispara, com a chave, o If-Match e o status. */
+function watchDeletes(page) {
+  const deletes = [];
+  page.on("request", (req) => {
+    if (req.method() !== "DELETE" || !/\/api\/v1\/inspections\//.test(req.url())) return;
+    const entry = {
+      at: Date.now(),
+      id: req.url().split("/").pop(),
+      key: req.headers()["idempotency-key"],
+      ifMatch: req.headers()["if-match"],
+      status: null,
+    };
+    deletes.push(entry);
+    req.response().then(
+      (res) => (entry.status = res?.status() ?? "sem resposta"),
+      () => (entry.status = "falhou"),
+    );
+  });
+  return deletes;
+}
+
+/** Abre o "···" (Mais ações) de `scope` e escolhe "Excluir vistoria": o Dialog de confirmação abre. */
+async function askToDelete(page, scope) {
+  await scope.getByRole("button", { name: "Mais ações" }).click();
+  await page.getByRole("menuitem", { name: "Excluir vistoria" }).click();
+  return page.getByRole("dialog", { name: "Excluir esta vistoria?" });
+}
+
+/** A linha da Table (desktop) da vistoria `id`: o endereço se repete entre vistorias do mesmo imóvel. */
+const inspectionRow = (page, id) => page.getByRole("row").filter({ has: page.locator(`a[href$="id=${id}"]`) });
 
 /** Entra pelo /login e volta para a lista de clientes pelo `?next=`, sem recarregar (o token fica na memória). */
 async function signIn(page, user, { expired } = {}) {
@@ -496,6 +530,7 @@ try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
   const puts = watchPuts(page);
+  const deletes = watchDeletes(page);
   const user = await signUp("Ana do roteiro");
   const other = await signUp("Bia do roteiro");
 
@@ -1001,6 +1036,115 @@ try {
   ok("misto: um PUT com If-Match do current e chave nova; o servidor fica com Piso daqui, Paredes de lá e a Sala de lá");
   await page.getByRole("link", { name: "Voltar" }).click();
   await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
+  await goTo(page, "Clientes");
+
+  step("12d", "Excluir vistoria: online pela lista, offline pela tela de campo e a criada offline, sem DELETE");
+  const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+  const roteiroOption = `${roteiro} · Imobiliária Beta`;
+
+  // Online, pela lista: o menu e a confirmação na tela de campo (prints), e a exclusão na linha da Table.
+  const online = await createInspection(page, roteiroOption);
+  await mark(page, "Piso", "Bom");
+  await inspectionSettled(page, user, "a vistoria a excluir sincroniza");
+  const onlineVersion = (await serverInspection(user, online)).body.version;
+  await page.getByRole("banner").getByRole("button", { name: "Mais ações" }).click();
+  await page.getByRole("menuitem", { name: "Excluir vistoria" }).waitFor();
+  await shoot(page, "excluir-1-menu");
+  await page.getByRole("menuitem", { name: "Excluir vistoria" }).click();
+  const synced = page.getByRole("dialog", { name: "Excluir esta vistoria?" });
+  assert.ok(!(await synced.textContent()).includes("não enviadas"), "sincronizada, o Dialog não fala de alteração pendente");
+  await shoot(page, "excluir-2-confirmacao");
+  await synced.getByRole("button", { name: "Cancelar" }).click();
+  await page.getByRole("link", { name: "Voltar" }).click();
+  await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
+  // O DELETE fica 8 s no ar, para a linha "Excluindo" aparecer (e o print dela).
+  await context.route("**/api/v1/inspections/*", async (r) => {
+    if (r.request().method() === "DELETE") await wait(8000);
+    return r.fallback();
+  });
+  const fromOnline = deletes.length;
+  const onlineRow = inspectionRow(page, online);
+  await (await askToDelete(page, onlineRow)).getByRole("button", { name: "Excluir vistoria" }).click();
+  await onlineRow.getByText("Excluindo").waitFor();
+  assert.equal(await onlineRow.getByRole("button", { name: "Mais ações" }).count(), 0, "a linha saindo não tem o ···");
+  ok("online, pela lista: a linha fica \"Excluindo\", apagada e sem o ···, com o DELETE no ar");
+  await shoot(page, "excluir-5-lista-pendente");
+  await context.unroute("**/api/v1/inspections/*");
+  await until(async () => (await onlineRow.count()) === 0 && (await outboxCount(page, user)) === 0, "a linha some no 204", 90_000);
+  const onlineDelete = deletes.slice(fromOnline);
+  assert.equal(onlineDelete.length, 1);
+  assert.equal(onlineDelete[0].status, 204);
+  assert.equal(onlineDelete[0].ifMatch, `"${onlineVersion}"`);
+  assert.match(onlineDelete[0].key, UUID_V7);
+  assert.equal((await serverInspection(user, online)).status, 404);
+  ok(`DELETE com If-Match "${onlineVersion}" e chave v7 → 204; a linha some e o GET responde 404`);
+
+  // Offline, pela tela de campo: uma edição na fila antes da exclusão nunca chega ao servidor depois dela. Com a página
+  // visível, o detector do pacote diz "online" mesmo sem rede: a edição é tentada na hora e falha. Já tentada, ela pode
+  // ter sido aplicada e não é compactada (frontend.md, "Escrita (push)"): sai antes do DELETE, com a mesma chave.
+  const offline = await createInspection(page, roteiroOption);
+  await mark(page, "Piso", "Bom");
+  await inspectionSettled(page, user, "a vistoria a excluir offline sincroniza");
+  const offlineVersion = (await serverInspection(user, offline)).body.version;
+  await context.setOffline(true);
+  await page.getByText("Você está offline").waitFor();
+  const fromPendingEdit = puts.length;
+  await mark(page, "Paredes", "Ruim");
+  await wait(1800);
+  assert.ok((await outboxCount(page, user)) >= 1, "offline, a edição fica na fila");
+  const fromOffline = { puts: puts.length, deletes: deletes.length };
+  const pendingDialog = await askToDelete(page, page.getByRole("banner"));
+  await pendingDialog.getByText("As alterações ainda não enviadas também são descartadas.", { exact: false }).waitFor();
+  ok("offline com a edição na fila: o Dialog avisa que ela é descartada");
+  await shoot(page, "excluir-3-confirmacao-offline");
+  await pendingDialog.getByRole("button", { name: "Excluir vistoria" }).click();
+  await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
+  const offlineRow = inspectionRow(page, offline);
+  await offlineRow.getByText("Excluindo").waitFor();
+  await offlineRow.getByRole("link").click();
+  await page.getByText("Exclusão aguardando envio").waitFor();
+  assert.ok(await chipsOf(page, "Piso").getByRole("radio", { name: "Novo" }).isDisabled(), "a tela fica só leitura");
+  assert.equal(await page.getByRole("banner").getByRole("button", { name: "Mais ações" }).count(), 0);
+  ok("a linha fica \"Excluindo\"; a tela de campo abre só leitura, com o aviso e sem o ···");
+  await shoot(page, "excluir-6-campo-pendente");
+  await page.getByRole("link", { name: "Voltar" }).click();
+  await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
+  await context.setOffline(false);
+  await until(async () => (await offlineRow.count()) === 0 && (await outboxCount(page, user)) === 0, "a exclusão sai quando a rede volta", 90_000);
+  await wait(2000);
+  const offlineDelete = deletes.slice(fromOffline.deletes);
+  assert.equal(offlineDelete.length, 1);
+  assert.equal(offlineDelete[0].status, 204);
+  const pendingEdit = puts.slice(fromPendingEdit).filter((put) => put.id === offline);
+  assert.ok(pendingEdit.length > 0, "a edição pendente foi tentada");
+  assert.equal(new Set(pendingEdit.map((put) => put.key)).size, 1, "só a edição pendente, sempre com a mesma chave");
+  assert.ok(pendingEdit.every((put) => put.at < offlineDelete[0].at), "nenhum PUT depois do DELETE");
+  assert.equal(offlineDelete[0].ifMatch, `"${versionOf(pendingEdit.findLast(succeeded)?.etag) ?? offlineVersion}"`);
+  assert.equal((await serverInspection(user, offline)).status, 404);
+  ok(
+    `a rede volta: a edição já tentada sai antes (${pendingEdit.map((put) => put.status).join(", ")}, mesma chave), o DELETE por último com a versão dela → 204, e o GET responde 404`,
+  );
+
+  // Criada offline e excluída antes de ser tentada: some na hora, e a volta da rede não manda nada dela. Para ela nunca
+  // ser tentada, um cliente criado antes segura a fila (a primeira transação, tentada e em backoff, ADR 0034).
+  await goTo(page, "Clientes");
+  await context.setOffline(true);
+  await page.getByText("Você está offline").waitFor();
+  const holder = await create(page, "Cliente da fila");
+  const local = await createInspection(page, roteiroOption);
+  await mark(page, "Piso", "Bom");
+  const fromLocal = { puts: puts.length, deletes: deletes.length };
+  await (await askToDelete(page, page.getByRole("banner"))).getByRole("button", { name: "Excluir vistoria" }).click();
+  await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
+  assert.equal(await inspectionRow(page, local).count(), 0, "a criada offline some na hora");
+  await context.setOffline(false);
+  await until(async () => (await outboxCount(page, user)) === 0, "a fila esvazia", 90_000);
+  await wait(2000);
+  assert.equal(puts.slice(fromLocal.puts).filter((put) => put.id === local).length, 0, "a criação não sai");
+  assert.equal(deletes.length, fromLocal.deletes, "nenhum DELETE");
+  assert.equal((await serverInspection(user, local)).status, 404);
+  assert.equal((await serverClient(user, holder)).status, 200, "o cliente que segurava a fila sai");
+  ok("criada offline e excluída: some na hora; com a rede, sai o cliente da frente e, da vistoria, nem PUT nem DELETE (GET 404)");
   await goTo(page, "Clientes");
 
   step(13, "Outro usuário entra: a fila do anterior não sai com a conta dele");

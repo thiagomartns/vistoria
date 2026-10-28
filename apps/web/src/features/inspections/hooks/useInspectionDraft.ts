@@ -282,6 +282,8 @@ export function useInspectionDraft(id: string | null) {
   const base = baseNow;
   const pending = current ? pendingItemIds(current, base) : new Set<string>();
   const itemSync = (itemId: string, index: number): FieldSyncState | undefined => {
+    // A vistoria está saindo: o estado por campo não diz mais nada (estado 6 do #107).
+    if (deleting) return undefined;
     const itemErrors = errors.rooms?.[step]?.items?.[index];
     if (itemErrors?.condition || itemErrors?.notes) return "rejeitado";
     if (disputed.items.has(itemId)) return "conflito";
