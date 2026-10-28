@@ -28,7 +28,12 @@ export type RoomRecord = Required<Omit<UpsertRoomDto, "id" | "position" | "items
  * Vistoria no banco local: o agregado inteiro como vai no `PUT`, com o `id` gerado no aparelho e a `version` que o
  * servidor confirmou (`null` enquanto ela só existe no aparelho). A versão é do agregado: ambientes e itens não têm.
  */
-export type InspectionRecord = { id: string; version: string | null } & Required<
+export type InspectionRecord = {
+  id: string;
+  version: string | null;
+  /** Só na camada otimista, com a exclusão na fila (ADR 0039): "Excluindo", só leitura. Nunca vai no `PUT`. */
+  deleting?: true;
+} & Required<
   Omit<UpsertInspectionDto, "propertyId" | "kind" | "status" | "startedAt" | "rooms">
 > & {
     propertyId: string;

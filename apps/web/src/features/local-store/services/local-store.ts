@@ -13,7 +13,9 @@ import {
   createInspectionsCollection,
 } from "@/features/inspections/services/inspections.collection";
 import {
+  DELETE_INSPECTION,
   UPSERT_INSPECTION,
+  deleteInspectionMutation,
   upsertInspectionMutation,
 } from "@/features/inspections/services/inspections.sync";
 import {
@@ -52,7 +54,9 @@ async function open(ownerId: string): Promise<LocalStore> {
       [UPSERT_CLIENT]: upsertClientMutation(clients, drafts),
       [UPSERT_PROPERTY]: upsertPropertyMutation(properties, drafts),
       [UPSERT_INSPECTION]: upsertInspectionMutation(inspections, drafts),
+      [DELETE_INSPECTION]: deleteInspectionMutation(inspections, drafts),
     },
+    removals: new Set([DELETE_INSPECTION]),
   });
   await outbox.waitForInit();
   trackOutbox(outbox);

@@ -192,7 +192,7 @@ export function useInspectionDraft(id: string | null) {
   function persist(values: InspectionFormValues, at: number, enqueue: boolean) {
     if (!store || !hydrated || !source) return;
     const next = withoutVersion(recordWith(source, values));
-    saveInspectionDraft(store.drafts, next, at);
+    saveInspectionDraft(store, next, at);
     const untouchedRejection = rejected !== null && JSON.stringify(values) === openedWith.current;
     if (enqueue && isDirty && !untouchedRejection && !inConflict) {
       setEnqueued({ base: baseNow, version: record?.version ?? null });

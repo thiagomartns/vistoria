@@ -59,12 +59,19 @@ describe("openLocalStore", () => {
 
     expect(startOutbox).toHaveBeenCalledOnce();
     const [config] = vi.mocked(startOutbox).mock.calls[0]!;
-    expect(Object.keys(config.collections).toSorted()).toEqual(["clients", "inspections", "properties"]);
+    expect(Object.keys(config.collections).toSorted()).toEqual([
+      "clients",
+      "inspections",
+      "properties",
+    ]);
     expect(Object.keys(config.mutationFns).toSorted()).toEqual([
+      "deleteInspection",
       "upsertClient",
       "upsertInspection",
       "upsertProperty",
     ]);
+    // A exclusão compacta as escritas nunca tentadas da vistoria que estão antes dela (ADR 0039).
+    expect([...(config.removals ?? [])]).toEqual(["deleteInspection"]);
   });
 
   it("trocar de dono fecha a outbox, as collections e o banco do anterior antes de abrir os do novo", async () => {
