@@ -4,7 +4,16 @@ import type { PropertyRecord } from "@/features/properties/models/property";
 import { addressOf } from "@/features/properties/services/properties.view";
 
 import { conflictHref } from "../services/inspections.resolve";
-import { type PlaceView, dateOf, inspectionRows, startedLabel } from "../services/inspections.view";
+import { deleteInspection } from "../services/inspections.sync";
+import {
+  type PlaceView,
+  dateOf,
+  deletionSubject,
+  hasUnsent,
+  inspectionRows,
+  isDeletable,
+  startedLabel,
+} from "../services/inspections.view";
 
 /** A lista; para onde "Voltar" e "Cancelar" levam. */
 export const INSPECTIONS_HREF = "/inspections";
@@ -28,10 +37,10 @@ export function placesOf(
 
 /**
  * As vistorias do banco local para a lista de /inspections, com o imóvel, o cliente e o estado de sync. A linha abre a
- * tela de campo, ou o ConflictResolver quando a vistoria está em conflito.
+ * tela de campo, ou o ConflictResolver quando a vistoria está em conflito. `remove` põe a exclusão na fila (ADR 0039).
  */
 export function useInspections() {
-  const { ready, inspections, properties, clients, drafts, states } = useLocalStore();
+  const { store, ready, inspections, properties, clients, drafts, states } = useLocalStore();
   const rows = inspectionRows(inspections, drafts, states, placesOf(properties, clients));
   return {
     ready,
@@ -41,6 +50,10 @@ export function useInspections() {
     count: `${rows.length} ${rows.length === 1 ? "vistoria" : "vistorias"}`,
     rows: rows.map((row) => ({
       id: row.id,
+      deletable: isDeletable(row),
+      deleting: row.sync === "excluindo",
+      deleteSubject: deletionSubject(row.address ?? "Imóvel fora deste aparelho", row.kindLabel),
+      unsent: hasUnsent(row.sync),
       // Em conflito, a linha abre o ConflictResolver (Figma SyncBadge 25:1053).
       href: row.sync === "conflito" ? conflictHref(row.id) : inspectionHref(row.id),
       address: row.address ?? "Imóvel fora deste aparelho",
@@ -52,5 +65,8 @@ export function useInspections() {
       startedMeta: startedLabel(row.startedAt),
       sync: row.sync,
     })),
+    remove(id: string) {
+      if (store) void deleteInspection(store, id);
+    },
   };
 }

@@ -1,4 +1,5 @@
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ClientRecord } from "@/features/clients/models/client";
@@ -25,6 +26,15 @@ const local = vi.hoisted(() => ({ value: {} as typeof EMPTY }));
 
 vi.mock("@/features/local-store/hooks/useLocalStore", () => ({
   useLocalStore: () => local.value,
+}));
+
+const deleteInspection = vi.hoisted(() =>
+  vi.fn<(...args: unknown[]) => Promise<void>>(async () => {}),
+);
+
+vi.mock("@/features/inspections/services/inspections.sync", async (original) => ({
+  ...(await original<object>()),
+  deleteInspection,
 }));
 
 const horizonte: ClientRecord = {
@@ -70,6 +80,7 @@ function open(over: Partial<typeof EMPTY> = {}) {
 
 afterEach(() => {
   local.value = EMPTY;
+  deleteInspection.mockClear();
 });
 
 describe("InspectionsScreen", () => {
@@ -115,6 +126,7 @@ describe("InspectionsScreen", () => {
         "Em andamento",
         "19/10/2026",
         "Salvo no aparelho",
+        "",
       ],
       [
         "Rua das Flores, 120 · ap 32",
@@ -123,8 +135,12 @@ describe("InspectionsScreen", () => {
         "Concluída",
         "20/10/2026",
         "",
+        "",
       ],
     ]);
+    // Só a em andamento tem o "···" (estado 4 do #107).
+    expect(within(rows[0]!).getByRole("button", { name: "Mais ações" })).toBeDefined();
+    expect(within(rows[1]!).queryByRole("button", { name: "Mais ações" })).toBeNull();
     expect(within(rows[0]!).getByRole("link").getAttribute("href")).toBe("/inspections/edit?id=i1");
     expect(screen.getByText("2 vistorias")).toBeDefined();
 
@@ -179,5 +195,57 @@ describe("InspectionsScreen", () => {
     expect(mobile?.textContent).toContain("Conflito");
     expect(mobile?.getAttribute("href")).toBe("/inspections/conflict?id=i1");
     expect(other?.getAttribute("href")).toBe("/inspections/edit?id=i0");
+  });
+
+  it("··· → Excluir vistoria → confirmar: a exclusão vai para a fila; Cancelar não faz nada", async () => {
+    const user = userEvent.setup();
+    open({ inspections: [inspection("i1")], states: new Map([["i1", "local"]]) });
+    const row = within(screen.getByRole("table")).getAllByRole("row")[1]!;
+
+    await user.click(within(row).getByRole("button", { name: "Mais ações" }));
+    await user.click(screen.getByRole("menuitem", { name: "Excluir vistoria" }));
+    const dialog = screen.getByRole("dialog", { name: "Excluir esta vistoria?" });
+    // Com alteração na fila, o Dialog avisa que ela é descartada (estado 3).
+    expect(dialog.textContent).toContain(
+      "Rua das Flores, 120 · ap 32 · Vistoria de entrada. Ela sai deste aparelho e do servidor, e não dá para desfazer.",
+    );
+    expect(dialog.textContent).toContain(
+      "As alterações ainda não enviadas também são descartadas.",
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Cancelar" }));
+    expect(deleteInspection).not.toHaveBeenCalled();
+
+    await user.click(within(row).getByRole("button", { name: "Mais ações" }));
+    await user.click(screen.getByRole("menuitem", { name: "Excluir vistoria" }));
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Excluir vistoria" }),
+    );
+
+    expect(deleteInspection).toHaveBeenCalledWith(local.value.store, "i1");
+  });
+
+  it("sincronizada: o Dialog não fala de alteração não enviada", async () => {
+    const user = userEvent.setup();
+    open({ inspections: [inspection("i1")] });
+
+    await user.click(screen.getByRole("button", { name: "Mais ações" }));
+    await user.click(screen.getByRole("menuitem", { name: "Excluir vistoria" }));
+
+    expect(screen.getByRole("dialog").textContent).not.toContain("não enviadas");
+  });
+
+  it("com a exclusão na fila: a linha fica apagada, com 'Excluindo' e sem o ···, e ainda abre a tela de campo", () => {
+    open({
+      inspections: [inspection("i1", { deleting: true })],
+      states: new Map([["i1", "enviando"]]),
+    });
+
+    const row = within(screen.getByRole("table")).getAllByRole("row")[1]!;
+    expect(row.className).toContain("text-muted-foreground");
+    expect(within(row).getByText("Excluindo")).toBeDefined();
+    expect(within(row).queryByRole("button", { name: "Mais ações" })).toBeNull();
+    expect(within(row).getByRole("link").getAttribute("href")).toBe("/inspections/edit?id=i1");
+    const mobile = within(screen.getByRole("list")).getByRole("link");
+    expect(mobile.textContent).toContain("Excluindo");
   });
 });

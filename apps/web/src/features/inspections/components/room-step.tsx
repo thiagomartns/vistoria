@@ -1,7 +1,7 @@
 import { Alert, AlertDescription, AlertTitle } from "@sanjou/ui/alert";
 import { Form, FormControl, FormField, FormItem, FormMessage } from "@sanjou/ui/form";
 import { Textarea } from "@sanjou/ui/textarea";
-import { CircleAlert, ListChecks } from "lucide-react";
+import { CircleAlert, ListChecks, Trash2 } from "lucide-react";
 import type { UseFormReturn } from "react-hook-form";
 
 import { ConflictNotice } from "@/shared/components/conflict-notice";
@@ -13,7 +13,8 @@ import { ToggleGroup, ToggleGroupItem } from "@/shared/components/toggle-group";
 import type { InspectionFormValues, ItemFormValues } from "../schemas/inspection.schemas";
 
 // Um ambiente da tela de campo (Figma 43:1751): o nome e o progresso, os itens com a condição em chips e a observação
-// sob demanda, e no topo o aviso de recusa do servidor (55:5920) ou o de conflito, com "Resolver conflito" (55:5132). Ambiente sem itens mostra o EmptyState (52:4071),
+// sob demanda, e no topo o aviso de recusa do servidor (55:5920), o de conflito, com "Resolver conflito" (55:5132), ou o
+// da exclusão na fila (estado 6 do #107). Ambiente sem itens mostra o EmptyState (52:4071),
 // sem ação: incluir itens chega com o editor de roteiros (M5). O `form` vem do hook da página.
 
 export interface RoomItemView {
@@ -41,6 +42,8 @@ type RoomStepProps = {
   rejection: { title: string; description: string } | null;
   /** Estado 5: a vistoria mudou em outro aparelho; o botão abre o ConflictResolver. */
   conflict?: { title: string; description: string; href: string } | null;
+  /** A exclusão está na fila: a tela é só leitura. */
+  deletion?: { title: string; description: string } | null;
 };
 
 export function RoomStep({
@@ -54,6 +57,7 @@ export function RoomStep({
   readOnly,
   rejection,
   conflict,
+  deletion,
 }: RoomStepProps) {
   return (
     <Form {...form}>
@@ -69,6 +73,13 @@ export function RoomStep({
           </Alert>
         ) : null}
         {conflict ? <ConflictNotice {...conflict} className="mb-2" /> : null}
+        {deletion ? (
+          <Alert variant="neutral" role="status" className="mb-2">
+            <Trash2 aria-hidden="true" />
+            <AlertTitle>{deletion.title}</AlertTitle>
+            <AlertDescription>{deletion.description}</AlertDescription>
+          </Alert>
+        ) : null}
         <div className="flex flex-col gap-0.5">
           <h2 id="ambiente" className="text-lg font-semibold text-foreground">
             {name}

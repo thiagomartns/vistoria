@@ -19,9 +19,15 @@ import {
   roomStepSchema,
 } from "../schemas/inspection.schemas";
 import { conflictHref, inspectionConflictOf } from "../services/inspections.resolve";
-import { saveInspection, saveInspectionDraft } from "../services/inspections.sync";
 import {
+  deleteInspection,
+  saveInspection,
+  saveInspectionDraft,
+} from "../services/inspections.sync";
+import {
+  INSPECTION_KINDS,
   conflictPlaces,
+  deletionSubject,
   fieldHeader,
   pendingItemIds,
   roomViews,
@@ -40,6 +46,10 @@ export const REJECTED_TITLE = "O servidor recusou esta vistoria";
 export const CONFLICT_TITLE = "Esta vistoria foi alterada em outro aparelho";
 export const CONFLICT_DESCRIPTION =
   "Suas alterações estão salvas neste aparelho. Escolha o que fica em cada campo para enviar de novo.";
+
+/** O aviso do estado 6 do #107: a exclusão está na fila, e a tela fica só leitura. */
+export const DELETION_TITLE = "Exclusão aguardando envio";
+export const DELETION_DESCRIPTION = "Esta vistoria será excluída quando a conexão voltar.";
 
 type Values = Omit<InspectionRecord, "version">;
 type ItemPath = FieldPath<InspectionFormValues>;
@@ -97,6 +107,8 @@ function initialStep(draft: DraftRecord | undefined, rooms: number): number {
  * - Fica só leitura enquanto o envio da vistoria está no ar.
  * - Em conflito (estado 5), segue editável, mas o que a pessoa marca fica só no rascunho: o envio sai pelo
  *   ConflictResolver, que parte dele. Enfileirar levaria a versão de antes do conflito, e o 412 voltaria a cada mudança.
+ * - Excluir (`remove`) põe a exclusão na fila e para de gravar e de enfileirar, inclusive no flush de sair da tela: um
+ *   `PUT` depois do `DELETE` não pode sair (ADR 0039). Com a exclusão na fila, a tela fica só leitura (estado 6 do #107).
  */
 export function useInspectionDraft(id: string | null) {
   const { store, ready, inspections, properties, clients, drafts, states, bases } = useLocalStore();
@@ -109,6 +121,9 @@ export function useInspectionDraft(id: string | null) {
   const source = (draft?.data as InspectionRecord | undefined) ?? record;
   const status = !ready ? "loading" : !id || !source ? "missing" : "found";
   const inConflict = draft?.status === "conflict";
+  const deleting = record?.deleting === true;
+  /** A pessoa confirmou a exclusão nesta tela: nada mais vai para o rascunho nem para a fila. */
+  const removed = useRef(false);
 
   const form = useForm<InspectionFormValues>({ defaultValues: { rooms: [] } });
   const watched = useWatch({ control: form.control }) as InspectionFormValues;
@@ -190,7 +205,7 @@ export function useInspectionDraft(id: string | null) {
    * apagaria os erros antes da correção.
    */
   function persist(values: InspectionFormValues, at: number, enqueue: boolean) {
-    if (!store || !hydrated || !source) return;
+    if (!store || !hydrated || !source || removed.current) return;
     const next = withoutVersion(recordWith(source, values));
     saveInspectionDraft(store, next, at);
     const untouchedRejection = rejected !== null && JSON.stringify(values) === openedWith.current;
@@ -276,8 +291,9 @@ export function useInspectionDraft(id: string | null) {
 
   const place = source ? placesOf(properties, clients).get(source.propertyId) : undefined;
   const header = source ? fieldHeader(source, place) : undefined;
-  const rowSync: SyncBadgeState | undefined =
-    draft?.status === "rejected"
+  const rowSync: SyncBadgeState | undefined = deleting
+    ? "excluindo"
+    : draft?.status === "rejected"
       ? "rejeitado"
       : draft?.status === "conflict"
         ? "conflito"
@@ -322,8 +338,23 @@ export function useInspectionDraft(id: string | null) {
       sync: itemSync(item.id, index),
     })),
     room: rooms[step],
-    /** Envio da vistoria no ar: o formulário fica só leitura (ADR 0021). */
-    readOnly: sending,
+    /** Envio da vistoria no ar (ADR 0021) ou exclusão na fila: o formulário fica só leitura. */
+    readOnly: sending || deleting,
+    /** Estado 6 do #107: a exclusão está na fila. */
+    deletion: deleting ? { title: DELETION_TITLE, description: DELETION_DESCRIPTION } : null,
+    /** O "···" com "Excluir vistoria": só em andamento e uma vez só. */
+    deletable: source?.status === "inProgress" && !deleting,
+    /** O que o Dialog de exclusão nomeia, e se ele avisa que há alteração não enviada (estado 3 do #107). */
+    deleteSubject: header
+      ? deletionSubject(header.title, source ? INSPECTION_KINDS[source.kind] : null)
+      : "",
+    unsent: (rowSync !== undefined && rowSync !== "excluindo") || isDirty,
+    /** Põe a exclusão na fila e descarta o que não foi enviado. */
+    async remove() {
+      if (!store || !id) return;
+      removed.current = true;
+      await deleteInspection(store, id);
+    },
     rejection,
     /** Estado 5: o aviso e o caminho para o ConflictResolver (o `deleted` chega na #109). */
     conflict:
