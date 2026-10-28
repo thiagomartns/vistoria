@@ -7,6 +7,7 @@ import {
   type DraftRecord,
   type DraftsCollection,
   clearDraft,
+  keepConflictData,
   needsAction,
   rebaseDraft,
   recordConflict,
@@ -194,5 +195,39 @@ describe("workingCopy", () => {
     expect(workingCopy(fake, "i1")).toEqual({ id: "i1", v: "meu" });
     expect(workingCopy(fake, "c1")).toBeUndefined();
     expect(workingCopy(fake, "x")).toBeUndefined();
+  });
+});
+
+describe("keepConflictData", () => {
+  const conflicted = (data: Record<string, unknown>): DraftRecord => ({
+    id: "c1",
+    entity: "client",
+    data,
+    status: "conflict",
+    errors: {},
+    conflict: { current: { id: "c1", name: "Alfa Negócios", version: "B" }, collisions: [] },
+    updatedAt: now.toISOString(),
+  });
+
+  it("o formulário salvo em conflito fica no rascunho, que segue em conflito com o current", () => {
+    const { drafts, fake } = collection();
+    fake.insert(conflicted({ id: "c1", name: "Alfa Imóveis", version: "A" }));
+
+    keepConflictData(fake, "c1", { id: "c1", name: "Alfa Corretora", version: "A" }, later);
+
+    expect(drafts.get("c1")).toMatchObject({
+      status: "conflict",
+      data: { name: "Alfa Corretora" },
+      conflict: { current: { name: "Alfa Negócios" } },
+      updatedAt: later.toISOString(),
+    });
+  });
+
+  it("sem rascunho em conflito, não grava nada", () => {
+    const { drafts, fake } = collection();
+
+    keepConflictData(fake, "c1", { id: "c1", name: "Alfa" }, later);
+
+    expect(drafts.size).toBe(0);
   });
 });

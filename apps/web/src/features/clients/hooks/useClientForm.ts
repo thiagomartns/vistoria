@@ -4,6 +4,7 @@ import { type FieldErrors, useForm, useFormState } from "react-hook-form";
 
 import { useLocalStore } from "@/features/local-store/hooks/useLocalStore";
 import type { DraftRecord } from "@/shared/sync/drafts";
+import { flatConflictOf } from "@/shared/sync/flat-conflict";
 
 import {
   CLIENT_FIELDS,
@@ -13,13 +14,18 @@ import {
   clientFormSchema,
   formatDocument,
 } from "../schemas/client.schemas";
-import { saveClient } from "../services/clients.sync";
+import { clientConflictHref, saveClient } from "../services/clients.sync";
 import { type ClientRow, clientRowOf } from "../services/clients.view";
 
 /** Para onde o formulário volta: a lista. */
 export const CLIENTS_HREF = "/clients";
 
 /** Erro do servidor numa chave que o formulário não tem. */
+/** O aviso do rascunho em conflito, acima do formulário (como o estado 5 da tela de campo, Figma 55:5132). */
+export const CONFLICT_TITLE = "Este cliente foi alterado em outro aparelho";
+export const CONFLICT_DESCRIPTION =
+  "Suas alterações estão salvas neste aparelho. Escolha o que fica em cada campo para enviar de novo.";
+
 export const SERVER_REJECTED = "O servidor recusou este cadastro. Corrija e salve de novo.";
 
 const EMPTY: ClientFormValues = { name: "", document: "", email: "", phone: "" };
@@ -53,7 +59,8 @@ function fieldErrorsOf(draft: DraftRecord): FieldErrors<ClientFormValues> {
 /**
  * O formulário de /clients/edit: sem `id` cria, com `id` edita o client do banco local (ou o rascunho que o servidor
  * recusou, com os erros por campo). Salvar grava no banco local, enfileira o `PUT` e volta para a lista; só um
- * formulário sujo (ou com recusa a corrigir) vai para a fila (ADR 0028).
+ * formulário sujo (ou com recusa a corrigir) vai para a fila (ADR 0028). Com o rascunho em conflito, salvar fica só
+ * nele e abre o ConflictResolver.
  */
 export function useClientForm(id: string | null) {
   const router = useRouter();
@@ -75,6 +82,9 @@ export function useClientForm(id: string | null) {
   });
   const { isDirty } = useFormState({ control: form.control });
 
+  // Em conflito, salvar guarda o formulário só no rascunho (saveClient) e leva ao ConflictResolver, que parte dele.
+  const conflictHref = id && flatConflictOf(draft) ? clientConflictHref(id) : null;
+
   const onSubmit = form.handleSubmit((values) => {
     if (store && (isDirty || draft)) {
       saveClient(store, {
@@ -85,7 +95,7 @@ export function useClientForm(id: string | null) {
         phone: values.phone ?? null,
       });
     }
-    router.push(CLIENTS_HREF);
+    router.push(conflictHref ?? CLIENTS_HREF);
   });
 
   return {
@@ -95,6 +105,10 @@ export function useClientForm(id: string | null) {
     sync: status === "found" ? row?.sync : undefined,
     form,
     onSubmit,
+    /** O rascunho em conflito: o aviso e o caminho para o ConflictResolver. */
+    conflict: conflictHref
+      ? { title: CONFLICT_TITLE, description: CONFLICT_DESCRIPTION, href: conflictHref }
+      : null,
     /** Recusa do servidor numa chave que o formulário não tem. */
     formError:
       draft && Object.keys(draft.errors).some((key) => !isField(key)) ? SERVER_REJECTED : null,

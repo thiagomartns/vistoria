@@ -45,6 +45,7 @@ vi.mock("@/features/local-store/hooks/useLocalStore", () => ({
 
 vi.mock("@/features/clients/services/clients.sync", () => ({
   saveClient: vi.fn<() => string>(() => "novo-id"),
+  clientConflictHref: (id: string) => `/clients/conflict?id=${id}`,
 }));
 
 const maria: ClientRecord = {
@@ -224,6 +225,59 @@ describe("ClientEditScreen", () => {
       expect(screen.getByRole("alert").textContent).toBe(
         "O servidor recusou este cadastro. Corrija e salve de novo.",
       );
+    });
+  });
+
+  describe("conflito (412 com colisão)", () => {
+    const conflicted: DraftRecord = {
+      id: "c2",
+      entity: "client",
+      data: { ...maria, phone: "(11) 91111-2222" },
+      status: "conflict",
+      errors: {},
+      conflict: {
+        current: { ...maria, version: "AAAAAAAAB9U=", phone: "(11) 93333-4444" },
+        base: maria,
+        collisions: [],
+      },
+      updatedAt: "2026-10-27T18:02:00.000Z",
+    };
+
+    it("o aviso e 'Resolver conflito' acima do formulário, com o que foi salvo aqui", () => {
+      open("c2", { clients: [maria], drafts: [conflicted] });
+
+      expect(screen.getByText("Este cliente foi alterado em outro aparelho")).toBeDefined();
+      expect(screen.getByRole("link", { name: "Resolver conflito" }).getAttribute("href")).toBe(
+        "/clients/conflict?id=c2",
+      );
+      expect(within(header()).getByText("Conflito")).toBeDefined();
+      expect(field("Telefone").value).toBe("(11) 91111-2222");
+    });
+
+    it("salvar leva ao ConflictResolver, não à lista", async () => {
+      const user = userEvent.setup();
+      open("c2", { clients: [maria], drafts: [conflicted] });
+
+      await user.clear(field("Telefone"));
+      await user.type(field("Telefone"), "(11) 95555-6666");
+      await user.click(screen.getByRole("button", { name: "Salvar" }));
+
+      await vi.waitFor(() => expect(saveClient).toHaveBeenCalledOnce());
+      expect(vi.mocked(saveClient).mock.calls[0]?.[1]).toMatchObject({ id: "c2", phone: "(11) 95555-6666" });
+      expect(navigation.push).toHaveBeenCalledWith("/clients/conflict?id=c2");
+    });
+
+    it("conflito sem current (nada a escolher): sem o aviso, e salvar volta para a lista", async () => {
+      const user = userEvent.setup();
+      open("c2", {
+        clients: [maria],
+        drafts: [{ ...conflicted, conflict: { current: undefined, collisions: [] } }],
+      });
+
+      expect(screen.queryByRole("link", { name: "Resolver conflito" })).toBeNull();
+      await user.click(screen.getByRole("button", { name: "Salvar" }));
+
+      await vi.waitFor(() => expect(navigation.push).toHaveBeenCalledWith("/clients"));
     });
   });
 

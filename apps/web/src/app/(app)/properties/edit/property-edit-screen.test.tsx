@@ -45,6 +45,7 @@ vi.mock("@/features/local-store/hooks/useLocalStore", () => ({
 
 vi.mock("@/features/properties/services/properties.sync", () => ({
   saveProperty: vi.fn<() => string>(() => "novo-id"),
+  propertyConflictHref: (id: string) => `/properties/conflict?id=${id}`,
 }));
 
 const client = (id: string, name: string): ClientRecord => ({
@@ -298,6 +299,45 @@ describe("PropertyEditScreen", () => {
       open("p1", { properties: [flores], drafts: [rejected({ "": ["Corpo ilegível."] })] });
 
       expect(screen.getByRole("alert").textContent).toBe("O servidor recusou este cadastro. Corrija e salve de novo.");
+    });
+  });
+
+  describe("conflito (412 com colisão)", () => {
+    const conflicted: DraftRecord = {
+      id: "p1",
+      entity: "property",
+      data: { ...flores, number: "121" },
+      status: "conflict",
+      errors: {},
+      conflict: {
+        current: { ...flores, version: "AAAAAAAAB9U=", number: "122" },
+        base: flores,
+        collisions: [],
+      },
+      updatedAt: "2026-10-27T18:02:00.000Z",
+    };
+
+    it("o aviso e 'Resolver conflito' acima do formulário, com o que foi salvo aqui", () => {
+      open("p1", { properties: [flores], drafts: [conflicted] });
+
+      expect(screen.getByText("Este imóvel foi alterado em outro aparelho")).toBeDefined();
+      expect(screen.getByRole("link", { name: "Resolver conflito" }).getAttribute("href")).toBe(
+        "/properties/conflict?id=p1",
+      );
+      expect(field("Número").value).toBe("121");
+    });
+
+    it("salvar leva ao ConflictResolver, não à lista", async () => {
+      const user = userEvent.setup();
+      open("p1", { properties: [flores], drafts: [conflicted] });
+
+      await user.clear(field("Número"));
+      await user.type(field("Número"), "122");
+      await user.click(screen.getByRole("button", { name: "Salvar" }));
+
+      await vi.waitFor(() => expect(saveProperty).toHaveBeenCalledOnce());
+      expect(vi.mocked(saveProperty).mock.calls[0]?.[1]).toMatchObject({ id: "p1", number: "122" });
+      expect(navigation.push).toHaveBeenCalledWith("/properties/conflict?id=p1");
     });
   });
 

@@ -4,6 +4,7 @@ import { type FieldErrors, useForm, useFormState } from "react-hook-form";
 
 import { useLocalStore } from "@/features/local-store/hooks/useLocalStore";
 import type { DraftRecord } from "@/shared/sync/drafts";
+import { flatConflictOf } from "@/shared/sync/flat-conflict";
 
 import {
   PROPERTY_FIELDS,
@@ -14,13 +15,18 @@ import {
   propertyErrors,
   propertyFormSchema,
 } from "../schemas/property.schemas";
-import { saveProperty } from "../services/properties.sync";
+import { propertyConflictHref, saveProperty } from "../services/properties.sync";
 import { type PropertyRow, clientOptionsOf, propertyRowOf } from "../services/properties.view";
 
 /** Para onde o formulário volta: a lista. */
 export const PROPERTIES_HREF = "/properties";
 
 /** Erro do servidor numa chave que o formulário não tem. */
+/** O aviso do rascunho em conflito, acima do formulário (como o estado 5 da tela de campo, Figma 55:5132). */
+export const CONFLICT_TITLE = "Este imóvel foi alterado em outro aparelho";
+export const CONFLICT_DESCRIPTION =
+  "Suas alterações estão salvas neste aparelho. Escolha o que fica em cada campo para enviar de novo.";
+
 export const SERVER_REJECTED = "O servidor recusou este cadastro. Corrija e salve de novo.";
 
 const EMPTY: PropertyFormValues = {
@@ -72,6 +78,7 @@ function fieldErrorsOf(draft: DraftRecord): FieldErrors<PropertyFormValues> {
  * O formulário de /properties/edit: sem `id` cria, com `id` edita o imóvel do banco local (ou o rascunho que o
  * servidor recusou, com os erros por campo). O cliente se escolhe entre os do aparelho. Salvar grava no banco local,
  * enfileira o `PUT` e volta para a lista; só um formulário sujo (ou com recusa a corrigir) vai para a fila (ADR 0028).
+ * Com o rascunho em conflito, salvar fica só nele e abre o ConflictResolver.
  */
 export function usePropertyForm(id: string | null) {
   const router = useRouter();
@@ -94,11 +101,14 @@ export function usePropertyForm(id: string | null) {
   });
   const { isDirty } = useFormState({ control: form.control });
 
+  // Em conflito, salvar guarda o formulário só no rascunho (saveProperty) e leva ao ConflictResolver, que parte dele.
+  const conflictHref = id && flatConflictOf(draft) ? propertyConflictHref(id) : null;
+
   const onSubmit = form.handleSubmit((values) => {
     if (store && (isDirty || draft)) {
       saveProperty(store, { id: id ?? undefined, ...values });
     }
-    router.push(PROPERTIES_HREF);
+    router.push(conflictHref ?? PROPERTIES_HREF);
   });
 
   return {
@@ -110,6 +120,10 @@ export function usePropertyForm(id: string | null) {
     onSubmit,
     clientOptions: clientOptionsOf(clients),
     typeOptions: TYPE_OPTIONS,
+    /** O rascunho em conflito: o aviso e o caminho para o ConflictResolver. */
+    conflict: conflictHref
+      ? { title: CONFLICT_TITLE, description: CONFLICT_DESCRIPTION, href: conflictHref }
+      : null,
     /** Recusa do servidor numa chave que o formulário não tem. */
     formError:
       draft && Object.keys(draft.errors).some((key) => !isField(key)) ? SERVER_REJECTED : null,

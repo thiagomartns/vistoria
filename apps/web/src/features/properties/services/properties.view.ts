@@ -1,9 +1,10 @@
 import { byText, fold } from "@/shared/search";
 import { type DraftRecord, type DraftSyncState, draftSyncState } from "@/shared/sync/drafts";
+import { type FlatConflict, type FlatConflictGroup, flatConflictGroups } from "@/shared/sync/flat-conflict";
 import type { RecordSyncState } from "@/shared/sync/sync-view";
 
 import { PROPERTY_ENTITY, type PropertyRecord, type PropertyType } from "../models/property";
-import { PROPERTY_TYPES } from "../schemas/property.schemas";
+import { PROPERTY_TYPES, formatZipCode } from "../schemas/property.schemas";
 
 // Do banco local para o que a lista de imóveis e o cabeçalho do registro mostram. Função pura: cada estado cabe num
 // teste, e os componentes recebem só o resultado.
@@ -150,4 +151,37 @@ export function clientOptionsOf(clients: readonly { id: string; name: string }[]
   return clients
     .map((client) => ({ value: client.id, label: client.name }))
     .toSorted((a, b) => byText(a.label, b.label));
+}
+
+/**
+ * Os campos em disputa de um imóvel, num grupo só ("Imóvel"), com os nomes e a ordem do formulário: o cliente pelo
+ * nome, o tipo por extenso e o CEP com a máscara.
+ */
+export function propertyConflictGroups(
+  conflict: FlatConflict<PropertyRecord>,
+  clientNames: ReadonlyMap<string, string>,
+): FlatConflictGroup[] {
+  return flatConflictGroups(conflict, {
+    title: "Imóvel",
+    labels: {
+      clientId: "Cliente",
+      type: "Tipo",
+      zipCode: "CEP",
+      street: "Rua",
+      number: "Número",
+      complement: "Complemento",
+      district: "Bairro",
+      city: "Cidade",
+      state: "UF",
+      notes: "Observações",
+    },
+    format: (field, value) => {
+      const shown = String(value);
+      if (field === "clientId") return clientNames.get(shown) ?? "Cliente fora deste aparelho";
+      if (field === "type") return isType(value) ? PROPERTY_TYPES[value] : shown;
+      if (field === "zipCode") return formatZipCode(shown);
+      return shown;
+    },
+    empty: { complement: "Sem complemento", notes: "Sem observação" },
+  });
 }
