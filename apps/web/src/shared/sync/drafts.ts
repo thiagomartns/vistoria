@@ -46,11 +46,18 @@ export type DraftsCollection = ReturnType<typeof createDraftsCollection>;
 
 type SentRecord = { id: string } & Record<string, unknown>;
 
-/** O que o ConflictResolver precisa para mostrar só o que colidiu. */
+/**
+ * O que o ConflictResolver precisa. Sem `type`, é o conflito de edição: só o que colidiu. `deleted` é um `PUT` num
+ * registro excluído em outro aparelho (recriar ou descartar); `removal` é um `DELETE` num registro alterado depois
+ * que a pessoa o abriu ("Excluir mesmo assim?"). ADR 0040.
+ */
 export interface ConflictDetail {
+  type?: "deleted" | "removal";
   current: unknown;
   base?: unknown;
   collisions: unknown[];
+  /** Só em `deleted`: quando o servidor excluiu o registro. */
+  deletedAt?: string;
 }
 
 /** Guarda o registro recusado com os erros do `validation`. Substitui um rascunho anterior do mesmo registro. */
@@ -97,6 +104,10 @@ export function recordConflict(
 /** O `current` que veio na falha (ausente em `deleted`). */
 export const currentOf = (failure: ApiFailure): unknown =>
   failure.kind === "problem" ? failure.problem.current : undefined;
+
+/** O `deletedAt` de um `deleted`: quando o servidor excluiu o registro. */
+export const deletedAtOf = (failure: ApiFailure): string | undefined =>
+  failure.kind === "problem" ? failure.problem.deletedAt : undefined;
 
 /** O rascunho do formulário profundo, que guarda o passo e fica até concluir. */
 const keepsStep = (draft: DraftRecord | undefined): draft is DraftRecord & { step: number } =>

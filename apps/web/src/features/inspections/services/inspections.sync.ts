@@ -6,7 +6,7 @@ import {
 import type { Client } from "@/shared/api/generated/client";
 import { type DraftsCollection, clearDraft, saveDraftValues } from "@/shared/sync/drafts";
 import { type Outbox, type OutboxMutationFn, enqueue } from "@/shared/sync/outbox";
-import { enqueueRemoval, removeMutation } from "@/shared/sync/remove";
+import { discardDeleted, enqueueRemoval, keepServer, removeMutation } from "@/shared/sync/remove";
 import { registerConflictView, registerRecordLabel } from "@/shared/sync/sync-view";
 import { type MergeStrategy, resolveConflict, upsertMutation } from "@/shared/sync/upsert";
 
@@ -14,7 +14,7 @@ import { INSPECTION_ENTITY, type InspectionRecord } from "../models/inspection";
 import type { InspectionsCollection } from "./inspections.collection";
 import { inspectionRecordOf } from "./inspections.mappers";
 import { mergeInspection } from "./inspections.merge";
-import { conflictHref } from "./inspections.resolve";
+import { conflictHref, recreatedInspection } from "./inspections.resolve";
 
 export const UPSERT_INSPECTION = "upsertInspection";
 export const DELETE_INSPECTION = "deleteInspection";
@@ -61,7 +61,8 @@ export function upsertInspectionMutation(
 
 /**
  * Envia a exclusão como `DELETE /api/v1/inspections/{id}` (`removeMutation`), com `If-Match` da versão confirmada; a
- * vistoria que o servidor nunca aceitou sai do aparelho sem requisição (ADR 0039).
+ * vistoria que o servidor nunca aceitou sai do aparelho sem requisição (ADR 0039). Alterada em outro aparelho, ela
+ * fica com o `current` e pede "Excluir mesmo assim?" (ADR 0040).
  */
 export function deleteInspectionMutation(
   inspections: InspectionsCollection,
@@ -71,6 +72,8 @@ export function deleteInspectionMutation(
   return removeMutation<InspectionRecord>({
     store: inspections,
     drafts,
+    entity: INSPECTION_ENTITY,
+    shape: inspectionMerge.shape,
     send: (request) => sendDelete({ client, ...request }),
   });
 }
@@ -163,4 +166,44 @@ export function resolveInspectionConflict(
     server,
     resolved,
   });
+}
+
+type InspectionStore = {
+  inspections: InspectionsCollection;
+  drafts: DraftsCollection;
+  outbox: Outbox;
+};
+
+/**
+ * "Recriar vistoria" (ConflictResolver tipo excluído, ADR 0040): a vistoria do rascunho, o mais novo do aparelho, volta
+ * como vistoria nova, com ids novos na raiz, nos ambientes e nos itens, num `PUT` sem `If-Match`. O rascunho com o passo
+ * passa para ela, e a excluída sai do aparelho. Devolve o id novo.
+ */
+export async function recreateInspection(store: InspectionStore, id: string): Promise<string> {
+  const draft = store.drafts.get(id);
+  const local = (draft?.data ?? store.inspections.get(id)) as InspectionRecord | undefined;
+  if (!local) return id;
+  const { version: _version, ...values } = recreatedInspection(local);
+  saveInspection(store, values);
+  if (draft?.step !== undefined) {
+    saveDraftValues(store.drafts, INSPECTION_ENTITY, values.id, values, draft.step);
+  }
+  await discardDeleted({ store: store.inspections, drafts: store.drafts, id });
+  return values.id;
+}
+
+/** "Descartar alterações" (tipo excluído): a vistoria e o rascunho saem do aparelho, sem requisição. */
+export function discardDeletedInspection(
+  { inspections, drafts }: Pick<InspectionStore, "inspections" | "drafts">,
+  id: string,
+): Promise<void> {
+  return discardDeleted({ store: inspections, drafts, id });
+}
+
+/**
+ * "Cancelar" no "Excluir mesmo assim?" (tipo exclusão alterada): a exclusão já saiu da fila e a vistoria já está como
+ * o servidor a tem; só o conflito sai, e ela volta a ser editável.
+ */
+export function keepInspection({ drafts }: Pick<InspectionStore, "drafts">, id: string): void {
+  keepServer(drafts, id);
 }

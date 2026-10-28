@@ -207,6 +207,13 @@ describe("conflictItems: rascunhos em conflito em 'Ação necessária'", () => {
     ]);
   });
 
+  it("o detalhe vem do tipo do conflito: excluída em outro aparelho e alterada antes da exclusão", () => {
+    const detail = (type: "deleted" | "removal") =>
+      conflictItems([draft({ conflict: { type, current: undefined, collisions: [] } })])[0]?.detail;
+    expect(detail("deleted")).toBe("Excluída em outro aparelho");
+    expect(detail("removal")).toBe("Alterada antes da exclusão");
+  });
+
   it("entram em 'Ação necessária' antes da fila e fazem o SyncStatus pedir ação", () => {
     const actions = conflictItems([draft({})]);
     const view = describeSync(snapshot({ entries: [entry()] }), now, actions);

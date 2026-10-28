@@ -1,15 +1,30 @@
 import type { InspectionDto } from "@/shared/api/generated";
 import type { DraftRecord } from "@/shared/sync/drafts";
+import { newId } from "@/shared/sync/ids";
+import { sameValue } from "@/shared/sync/merge";
 
 import type { InspectionRecord, ItemRecord, RoomRecord } from "../models/inspection";
 import { inspectionRecordOf } from "./inspections.mappers";
 import { type InspectionCollision, mergeInspection } from "./inspections.merge";
 
 // A decisão da pessoa no ConflictResolver (frontend.md, "Conflito"): o merge refeito a partir do rascunho em conflito
-// e as escolhas, "meu" ou "servidor", aplicadas por cima. Funções puras; o envio fica em inspections.sync.ts.
+// e as escolhas, "meu" ou "servidor", aplicadas por cima; e, nos tipos excluído e exclusão alterada (ADR 0040), o que
+// a tela mostra e a vistoria recriada. Funções puras; o envio fica em inspections.sync.ts.
 
 /** O ConflictResolver de uma vistoria. */
 export const conflictHref = (id: string) => `/inspections/conflict?id=${encodeURIComponent(id)}`;
+
+/**
+ * O tipo do conflito de um rascunho: `edit` (os dois lados mudaram, #105), `deleted` (o `PUT` achou a vistoria excluída
+ * em outro aparelho) ou `removal` (o `DELETE` achou a vistoria alterada depois que a pessoa a abriu). Sem conflito,
+ * `undefined`.
+ */
+export type ConflictKind = "edit" | "deleted" | "removal";
+
+export function conflictKindOf(draft: DraftRecord | undefined): ConflictKind | undefined {
+  if (draft?.status !== "conflict") return undefined;
+  return draft.conflict?.type ?? "edit";
+}
 
 /** De que lado fica o valor de um campo em disputa. */
 export type ConflictChoice = "meu" | "servidor";
@@ -36,13 +51,13 @@ const shaped = (record: Record<string, unknown>): InspectionRecord =>
 
 /**
  * O conflito de uma vistoria, refeito na hora: base = a `serverShadow` guardada, local = o rascunho (o mais novo do
- * aparelho, não o de quando o conflito chegou) e servidor = o `current`. Sem rascunho em conflito ou sem `current`
- * (`deleted`, #109), não há o que escolher aqui.
+ * aparelho, não o de quando o conflito chegou) e servidor = o `current`. Sem rascunho em conflito de edição ou sem
+ * `current`, não há o que escolher aqui.
  */
 export function inspectionConflictOf(
   draft: DraftRecord | undefined,
 ): InspectionConflict | undefined {
-  const current = draft?.status === "conflict" ? draft.conflict?.current : undefined;
+  const current = conflictKindOf(draft) === "edit" ? draft?.conflict?.current : undefined;
   if (!draft || !isObject(current)) return undefined;
   const server = shaped(current);
   const local = { ...shaped(draft.data), version: server.version };
@@ -115,4 +130,63 @@ export function resolveInspection(
     items: renumbered(room.items),
   }));
   return { ...resolved, version: conflict.server.version };
+}
+
+/** O que mudou neste aparelho desde a base: itens incluídos, alterados ou removidos, e em quantos ambientes. */
+export interface ChangeSummary {
+  items: number;
+  rooms: number;
+}
+
+/**
+ * Conta, por item, o que o local tem de diferente da base (a última versão que o servidor confirmou): incluído,
+ * alterado ou removido. Um ambiente incluído ou removido conta com os itens dele. Sem base (criada neste aparelho),
+ * tudo conta. Mudar de posição não conta: a lista se renumera quando um vizinho sai.
+ */
+const unplaced = (item: ItemRecord | undefined) => {
+  if (!item) return undefined;
+  const { position: _position, ...rest } = item;
+  return rest;
+};
+
+export function changeSummary(
+  base: InspectionRecord | undefined,
+  local: InspectionRecord,
+): ChangeSummary {
+  const before = new Map(base?.rooms.map((room) => [room.id, room]));
+  const roomIds = new Set([...before.keys(), ...local.rooms.map((room) => room.id)]);
+  let items = 0;
+  let rooms = 0;
+  for (const roomId of roomIds) {
+    const old = before.get(roomId)?.items ?? [];
+    const now = local.rooms.find((room) => room.id === roomId)?.items ?? [];
+    const oldById = new Map(old.map((item) => [item.id, item]));
+    const nowById = new Map(now.map((item) => [item.id, item]));
+    let changed = 0;
+    for (const id of new Set([...oldById.keys(), ...nowById.keys()])) {
+      if (!sameValue(unplaced(oldById.get(id)), unplaced(nowById.get(id)))) changed += 1;
+    }
+    items += changed;
+    if (changed > 0) rooms += 1;
+  }
+  return { items, rooms };
+}
+
+/**
+ * A vistoria recriada (frontend.md, "Conflito", passo 4): os mesmos dados com ids novos na raiz, nos ambientes e nos
+ * itens, porque os da excluída continuam usados no servidor (backend.md, "Exclusão": só a raiz é excluída), e sem
+ * `version`: ela nasce no próximo `PUT`, sem `If-Match`.
+ */
+export function recreatedInspection(record: InspectionRecord): InspectionRecord {
+  const { deleting: _deleting, ...values } = structuredClone(record);
+  return {
+    ...values,
+    id: newId(),
+    version: null,
+    rooms: values.rooms.map((room) => ({
+      ...room,
+      id: newId(),
+      items: room.items.map((item) => ({ ...item, id: newId() })),
+    })),
+  };
 }

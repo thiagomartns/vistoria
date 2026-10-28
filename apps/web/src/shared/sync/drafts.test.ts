@@ -7,6 +7,7 @@ import {
   type DraftRecord,
   type DraftsCollection,
   clearDraft,
+  deletedAtOf,
   keepConflictData,
   needsAction,
   rebaseDraft,
@@ -229,5 +230,39 @@ describe("keepConflictData", () => {
     keepConflictData(fake, "c1", { id: "c1", name: "Alfa" }, later);
 
     expect(drafts.size).toBe(0);
+  });
+});
+
+describe("deletedAtOf", () => {
+  it("o deletedAt do 410 deleted; fora dele, nada", () => {
+    const deleted = {
+      kind: "problem",
+      status: 410,
+      problem: {
+        type: "urn:vistoria:problem:deleted",
+        title: "Excluído",
+        status: 410,
+        deletedAt: "2026-10-28T14:58:00Z",
+      },
+    } as unknown as ApiFailure;
+    expect(deletedAtOf(deleted)).toBe("2026-10-28T14:58:00Z");
+    expect(deletedAtOf(validation({}))).toBeUndefined();
+  });
+
+  it("o conflito guarda o tipo e o deletedAt", () => {
+    const { drafts, fake } = collection();
+    recordConflict(
+      fake,
+      "inspection",
+      { id: "i1" },
+      { type: "deleted", current: undefined, collisions: [], deletedAt: "2026-10-28T14:58:00Z" },
+      now,
+    );
+    expect(drafts.get("i1")?.conflict).toEqual({
+      type: "deleted",
+      current: undefined,
+      collisions: [],
+      deletedAt: "2026-10-28T14:58:00Z",
+    });
   });
 });
