@@ -98,14 +98,16 @@ export interface MergeResult<T> {
  * Merge de três vias por campo de um registro plano. Base = `serverShadow` (sem ela, toda diferença colide), local =
  * rascunho e servidor = `current` na forma do registro. Campo que só um lado mudou entra sozinho; os dois iguais não
  * colidem. Na colisão, `merged` guarda o valor local até a pessoa escolher, para nada marcado em campo sumir. Valor
- * composto (como `rooms`) é um campo só. `merged.version` é a do servidor, a `baseVersion` do reenvio.
+ * composto (como `rooms`) é um campo só. `merged.version` é a do servidor, a `baseVersion` do reenvio; ambiente e item,
+ * que não têm versão própria, passam sem ela (#103).
  */
-export function mergeFields<T extends { id: string; version: string | null }>(
+export function mergeFields<T extends { id: string; version?: string | null }>(
   base: T | undefined,
   local: T,
   server: T,
 ): MergeResult<T> {
-  const merged: Fields = { ...local, version: server.version };
+  const merged: Fields = { ...local };
+  if ("version" in server) merged.version = server.version;
   const collisions: FieldCollision<Extract<keyof T, string>>[] = [];
   const keys = new Set([...Object.keys(local), ...Object.keys(server)]);
   keys.delete("id");
