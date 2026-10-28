@@ -43,3 +43,4 @@ uma decisão nova o substitui e diz qual substituiu. Novo ADR: `/adr <título>` 
 | [0036](0036-rascunho-da-vistoria-guarda-o-passo-e-fica-ate-concluir.md) | Rascunho da vistoria guarda o passo e fica até concluir | Aceito | 2026-10-26 |
 | [0037](0037-entregaveis-pelo-vision-md-e-pelo-milestone-sem-project.md) | Entregáveis pelo vision.md e pelo milestone, sem Project | Aceito | 2026-10-26 |
 | [0038](0038-escopo-do-m3-leitura-por-id-conflito-de-cadastro-e-exclusao.md) | Escopo do M3: leitura por id, conflito de cadastro e exclusão | Proposto | 2026-10-27 |
+| [0039](0039-exclusao-de-vistoria-pela-outbox-marca-otimista-compactacao-por-exclusao-e-delete-decidido-no-envio.md) | Exclusão de vistoria pela outbox: marca otimista, compactação por exclusão e DELETE decidido no envio | Proposto | 2026-10-28 |
