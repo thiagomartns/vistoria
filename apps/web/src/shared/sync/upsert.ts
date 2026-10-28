@@ -12,8 +12,10 @@ import {
 } from "./drafts";
 import { isOwnWrite, mergeFields, recordShape, sameValue } from "./merge";
 import {
+  type Outbox,
   type OutboxMutationFn,
   RejectedSyncError,
+  enqueue,
   outboxHeaders,
   syncFailure,
   waitRetryAfter,
@@ -230,4 +232,62 @@ async function settleConflict<T extends SyncRecord>(
     }
   });
   return true;
+}
+
+/**
+ * Grava na store confirmada, fora do envio de uma transação, o registro como o servidor o tem: a store só aceita o que
+ * vem por uma mutação, então ela leva uma mutação da própria collection, sem transação.
+ */
+async function adoptServer<T extends SyncRecord>(
+  store: LocalCollection<T>,
+  record: T,
+): Promise<void> {
+  const known = (await confirmedOf(store, record.id)) !== undefined;
+  await store.utils.acceptMutations({
+    mutations: [
+      { collection: store, type: known ? "update" : "insert", key: record.id, modified: record },
+    ],
+  } as unknown as { mutations: PendingMutation[] });
+}
+
+/**
+ * A pessoa resolveu o conflito no ConflictResolver (frontend.md, "Conflito", passo 3): o `current` vai para a store
+ * confirmada e o registro escolhido vira transação nova, com chave nova e a `baseVersion` do `current` (a do envio sai
+ * da store). O rascunho sai de `conflict` pelo `rebaseDraft`, e a tela de campo aberta recarrega com o escolhido.
+ * Escolha igual ao servidor não sai: só adota o `current`.
+ */
+export async function resolveConflict<T extends SyncRecord>({
+  store,
+  drafts,
+  outbox,
+  mutationFnName,
+  server,
+  resolved,
+}: {
+  store: LocalCollection<T>;
+  drafts: DraftsCollection;
+  outbox: Outbox;
+  mutationFnName: string;
+  /** O `current` na forma do registro, com a `version` dele. */
+  server: T;
+  /** O registro com as escolhas, com a `version` do `current`. */
+  resolved: T;
+}): Promise<void> {
+  const { id } = resolved;
+  await adoptServer(store, server);
+  const { version: _version, ...values } = resolved;
+  rebaseDraft(drafts, id, values);
+  if (sameValue(resolved, server)) {
+    recordSyncSuccess();
+    return;
+  }
+  enqueue(outbox, mutationFnName, () => {
+    if (store.has(id)) {
+      store.update(id, (draft) => {
+        Object.assign(draft, resolved);
+      });
+    } else {
+      store.insert(resolved);
+    }
+  });
 }

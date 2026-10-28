@@ -2,20 +2,25 @@ import { type InspectionDto, upsertInspection } from "@/shared/api/generated";
 import type { Client } from "@/shared/api/generated/client";
 import { type DraftsCollection, clearDraft, saveDraftValues } from "@/shared/sync/drafts";
 import { type Outbox, type OutboxMutationFn, enqueue } from "@/shared/sync/outbox";
-import { registerRecordLabel } from "@/shared/sync/sync-view";
-import { type MergeStrategy, upsertMutation } from "@/shared/sync/upsert";
+import { registerConflictView, registerRecordLabel } from "@/shared/sync/sync-view";
+import { type MergeStrategy, resolveConflict, upsertMutation } from "@/shared/sync/upsert";
 
 import { INSPECTION_ENTITY, type InspectionRecord } from "../models/inspection";
 import type { InspectionsCollection } from "./inspections.collection";
 import { inspectionRecordOf } from "./inspections.mappers";
 import { mergeInspection } from "./inspections.merge";
+import { conflictHref } from "./inspections.resolve";
 
 export const UPSERT_INSPECTION = "upsertInspection";
 
-registerRecordLabel(UPSERT_INSPECTION, (record) => {
+/** "Vistoria · 7 ambientes", no OutboxPanel. */
+function inspectionLabel(record: Record<string, unknown>): string {
   const rooms = Array.isArray(record.rooms) ? record.rooms.length : 0;
   return `Vistoria · ${rooms} ${rooms === 1 ? "ambiente" : "ambientes"}`;
-});
+}
+
+registerRecordLabel(UPSERT_INSPECTION, inspectionLabel);
+registerConflictView(INSPECTION_ENTITY, { title: inspectionLabel, href: conflictHref });
 
 /** No conflito, o agregado se mescla por ambiente e item (#103), com o `current` na forma do registro. */
 const inspectionMerge: MergeStrategy<InspectionRecord> = {
@@ -82,4 +87,26 @@ export function saveInspectionDraft(
   step: number,
 ): void {
   saveDraftValues(drafts, INSPECTION_ENTITY, values.id, values, step);
+}
+
+/**
+ * Envia a resolução de um conflito (ConflictResolver): o `current` vai para a store, e a vistoria escolhida sai numa
+ * transação nova, com chave nova e a `version` do `current` no `If-Match`. Tudo do servidor só adota o `current`.
+ */
+export function resolveInspectionConflict(
+  {
+    inspections,
+    drafts,
+    outbox,
+  }: { inspections: InspectionsCollection; drafts: DraftsCollection; outbox: Outbox },
+  { resolved, server }: { resolved: InspectionRecord; server: InspectionRecord },
+): Promise<void> {
+  return resolveConflict({
+    store: inspections,
+    drafts,
+    outbox,
+    mutationFnName: UPSERT_INSPECTION,
+    server,
+    resolved,
+  });
 }

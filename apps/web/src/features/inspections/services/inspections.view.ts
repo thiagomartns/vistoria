@@ -11,8 +11,12 @@ import {
   type InspectionKind,
   type InspectionRecord,
   type InspectionStatus,
+  type ItemRecord,
+  type RoomRecord,
 } from "../models/inspection";
-import { roomOfError } from "../schemas/inspection.schemas";
+import { CONDITIONS, roomOfError } from "../schemas/inspection.schemas";
+import type { InspectionCollision } from "./inspections.merge";
+import { type InspectionConflict, collisionKey } from "./inspections.resolve";
 
 // Do banco local para o que a lista de vistorias e a tela de campo mostram. Funções puras: cada estado cabe num
 // teste, e os componentes recebem só o resultado.
@@ -171,7 +175,7 @@ export function fieldHeader(
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-export type RoomStepState = "pendente" | "completa" | "erro";
+export type RoomStepState = "pendente" | "completa" | "erro" | "conflito";
 
 export interface RoomView {
   id: string;
@@ -185,10 +189,14 @@ export interface RoomView {
   errors: number;
 }
 
-/** Os ambientes como etapas, com o progresso das condições marcadas e os erros que o servidor devolveu em cada um. */
+/**
+ * Os ambientes como etapas, com o progresso das condições marcadas, os erros que o servidor devolveu em cada um e os
+ * que estão em disputa num conflito (o erro vence: ele pede correção antes).
+ */
 export function roomViews(
   rooms: readonly { id: string; name: string; items: readonly { condition: unknown }[] }[],
   serverErrors: Readonly<Record<string, string[]>> = {},
+  conflictRooms: ReadonlySet<string> = new Set(),
 ): RoomView[] {
   const errorsByRoom = new Map<number, number>();
   for (const key of Object.keys(serverErrors)) {
@@ -199,8 +207,15 @@ export function roomViews(
     const total = room.items.length;
     const evaluated = room.items.filter((item) => item.condition != null).length;
     const errors = errorsByRoom.get(index) ?? 0;
+    const conflict = errors === 0 && conflictRooms.has(room.id);
     const state: RoomStepState =
-      errors > 0 ? "erro" : total > 0 && evaluated === total ? "completa" : "pendente";
+      errors > 0
+        ? "erro"
+        : conflict
+          ? "conflito"
+          : total > 0 && evaluated === total
+            ? "completa"
+            : "pendente";
     return {
       id: room.id,
       name: room.name,
@@ -208,9 +223,11 @@ export function roomViews(
       meta:
         errors > 0
           ? plural(errors, "erro", "erros")
-          : total === 0
-            ? "0 itens"
-            : `${evaluated} de ${total}`,
+          : conflict
+            ? "Conflito"
+            : total === 0
+              ? "0 itens"
+              : `${evaluated} de ${total}`,
       progress:
         total === 0
           ? "Nenhum item ainda"
@@ -248,4 +265,144 @@ export function pendingItemIds(
     if (item.condition !== condition || (item.notes ?? null) !== notes) pending.add(item.id);
   }
   return pending;
+}
+
+// --- Conflito ---
+
+/** Um campo em disputa como o ConflictResolver mostra (Figma ConflictResolver/Campo 30:1431). */
+export interface ConflictFieldView {
+  key: string;
+  /** "Piso · Condição". */
+  label: string;
+  /** "Antes: Bom", "Antes: sem observação"; sem base, nada. */
+  before: string | null;
+  mine: string;
+  theirs: string;
+}
+
+/** Os campos em disputa de um ambiente ("Cozinha") ou da vistoria ("Geral"). */
+export interface ConflictGroupView {
+  id: string;
+  title: string;
+  fields: ConflictFieldView[];
+}
+
+const ROOT_FIELDS: Record<string, string> = {
+  generalNotes: "Observações gerais",
+  propertyId: "Imóvel",
+  kind: "Tipo",
+  status: "Status",
+  startedAt: "Início",
+};
+const ROOM_FIELDS: Record<string, string> = {
+  name: "Nome do ambiente",
+  notes: "Observação do ambiente",
+};
+const ITEM_FIELDS: Record<string, string> = {
+  condition: "Condição",
+  notes: "Observação",
+  name: "Nome",
+};
+
+const isEmpty = (value: unknown) => value === null || value === undefined || value === "";
+
+/** O valor de um campo como texto: a condição pelo nome, o imóvel pelo endereço, o vazio por extenso. */
+function valueText(field: string, value: unknown, places: ReadonlyMap<string, PlaceView>): string {
+  if (isEmpty(value)) {
+    if (field === "condition") return "Sem condição";
+    if (field === "notes" || field === "generalNotes") return "Sem observação";
+    return "Sem valor";
+  }
+  const key = String(value);
+  if (field === "condition") return CONDITIONS[key as keyof typeof CONDITIONS] ?? key;
+  if (field === "kind") return INSPECTION_KINDS[key as InspectionKind] ?? key;
+  if (field === "status") return INSPECTION_STATUSES[key as InspectionStatus] ?? key;
+  if (field === "startedAt") return dateOf(key) || key;
+  if (field === "propertyId") return places.get(key)?.address ?? "Imóvel fora deste aparelho";
+  return key;
+}
+
+/** "Antes: Bom"; o vazio fica em minúscula no meio da frase ("Antes: sem observação"). */
+function beforeText(field: string, value: unknown, places: ReadonlyMap<string, PlaceView>) {
+  const shown = valueText(field, value, places);
+  return `Antes: ${isEmpty(value) ? shown.charAt(0).toLowerCase() + shown.slice(1) : shown}`;
+}
+
+/** Um lado de um ambiente ou item removido de um lado e alterado do outro. */
+const presence = (side: unknown, base: unknown) =>
+  side === undefined ? "Removido" : base === undefined ? "Incluído" : "Mantido, com alterações";
+
+/**
+ * Os campos em disputa, agrupados: "Geral" (a raiz da vistoria) primeiro, depois os ambientes na ordem do merge (os que
+ * só o servidor tem, na dele). Ambiente ou item removido de um lado e alterado do outro é um campo só ("Ambiente",
+ * "Piso · Item"), com "Removido" de um lado.
+ */
+export function conflictGroups(
+  conflict: InspectionConflict,
+  places: ReadonlyMap<string, PlaceView> = new Map(),
+): ConflictGroupView[] {
+  const sides = [conflict.local, conflict.merged, conflict.server, conflict.base].filter(
+    (side) => side !== undefined,
+  );
+  const rooms = new Map<string, RoomRecord>();
+  const items = new Map<string, ItemRecord>();
+  for (const side of sides) {
+    for (const room of side.rooms) {
+      if (!rooms.has(room.id)) rooms.set(room.id, room);
+      for (const item of room.items) if (!items.has(item.id)) items.set(item.id, item);
+    }
+  }
+  const order = [
+    ...new Set([...conflict.merged.rooms, ...conflict.server.rooms].map((room) => room.id)),
+  ];
+  const groups = new Map<string, ConflictGroupView>();
+  const fieldOf = (collision: InspectionCollision): ConflictFieldView => {
+    const key = collisionKey(collision);
+    const itemName = collision.itemId ? (items.get(collision.itemId)?.name ?? "Item") : null;
+    if (collision.kind === "removed") {
+      return {
+        key,
+        label: itemName ? `${itemName} · Item` : "Ambiente",
+        before: null,
+        mine: presence(collision.local, collision.base),
+        theirs: presence(collision.server, collision.base),
+      };
+    }
+    const { field } = collision;
+    const names = !collision.roomId ? ROOT_FIELDS : itemName ? ITEM_FIELDS : ROOM_FIELDS;
+    const name = names[field] ?? field;
+    return {
+      key,
+      label: itemName ? `${itemName} · ${name}` : name,
+      before: collision.base === undefined ? null : beforeText(field, collision.base, places),
+      mine: valueText(field, collision.local, places),
+      theirs: valueText(field, collision.server, places),
+    };
+  };
+  for (const collision of conflict.collisions) {
+    const id = collision.roomId ?? "";
+    const group = groups.get(id) ?? {
+      id,
+      title: collision.roomId ? (rooms.get(collision.roomId)?.name ?? "Ambiente") : "Geral",
+      fields: [],
+    };
+    group.fields.push(fieldOf(collision));
+    groups.set(id, group);
+  }
+  const rank = (group: ConflictGroupView) => (group.id === "" ? -1 : order.indexOf(group.id));
+  return [...groups.values()].toSorted((a, z) => rank(a) - rank(z));
+}
+
+/** Os ambientes e os itens em disputa: a etapa e o item da tela de campo ficam "Em conflito". */
+export function conflictPlaces(conflict: InspectionConflict | undefined): {
+  rooms: Set<string>;
+  items: Set<string>;
+} {
+  const rooms = new Set<string>();
+  const items = new Set<string>();
+  for (const collision of conflict?.collisions ?? []) {
+    if (collision.roomId) rooms.add(collision.roomId);
+    if (collision.itemId) items.add(collision.itemId);
+  }
+  return { rooms, items };
 }
