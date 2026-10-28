@@ -3,6 +3,7 @@ import { useLocalStore } from "@/features/local-store/hooks/useLocalStore";
 import type { PropertyRecord } from "@/features/properties/models/property";
 import { addressOf } from "@/features/properties/services/properties.view";
 
+import { conflictHref } from "../services/inspections.resolve";
 import { type PlaceView, dateOf, inspectionRows, startedLabel } from "../services/inspections.view";
 
 /** A lista; para onde "Voltar" e "Cancelar" levam. */
@@ -25,7 +26,10 @@ export function placesOf(
   );
 }
 
-/** As vistorias do banco local para a lista de /inspections, com o imóvel, o cliente e o estado de sync. */
+/**
+ * As vistorias do banco local para a lista de /inspections, com o imóvel, o cliente e o estado de sync. A linha abre a
+ * tela de campo, ou o ConflictResolver quando a vistoria está em conflito.
+ */
 export function useInspections() {
   const { ready, inspections, properties, clients, drafts, states } = useLocalStore();
   const rows = inspectionRows(inspections, drafts, states, placesOf(properties, clients));
@@ -37,7 +41,8 @@ export function useInspections() {
     count: `${rows.length} ${rows.length === 1 ? "vistoria" : "vistorias"}`,
     rows: rows.map((row) => ({
       id: row.id,
-      href: inspectionHref(row.id),
+      // Em conflito, a linha abre o ConflictResolver (Figma SyncBadge 25:1053).
+      href: row.sync === "conflito" ? conflictHref(row.id) : inspectionHref(row.id),
       address: row.address ?? "Imóvel fora deste aparelho",
       clientName: row.clientName,
       kindLabel: row.kindLabel,

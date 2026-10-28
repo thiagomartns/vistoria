@@ -152,4 +152,32 @@ describe("InspectionsScreen", () => {
 
     expect(within(screen.getByRole("table")).getByText("Correção necessária")).toBeDefined();
   });
+
+  it("em conflito: a linha mostra 'Conflito' e abre o ConflictResolver desta vistoria", () => {
+    const sent = inspection("i1");
+    open({
+      inspections: [inspection("i0", { startedAt: new Date(2026, 9, 18, 9).toISOString() }), sent],
+      drafts: [
+        {
+          id: "i1",
+          entity: "inspection",
+          data: sent,
+          status: "conflict",
+          errors: {},
+          conflict: { current: { ...sent, version: "B" }, base: sent, collisions: [] },
+          step: 0,
+          updatedAt: "2026-10-26T13:00:00.000Z",
+        },
+      ],
+    });
+
+    const row = within(screen.getByRole("table"))
+      .getByText("Conflito")
+      .closest("tr") as HTMLElement;
+    expect(within(row).getByRole("link").getAttribute("href")).toBe("/inspections/conflict?id=i1");
+    const [mobile, other] = within(screen.getByRole("list")).getAllByRole("link");
+    expect(mobile?.textContent).toContain("Conflito");
+    expect(mobile?.getAttribute("href")).toBe("/inspections/conflict?id=i1");
+    expect(other?.getAttribute("href")).toBe("/inspections/edit?id=i0");
+  });
 });

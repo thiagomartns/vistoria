@@ -77,6 +77,22 @@ describe("OutboxPanel", () => {
 
     expect(props.onOpenChange).toHaveBeenCalledWith(false);
   });
+
+  it("conflito com a tela dele: 'Resolver' entrega o item a quem abriu; sem tela, sem o botão", async () => {
+    const onResolve = vi.fn<(item: OutboxItemView) => void>();
+    const resolvable = {
+      ...item("conflito", "Vistoria · Apto 51"),
+      href: "/inspections/conflict?id=i1",
+    };
+    renderPanel({ actionNeeded: [resolvable, item("conflito", "Imóvel · Sala 1104")], onResolve });
+
+    const actions = screen.getByRole("region", { name: "Ação necessária" });
+    const buttons = within(actions).getAllByRole("button", { name: "Resolver" });
+    expect(buttons).toHaveLength(1);
+    await userEvent.setup().click(buttons[0] as HTMLElement);
+
+    expect(onResolve).toHaveBeenCalledWith(resolvable);
+  });
 });
 
 describe("OutboxPanelItem", () => {

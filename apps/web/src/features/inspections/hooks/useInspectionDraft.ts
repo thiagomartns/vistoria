@@ -18,8 +18,15 @@ import {
   roomOfError,
   roomStepSchema,
 } from "../schemas/inspection.schemas";
+import { conflictHref, inspectionConflictOf } from "../services/inspections.resolve";
 import { saveInspection, saveInspectionDraft } from "../services/inspections.sync";
-import { fieldHeader, pendingItemIds, roomViews, roomsSummary } from "../services/inspections.view";
+import {
+  conflictPlaces,
+  fieldHeader,
+  pendingItemIds,
+  roomViews,
+  roomsSummary,
+} from "../services/inspections.view";
 import { placesOf } from "./useInspections";
 
 /** Depois da última mudança, o rascunho é gravado; fechar a aba depois disso não perde nada. */
@@ -28,6 +35,11 @@ export const DRAFT_DEBOUNCE_MS = 300;
 export const QUEUE_DEBOUNCE_MS = 1500;
 
 export const REJECTED_TITLE = "O servidor recusou esta vistoria";
+
+/** O aviso do estado 5 (Figma 55:5132). */
+export const CONFLICT_TITLE = "Esta vistoria foi alterada em outro aparelho";
+export const CONFLICT_DESCRIPTION =
+  "Suas alterações estão salvas neste aparelho. Escolha o que fica em cada campo para enviar de novo.";
 
 type Values = Omit<InspectionRecord, "version">;
 type ItemPath = FieldPath<InspectionFormValues>;
@@ -83,6 +95,8 @@ function initialStep(draft: DraftRecord | undefined, rooms: number): number {
  *   trocar de ambiente e ao sair da tela. Só um formulário sujo vai para a fila (ADR 0028); a compactação da outbox
  *   junta o que ainda não saiu.
  * - Fica só leitura enquanto o envio da vistoria está no ar.
+ * - Em conflito (estado 5), segue editável, mas o que a pessoa marca fica só no rascunho: o envio sai pelo
+ *   ConflictResolver, que parte dele. Enfileirar levaria a versão de antes do conflito, e o 412 voltaria a cada mudança.
  */
 export function useInspectionDraft(id: string | null) {
   const { store, ready, inspections, properties, clients, drafts, states, bases } = useLocalStore();
@@ -94,6 +108,7 @@ export function useInspectionDraft(id: string | null) {
   // A vistoria que a tela mostra: o rascunho tem o mais novo (numa criação recusada, é o único lugar onde ela existe).
   const source = (draft?.data as InspectionRecord | undefined) ?? record;
   const status = !ready ? "loading" : !id || !source ? "missing" : "found";
+  const inConflict = draft?.status === "conflict";
 
   const form = useForm<InspectionFormValues>({ defaultValues: { rooms: [] } });
   const watched = useWatch({ control: form.control }) as InspectionFormValues;
@@ -179,7 +194,7 @@ export function useInspectionDraft(id: string | null) {
     const next = withoutVersion(recordWith(source, values));
     saveInspectionDraft(store.drafts, next, at);
     const untouchedRejection = rejected !== null && JSON.stringify(values) === openedWith.current;
-    if (enqueue && isDirty && !untouchedRejection) {
+    if (enqueue && isDirty && !untouchedRejection && !inConflict) {
       setEnqueued({ base: baseNow, version: record?.version ?? null });
       saveInspection(store, next);
       form.reset(values);
@@ -218,7 +233,10 @@ export function useInspectionDraft(id: string | null) {
     };
   }, [form]);
 
-  const rooms = current ? roomViews(current.rooms, errorKeys(errors)) : [];
+  // Em conflito, o merge refeito com o rascunho de agora diz quais ambientes e itens estão em disputa.
+  const conflict = inspectionConflictOf(draft);
+  const disputed = conflictPlaces(conflict);
+  const rooms = current ? roomViews(current.rooms, errorKeys(errors), disputed.rooms) : [];
   const room = current?.rooms[step];
   const sending = id ? states.get(id) === "enviando" : false;
 
@@ -251,6 +269,7 @@ export function useInspectionDraft(id: string | null) {
   const itemSync = (itemId: string, index: number): FieldSyncState | undefined => {
     const itemErrors = errors.rooms?.[step]?.items?.[index];
     if (itemErrors?.condition || itemErrors?.notes) return "rejeitado";
+    if (disputed.items.has(itemId)) return "conflito";
     if (!pending.has(itemId)) return undefined;
     return sending ? "enviando" : "local";
   };
@@ -306,6 +325,11 @@ export function useInspectionDraft(id: string | null) {
     /** Envio da vistoria no ar: o formulário fica só leitura (ADR 0021). */
     readOnly: sending,
     rejection,
+    /** Estado 5: o aviso e o caminho para o ConflictResolver (o `deleted` chega na #109). */
+    conflict:
+      inConflict && conflict && id
+        ? { title: CONFLICT_TITLE, description: CONFLICT_DESCRIPTION, href: conflictHref(id) }
+        : null,
     conditions: CONDITION_VALUES.map((value) => ({ value, label: CONDITIONS[value] })),
     notesMax: NOTES_MAX,
   };

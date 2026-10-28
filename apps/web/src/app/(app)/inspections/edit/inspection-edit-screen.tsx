@@ -13,7 +13,7 @@ import { StepperForm } from "@/shared/components/stepper-form";
 
 import { PageHeader } from "../../shell-header";
 
-// /inspections/edit?id= (Figma 43:1748, estados 0, 2, 3, 4 e 6): a tela de campo, um passo por ambiente, com a
+// /inspections/edit?id= (Figma 43:1748, estados 0, 2, 3, 4, 5 e 6): a tela de campo, um passo por ambiente, com a
 // condição em chips e a observação sob demanda. No celular, modo foco: sem a barra inferior, com "Voltar" no header e
 // Anterior/Próximo no rodapé. Editável com transação na fila; só leitura com o envio no ar (ADR 0021). No último
 // ambiente, Próximo fica desabilitado: concluir chega no M5.
@@ -78,6 +78,7 @@ export function InspectionEditScreen() {
           items={field.items}
           readOnly={field.readOnly}
           rejection={field.rejection}
+          conflict={field.conflict}
         />
       </StepperForm>
     </>

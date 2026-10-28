@@ -415,6 +415,65 @@ describe("InspectionEditScreen", () => {
     expect(screen.getByText("O servidor recusou esta vistoria")).toBeDefined();
   });
 
+  describe("estado 5: conflito", () => {
+    // Aqui, Paredes da Cozinha ficou Ruim; no outro aparelho, Ausente. O resto mesclou sozinho.
+    const mine = structuredClone(vistoria);
+    mine.rooms[1]!.items[1]!.condition = "poor";
+    const theirs = structuredClone(vistoria);
+    theirs.rooms[1]!.items[1]!.condition = "absent";
+    const conflicted = () =>
+      draftOf({
+        data: mine,
+        status: "conflict",
+        step: 1,
+        conflict: { current: { ...theirs, version: "V2" }, base: vistoria, collisions: [] },
+      });
+
+    it("o aviso com 'Resolver conflito' para o resolver desta vistoria, a etapa e o item em conflito", async () => {
+      open({ drafts: [conflicted()] });
+
+      expect(await screen.findByText("Esta vistoria foi alterada em outro aparelho")).toBeDefined();
+      expect(
+        screen.getByText(
+          "Suas alterações estão salvas neste aparelho. Escolha o que fica em cada campo para enviar de novo.",
+        ),
+      ).toBeDefined();
+      expect(screen.getByRole("link", { name: "Resolver conflito" }).getAttribute("href")).toBe(
+        "/inspections/conflict?id=i1",
+      );
+      expect(currentStep().textContent).toContain("Conflito");
+      const paredes = chips("Paredes").closest("[data-slot=form-item]") as HTMLElement;
+      expect(within(paredes).getByText("Em conflito")).toBeDefined();
+      expect(chip("Paredes", "Ruim").getAttribute("aria-checked")).toBe("true");
+      expect(within(heading().closest("header")!).getByText("Conflito")).toBeDefined();
+    });
+
+    it("reaberta sem mudança, não volta sozinha para a fila (o 412 voltaria a cada abertura)", async () => {
+      open({ drafts: [conflicted()] });
+      await screen.findByText("Esta vistoria foi alterada em outro aparelho");
+
+      await new Promise((done) => setTimeout(done, 1700));
+
+      expect(saveInspection).not.toHaveBeenCalled();
+    });
+
+    it("segue editável: a mudança vai para o rascunho e não para a fila; o envio é pelo resolver", async () => {
+      const user = userEvent.setup();
+      open({ drafts: [conflicted()] });
+      await screen.findByText("Esta vistoria foi alterada em outro aparelho");
+
+      await user.click(chip("Bancada", "Bom"));
+
+      await vi.waitFor(() =>
+        expect(vi.mocked(saveInspectionDraft).mock.lastCall?.[1]).toMatchObject({
+          rooms: [{}, { items: [{}, { condition: "poor" }, { condition: "good" }] }, {}],
+        }),
+      );
+      await new Promise((done) => setTimeout(done, 1700));
+      expect(saveInspection).not.toHaveBeenCalled();
+    });
+  });
+
   it("vistoria que não está no aparelho", () => {
     open({ inspections: [] });
 

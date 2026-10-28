@@ -2,13 +2,16 @@
 
 import { describe, expect, it } from "vitest";
 
+import type { DraftRecord } from "./drafts";
 import type { OutboxEntry, SyncSnapshot } from "./sync-status";
 import {
   STUCK_AFTER_MS,
   calendarTime,
   confirmedBases,
+  conflictItems,
   describeSync,
   recordSyncStates,
+  registerConflictView,
   registerRecordLabel,
   relativeTime,
 } from "./sync-view";
@@ -167,6 +170,54 @@ describe("describeSync: OutboxPanel", () => {
       .panel.waiting;
 
     expect(item?.title).toBe("Alteração");
+  });
+});
+
+describe("conflictItems: rascunhos em conflito em 'Ação necessária'", () => {
+  registerConflictView("teste", {
+    title: (record) => `Teste · ${String(record.name)}`,
+    href: (id) => `/teste/conflict?id=${id}`,
+  });
+  const draft = (over: Partial<DraftRecord>): DraftRecord => ({
+    id: "d1",
+    entity: "teste",
+    data: { name: "Maria" },
+    status: "conflict",
+    errors: {},
+    updatedAt: "2026-10-22T14:00:00.000Z",
+    ...over,
+  });
+
+  it("só o conflito de entidade com tela registrada vira item, com o nome, o detalhe e a tela", () => {
+    expect(
+      conflictItems([
+        draft({}),
+        draft({ id: "d2", status: "rejected" }),
+        draft({ id: "d3", status: "draft" }),
+        draft({ id: "d4", entity: "sem-tela" }),
+      ]),
+    ).toEqual([
+      {
+        id: "conflict:d1",
+        state: "conflito",
+        title: "Teste · Maria",
+        detail: "Alterada também em outro aparelho",
+        href: "/teste/conflict?id=d1",
+      },
+    ]);
+  });
+
+  it("entram em 'Ação necessária' antes da fila e fazem o SyncStatus pedir ação", () => {
+    const actions = conflictItems([draft({})]);
+    const view = describeSync(snapshot({ entries: [entry()] }), now, actions);
+
+    expect(view.panel.actionNeeded).toEqual(actions);
+    expect(view.panel.waiting).toHaveLength(1);
+    expect(view.status).toMatchObject({
+      state: "requer-acao",
+      label: "Requer ação",
+      compactLabel: "Requer ação · 1",
+    });
   });
 });
 
