@@ -22,6 +22,10 @@
 // Desde o #108 cobre a exclusão de vistoria (ADR 0039): online pela lista, com a linha "Excluindo" até o 204; offline
 // pela tela de campo, com uma edição pendente que nunca chega ao servidor; e a criada offline, que sai sem DELETE. Nos
 // três, o GET da vistoria responde 404. Com SCREENS=1, os prints do menu, das confirmações e dos dois "Excluindo".
+// Desde o #109 cobre os conflitos da exclusão (ADR 0040): a vistoria excluída por outro aparelho (DELETE direto na API)
+// e editada aqui volta 410; recriar a põe no servidor com id novo e os mesmos dados, e descartar a tira do aparelho.
+// A vistoria alterada por outro aparelho e excluída aqui volta 412; "Excluir mesmo assim" sai com If-Match do current
+// e chave nova (GET 404), e "Cancelar" a deixa editável, com o que o servidor tem. Com SCREENS=1, os prints dos dois.
 
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
@@ -123,6 +127,43 @@ async function serverProperty(user, id) {
 
 async function serverInspection(user, id) {
   return callApi(`/api/v1/inspections/${id}`, { headers: { authorization: `Bearer ${user.token}` } });
+}
+
+/** Outro aparelho exclui a vistoria (`DELETE` direto na API, com a versão que o servidor tem). */
+async function deleteOnServer(user, id) {
+  const { version } = (await serverInspection(user, id)).body;
+  const { status } = await callApi(`/api/v1/inspections/${id}`, {
+    method: "DELETE",
+    headers: { authorization: `Bearer ${user.token}`, "if-match": `"${version}"`, "idempotency-key": uuidv7() },
+  });
+  assert.equal(status, 204, `o DELETE do outro aparelho respondeu ${status}`);
+}
+
+/** Outro aparelho muda a vistoria (`PUT` direto na API): `change` recebe cada item com o nome do ambiente. */
+async function changeOnServer(user, id, change) {
+  const seen = (await serverInspection(user, id)).body;
+  const { status, body } = await callApi(`/api/v1/inspections/${id}`, {
+    method: "PUT",
+    headers: { authorization: `Bearer ${user.token}`, "if-match": `"${seen.version}"`, "idempotency-key": uuidv7() },
+    body: JSON.stringify({
+      propertyId: seen.propertyId,
+      kind: seen.kind,
+      status: seen.status,
+      startedAt: seen.startedAt,
+      generalNotes: seen.generalNotes,
+      rooms: seen.rooms.map((room) => ({
+        id: room.id,
+        name: room.name,
+        position: room.position,
+        notes: room.notes,
+        items: room.items.map(({ id: itemId, name, position, condition, notes }) =>
+          change(room.name, { id: itemId, name, position, condition, notes }),
+        ),
+      })),
+    }),
+  });
+  assert.equal(status, 200, `o PUT do outro aparelho respondeu ${status}`);
+  return body.version;
 }
 
 /** Todo PUT de client, imóvel e vistoria que a página dispara, com o que interessa ao roteiro. */
@@ -369,7 +410,10 @@ const settled = (page, user, puts, from, status, what) =>
       puts.slice(from).some((put) => put.status === status) && (await outboxCount(page, user)) === 0,
     what,
     90_000,
-  );
+  ).catch(async (error) => {
+    const seen = puts.slice(from).map((put) => `${put.entity} ${put.status}`);
+    throw new Error(`${error.message} (envios: ${seen.join(", ") || "nenhum"}; na fila: ${await outboxCount(page, user)})`);
+  });
 
 /** A `version` de um ETag forte (`"AAAAAAAAB9M="`). */
 const versionOf = (etag) => etag?.replace(/^"|"$/g, "");
@@ -1145,6 +1189,136 @@ try {
   assert.equal((await serverInspection(user, local)).status, 404);
   assert.equal((await serverClient(user, holder)).status, 200, "o cliente que segurava a fila sai");
   ok("criada offline e excluída: some na hora; com a rede, sai o cliente da frente e, da vistoria, nem PUT nem DELETE (GET 404)");
+  await goTo(page, "Clientes");
+
+  step("12e", "Conflitos da exclusão: excluída em outro aparelho (recriar e descartar) e alterada antes da exclusão");
+  const ids = (inspection) => [
+    inspection.id,
+    ...inspection.rooms.flatMap((room) => [room.id, ...room.items.map((item) => item.id)]),
+  ];
+  const conditionsOf = (inspection) =>
+    inspection.rooms.map((room) => [room.name, room.items.map((item) => [item.name, item.condition])]);
+
+  // Excluída em outro aparelho e editada aqui: o PUT volta 410, e recriar a põe de volta com id novo.
+  const gone = await createInspection(page, roteiroOption);
+  await mark(page, "Piso", "Bom");
+  await inspectionSettled(page, user, "a vistoria que o outro aparelho exclui sincroniza");
+  await deleteOnServer(user, gone);
+  const fromGone = puts.length;
+  await mark(page, "Paredes", "Ruim");
+  await settled(page, user, puts, fromGone, 410, "o 410 tira a edição da fila");
+  await page.getByText("Esta vistoria foi excluída em outro aparelho").waitFor();
+  await wait(1800);
+  assert.equal(puts.length - fromGone, 1, "o 410 não volta sozinho para a fila");
+  ok("PUT na vistoria excluída em outro aparelho → 410: o aviso na tela de campo, sem laço");
+  await page.getByRole("link", { name: "Resolver conflito" }).click();
+  await page.getByRole("heading", { name: "Vistoria excluída em outro aparelho" }).waitFor();
+  await page.getByText("Neste aparelho: 1 item alterado em 1 ambiente.", { exact: false }).waitFor();
+  await shoot(page, "excluir-7-excluida-em-outro-aparelho");
+  const fromRecreate = puts.length;
+  await page.getByRole("button", { name: "Recriar vistoria" }).click();
+  await page.waitForURL((url) => url.pathname === "/inspections/edit" && url.searchParams.get("id") !== gone);
+  const recreated = new URL(page.url()).searchParams.get("id");
+  await currentRoomIs(page, "Sala");
+  assert.ok(await checked(page, "Paredes", "Ruim"), "a recriada abre com o que estava aqui");
+  await settled(page, user, puts, fromRecreate, 201, "a recriada sincroniza");
+  const recreation = puts.slice(fromRecreate).filter((put) => put.id === recreated);
+  assert.equal(recreation[0].ifMatch, undefined, "a recriada sai sem If-Match");
+  const goneBody = { ...JSON.parse(puts[fromGone].body), id: gone };
+  const recreatedBody = (await serverInspection(user, recreated)).body;
+  assert.deepEqual(conditionsOf(recreatedBody), conditionsOf(goneBody));
+  assert.ok(!ids(recreatedBody).some((id) => ids(goneBody).includes(id)), "ids novos na raiz, nos ambientes e nos itens");
+  assert.equal((await serverInspection(user, gone)).status, 404);
+  ok(`recriar: PUT sem If-Match → 201 com id novo (${recreated}), os mesmos itens e ids novos; a excluída segue 404`);
+
+  // Excluída em outro aparelho, e descartada aqui: sai da lista, sem requisição.
+  const dropped = await createInspection(page, roteiroOption);
+  await mark(page, "Piso", "Bom");
+  await inspectionSettled(page, user, "a vistoria a descartar sincroniza");
+  await deleteOnServer(user, dropped);
+  const fromDropped = puts.length;
+  await mark(page, "Paredes", "Ruim");
+  await settled(page, user, puts, fromDropped, 410, "o 410 da vistoria a descartar");
+  await page.getByRole("link", { name: "Voltar" }).click();
+  await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
+  const droppedRow = inspectionRow(page, dropped);
+  await droppedRow.getByText("Conflito").waitFor();
+  await droppedRow.getByRole("link").click();
+  const fromDiscard = { puts: puts.length, deletes: deletes.length };
+  await page.getByRole("button", { name: "Descartar alterações" }).click();
+  await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
+  await until(async () => (await droppedRow.count()) === 0, "a descartada sai da lista");
+  await wait(2000);
+  assert.equal(puts.length, fromDiscard.puts, "descartar não manda PUT");
+  assert.equal(deletes.length, fromDiscard.deletes, "nem DELETE");
+  ok("descartar: a linha \"Conflito\" leva ao resolver, e a vistoria sai do aparelho sem requisição");
+
+  // Alterada em outro aparelho e excluída aqui: o DELETE volta 412, e "Excluir mesmo assim" sai com a versão nova.
+  const changed = await createInspection(page, roteiroOption);
+  await mark(page, "Piso", "Bom");
+  await inspectionSettled(page, user, "a vistoria que o outro aparelho muda sincroniza");
+  const changedVersion = await changeOnServer(user, changed, (room, item) =>
+    room === "Sala" && item.name === "Piso" ? { ...item, condition: "absent" } : item,
+  );
+  const fromChanged = deletes.length;
+  await (await askToDelete(page, page.getByRole("banner"))).getByRole("button", { name: "Excluir vistoria" }).click();
+  await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
+  const changedRow = inspectionRow(page, changed);
+  await changedRow.getByText("Conflito").waitFor();
+  assert.equal(deletes.slice(fromChanged)[0].status, 412);
+  ok("DELETE com a versão de antes → 412: a linha volta, com \"Conflito\"");
+  await changedRow.getByRole("link").click();
+  const removal = page.getByRole("dialog", { name: "Excluir mesmo assim?" });
+  await removal.waitFor();
+  // Atrás do Dialog modal, a tela fica aria-hidden: os chips só aparecem com includeHidden.
+  const behind = (condition) =>
+    page
+      .getByRole("radiogroup", { name: "Condição: Piso", includeHidden: true })
+      .getByRole("radio", { name: condition, includeHidden: true });
+  assert.equal(await behind("Ausente").getAttribute("aria-checked"), "true", "atrás do Dialog, o que o servidor tem");
+  assert.ok(await behind("Novo").isDisabled(), "só leitura");
+  await shoot(page, "excluir-8-exclusao-alterada");
+  await removal.getByRole("button", { name: "Excluir vistoria" }).click();
+  await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
+  await until(async () => (await changedRow.count()) === 0 && (await outboxCount(page, user)) === 0, "a exclusão confirmada sai", 90_000);
+  const [refusedDelete, confirmedDelete] = deletes.slice(fromChanged);
+  assert.equal(confirmedDelete.status, 204);
+  assert.equal(confirmedDelete.ifMatch, `"${changedVersion}"`);
+  assert.notEqual(confirmedDelete.key, refusedDelete.key, "o DELETE confirmado sai com chave nova");
+  assert.equal((await serverInspection(user, changed)).status, 404);
+  ok(`"Excluir mesmo assim": DELETE com If-Match "${changedVersion}" e chave nova → 204, e o GET responde 404`);
+
+  // Alterada em outro aparelho e excluída aqui, e "Cancelar": fica com o servidor, editável.
+  const keptInspection = await createInspection(page, roteiroOption);
+  await mark(page, "Piso", "Bom");
+  await inspectionSettled(page, user, "a vistoria mantida sincroniza");
+  const keptVersion = await changeOnServer(user, keptInspection, (room, item) =>
+    room === "Sala" && item.name === "Piso" ? { ...item, condition: "absent" } : item,
+  );
+  const fromKept = deletes.length;
+  await (await askToDelete(page, page.getByRole("banner"))).getByRole("button", { name: "Excluir vistoria" }).click();
+  await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
+  const keptRow = inspectionRow(page, keptInspection);
+  await keptRow.getByText("Conflito").waitFor();
+  await keptRow.getByRole("link").click();
+  await page.getByRole("dialog", { name: "Excluir mesmo assim?" }).getByRole("button", { name: "Cancelar" }).click();
+  await page.waitForURL((url) => url.pathname === "/inspections/edit");
+  await until(async () => !(await chipsOf(page, "Piso").getByRole("radio", { name: "Novo" }).isDisabled()), "a tela de campo volta a ser editável");
+  assert.ok(await checked(page, "Piso", "Ausente"), "com o que o servidor tem");
+  const fromKeptEdit = puts.length;
+  await mark(page, "Paredes", "Bom");
+  await settled(page, user, puts, fromKeptEdit, 200, "a edição depois de cancelar sincroniza");
+  assert.equal(puts[fromKeptEdit].ifMatch, `"${keptVersion}"`);
+  assert.equal(deletes.length - fromKept, 1, "nenhum DELETE depois de cancelar");
+  assert.equal((await serverInspection(user, keptInspection)).status, 200);
+  ok(`"Cancelar": a vistoria fica, editável, com o Piso do servidor; a edição seguinte sai com If-Match "${keptVersion}"`);
+  await page.getByRole("link", { name: "Voltar" }).click();
+  await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
+  // O passo 14 abre a vistoria do imóvel pelo endereço: a recriada e a mantida saem, pela lista.
+  for (const leftover of [recreated, keptInspection]) {
+    await (await askToDelete(page, inspectionRow(page, leftover))).getByRole("button", { name: "Excluir vistoria" }).click();
+    await until(async () => (await inspectionRow(page, leftover).count()) === 0, "a vistoria do 12e sai da lista", 90_000);
+  }
   await goTo(page, "Clientes");
 
   step(13, "Outro usuário entra: a fila do anterior não sai com a conta dele");
