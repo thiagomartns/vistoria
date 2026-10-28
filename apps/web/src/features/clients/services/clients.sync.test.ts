@@ -34,7 +34,7 @@ const dto = {
 
 function setup(
   respond: () => Response | Promise<Response>,
-  { stored = [] as ClientRecord[] } = {},
+  { stored = [] as ClientRecord[], queued = [] as ClientRecord[] } = {},
 ) {
   const requests: Request[] = [];
   const client = configureClient(createClient(createConfig()), {
@@ -48,8 +48,14 @@ function setup(
   const acceptMutations = vi.fn<(transaction: { mutations: { modified: unknown }[] }) => Promise<void>>(
     async () => {},
   );
+  // A camada otimista: o que está na fila, por cima da store.
+  const optimistic = new Map(queued.map((row) => [row.id, row]));
   const clients = {
     utils: { acceptMutations, exportData: async () => stored },
+    get: (key: string) => optimistic.get(key),
+    has: (key: string) => optimistic.has(key),
+    insert: (row: ClientRecord) => optimistic.set(row.id, row),
+    update: (key: string, change: (row: ClientRecord) => void) => change(optimistic.get(key)!),
   } as unknown as ClientsCollection;
   const drafts = new Map<string, Record<string, unknown>>();
   const draftsCollection = {
@@ -65,6 +71,7 @@ function setup(
     requests,
     acceptMutations,
     drafts,
+    optimistic,
   };
 }
 
@@ -220,19 +227,169 @@ describe("upsertClientMutation", () => {
       data: record,
       status: "conflict",
       errors: {},
-      conflict: { current },
+      conflict: { current, collisions: [expect.objectContaining({ field: "name" })] },
     });
   });
 
   it("um conflito depois de uma recusa troca o rascunho, sem os erros antigos", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
-    const { send, drafts } = setup(() => problemWith("version-conflict", 412, { current: dto }));
+    const current = { ...dto, name: "Alfa (outro aparelho)" };
+    const { send, drafts } = setup(() => problemWith("version-conflict", 412, { current }));
     drafts.set(id, { id, status: "rejected", errors: { name: ["Curto."] } });
 
     await send({ transaction: transactionOf(record), idempotencyKey }).catch(() => {});
 
-    expect(drafts.get(id)).toMatchObject({ status: "conflict", errors: {}, conflict: { current: dto } });
+    expect(drafts.get(id)).toMatchObject({ status: "conflict", errors: {}, conflict: { current } });
   });
+
+  describe('version-conflict com a serverShadow (frontend.md, "Conflito")', () => {
+    const shadow: ClientRecord = { ...record, version: "AAAAAAAAB9M=" };
+    const conflictWith = (current: Record<string, unknown>) => () =>
+      problemWith("version-conflict", 412, { current });
+    const serverAt = (version: string, fields: Partial<ClientRecord> = {}) => ({
+      ...dto,
+      ...fields,
+      version,
+      updatedAt: "2026-10-27T09:00:00+00:00",
+    });
+
+    it("a própria escrita cuja resposta se perdeu: sucesso, com a version do current, sem reenvio", async () => {
+      const sent: ClientRecord = { ...shadow, name: "Alfa Imóveis" };
+      const requeue = vi.fn<(mutate: () => void) => void>();
+      const { send, requests, acceptMutations, drafts } = setup(
+        conflictWith(serverAt("AAAAAAAAB9U=", { name: "Alfa Imóveis" })),
+        { stored: [shadow] },
+      );
+
+      await send({ transaction: transactionOf(sent), idempotencyKey, requeue });
+
+      expect(requests).toHaveLength(1);
+      expect(requeue).not.toHaveBeenCalled();
+      expect(acceptMutations.mock.calls[0]?.[0].mutations[0]?.modified).toEqual({
+        ...sent,
+        version: "AAAAAAAAB9U=",
+      });
+      expect(drafts.size).toBe(0);
+    });
+
+    it("campos diferentes: adota o current, e o merge vai para a fila numa transação nova", async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      const sent: ClientRecord = { ...shadow, name: "Alfa Imóveis" };
+      const requeue = vi.fn<(mutate: () => void) => void>();
+      const { send, acceptMutations, drafts, optimistic } = setup(
+        conflictWith(serverAt("AAAAAAAAB9U=", { email: "vendas@alfa.com" })),
+        { stored: [shadow], queued: [sent] },
+      );
+
+      await send({ transaction: transactionOf(sent), idempotencyKey, requeue });
+
+      expect(acceptMutations.mock.calls[0]?.[0].mutations[0]?.modified).toEqual({
+        ...shadow,
+        email: "vendas@alfa.com",
+        version: "AAAAAAAAB9U=",
+      });
+      expect(requeue).toHaveBeenCalledTimes(1);
+      requeue.mock.calls[0]?.[0]();
+      expect(optimistic.get(id)).toEqual({
+        ...shadow,
+        name: "Alfa Imóveis",
+        email: "vendas@alfa.com",
+        version: "AAAAAAAAB9U=",
+      });
+      expect(drafts.size).toBe(0);
+    });
+
+    it("o local é o mais novo da fila, não o corpo da transação que deu conflito", async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      const sent: ClientRecord = { ...shadow, name: "Alfa Imóveis" };
+      const newer: ClientRecord = { ...sent, phone: "11 3333-4444" };
+      const requeue = vi.fn<(mutate: () => void) => void>();
+      const { send, optimistic } = setup(
+        conflictWith(serverAt("AAAAAAAAB9U=", { email: "vendas@alfa.com" })),
+        { stored: [shadow], queued: [newer] },
+      );
+
+      await send({ transaction: transactionOf(sent), idempotencyKey, requeue });
+
+      requeue.mock.calls[0]?.[0]();
+      expect(optimistic.get(id)).toMatchObject({
+        name: "Alfa Imóveis",
+        phone: "11 3333-4444",
+        email: "vendas@alfa.com",
+      });
+    });
+
+    it("merge igual ao servidor: só adota o current, sem reenviar", async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      const sent: ClientRecord = { ...shadow, name: "Alfa Imóveis" };
+      const requeue = vi.fn<(mutate: () => void) => void>();
+      const { send, acceptMutations, drafts } = setup(
+        conflictWith(serverAt("AAAAAAAAB9U=", { name: "Alfa Imóveis", email: "vendas@alfa.com" })),
+        { stored: [shadow], queued: [sent] },
+      );
+
+      await send({ transaction: transactionOf(sent), idempotencyKey, requeue });
+
+      expect(requeue).not.toHaveBeenCalled();
+      expect(acceptMutations.mock.calls[0]?.[0].mutations[0]?.modified).toMatchObject({
+        name: "Alfa Imóveis",
+        email: "vendas@alfa.com",
+        version: "AAAAAAAAB9U=",
+      });
+      expect(drafts.size).toBe(0);
+    });
+
+    it("o mesmo campo dos dois lados: rascunho em conflito com base, current e a colisão, sem reenviar", async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      const sent: ClientRecord = { ...shadow, name: "Alfa Imóveis" };
+      const current = serverAt("AAAAAAAAB9U=", { name: "Alfa Negócios" });
+      const requeue = vi.fn<(mutate: () => void) => void>();
+      const { send, acceptMutations, drafts } = setup(conflictWith(current), {
+        stored: [shadow],
+        queued: [sent],
+      });
+
+      const error = await send({ transaction: transactionOf(sent), idempotencyKey, requeue }).catch(
+        (e: unknown) => e,
+      );
+
+      expect(error).toBeInstanceOf(RejectedSyncError);
+      expect(requeue).not.toHaveBeenCalled();
+      expect(acceptMutations).not.toHaveBeenCalled();
+      expect(drafts.get(id)).toMatchObject({
+        status: "conflict",
+        data: sent,
+        conflict: {
+          current,
+          base: shadow,
+          collisions: [
+            {
+              field: "name",
+              base: "Imobiliária Alfa",
+              local: "Alfa Imóveis",
+              server: "Alfa Negócios",
+            },
+          ],
+        },
+      });
+    });
+
+    it("sem como pôr na fila (chamada fora da outbox): fica com a pessoa, nada se perde", async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      const sent: ClientRecord = { ...shadow, name: "Alfa Imóveis" };
+      const { send, acceptMutations, drafts } = setup(
+        conflictWith(serverAt("AAAAAAAAB9U=", { email: "vendas@alfa.com" })),
+        { stored: [shadow], queued: [sent] },
+      );
+
+      await expect(
+        send({ transaction: transactionOf(sent), idempotencyKey }),
+      ).rejects.toBeInstanceOf(RejectedSyncError);
+      expect(acceptMutations).not.toHaveBeenCalled();
+      expect(drafts.get(id)).toMatchObject({ status: "conflict", conflict: { collisions: [] } });
+    });
+  });
+
 
   it("409 idempotency-in-progress com Retry-After: 2 só volta para a fila depois de 2 s, com a mesma chave", async () => {
     vi.useFakeTimers();

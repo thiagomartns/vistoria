@@ -54,6 +54,7 @@ function setup(respond: () => Response, stored: PropertyRecord[] = []) {
   );
   const properties = {
     utils: { acceptMutations, exportData: async () => stored },
+    get: () => undefined,
   } as unknown as PropertiesCollection;
   const drafts = new Map<string, Record<string, unknown>>();
   const draftsCollection = {
@@ -145,7 +146,7 @@ describe("upsertPropertyMutation", () => {
     );
 
     expect(acceptMutations).not.toHaveBeenCalled();
-    expect(drafts.get(id)).toMatchObject({ id, entity: "property", data: record, status: "conflict", conflict: { current } });
+    expect(drafts.get(id)).toMatchObject({ id, entity: "property", data: record, status: "conflict", conflict: { current, collisions: expect.anything() } });
   });
 
   it("no painel de pendências, o imóvel aparece pelo endereço", () => {

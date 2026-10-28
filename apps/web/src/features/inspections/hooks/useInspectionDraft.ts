@@ -116,6 +116,8 @@ export function useInspectionDraft(id: string | null) {
   });
   /** Os valores com que a tela abriu: uma recusa só volta para a fila depois de a pessoa mudar algo. */
   const openedWith = useRef<string | null>(null);
+  /** O `rebasedAt` do rascunho que o formulário já mostra. */
+  const rebased = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (!opened) return;
     const { record: base, draft: saved, source: shown } = opening.current;
@@ -124,7 +126,19 @@ export function useInspectionDraft(id: string | null) {
     if (saved)
       form.reset(formValuesOf(saved.data as InspectionRecord), { keepDefaultValues: true });
     openedWith.current = JSON.stringify(form.getValues());
+    rebased.current = saved?.rebasedAt;
   }, [opened, form]);
+
+  // Um merge sem colisão regravou o rascunho e já foi para a fila: o formulário passa a mostrar o mesclado, limpo. Sem
+  // isso, o próximo envio levaria os valores de antes por cima do que veio do servidor. Nada digitado se perde: o merge
+  // acontece com o envio no ar, e o formulário fica só leitura (ADR 0021).
+  const rebasedAt = draft?.rebasedAt;
+  useEffect(() => {
+    if (!hydrated || rebased.current === rebasedAt) return;
+    rebased.current = rebasedAt;
+    const saved = opening.current.draft;
+    if (saved) form.reset(formValuesOf(saved.data as InspectionRecord));
+  }, [hydrated, rebasedAt, form]);
 
   // Os erros de um rascunho recusado vão para os campos na abertura e quando uma recusa chega com a tela aberta; uma
   // vez por recusa, para não voltar a marcar o que a pessoa já corrigiu.

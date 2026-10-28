@@ -51,7 +51,7 @@ describe("estado de sync de um client", () => {
   });
 
   it("rascunho em conflito → conflito, com os dados enviados", () => {
-    const draft: DraftRecord = { ...rejected({ ...maria, name: "M" }), status: "conflict", conflict: { current: maria } };
+    const draft: DraftRecord = { ...rejected({ ...maria, name: "M" }), status: "conflict", conflict: { current: maria, collisions: [] } };
 
     expect(clientRowOf(maria, draft, "local")).toMatchObject({ name: "M", sync: "conflito" });
   });

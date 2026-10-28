@@ -21,9 +21,13 @@ import { newId } from "./ids";
 
 export type Outbox = OfflineExecutor;
 
-/** Envio de uma transação; o pacote não exporta o tipo (`OfflineMutationFn`) na 1.1.2. */
+/**
+ * Envio de uma transação; o pacote não exporta o tipo (`OfflineMutationFn`) na 1.1.2. `requeue` põe na fila uma
+ * transação nova desta mesma mutationFn, com chave nova: o reenvio de um merge (frontend.md, "Conflito"). O
+ * `startOutbox` sempre o passa; quem chama a mutationFn direto (testes) pode não passar.
+ */
 export type OutboxMutationFn<T extends object> = (
-  params: MutationFnParams<T> & { idempotencyKey: string },
+  params: MutationFnParams<T> & { idempotencyKey: string; requeue?: (mutate: () => void) => void },
 ) => Promise<unknown>;
 
 /**
@@ -237,7 +241,12 @@ export function startOutbox({ ownerId, collections, mutationFns }: OutboxConfig)
   // O executor só envia depois de iniciar (assíncrono), e aí `outbox` já existe.
   let outbox: Outbox | undefined;
   const compacted = Object.fromEntries(
-    Object.entries(mutationFns).map(([name, send]) => [name, compacting(send, () => outbox)]),
+    Object.entries(mutationFns).map(([name, send]) => {
+      const requeue = (mutate: () => void) => {
+        if (outbox) enqueue(outbox, name, mutate);
+      };
+      return [name, compacting((params) => send({ ...params, requeue }), () => outbox)];
+    }),
   );
   outbox = startOfflineExecutor({
     collections,

@@ -275,6 +275,31 @@ describe("InspectionEditScreen", () => {
     );
   });
 
+  it("um merge sem colisão regrava o rascunho com a tela aberta: os chips passam a mostrar o mesclado, sem ir de novo para a fila", async () => {
+    const view = open({ drafts: [draftOf({ step: 1 })] });
+    await vi.waitFor(() =>
+      expect(chip("Bancada", "Ausente").getAttribute("aria-checked")).toBe("false"),
+    );
+
+    const merged = structuredClone(vistoria);
+    merged.rooms[1]!.items[2]!.condition = "absent";
+    local.value = {
+      ...local.value,
+      drafts: [draftOf({ data: merged, step: 1, rebasedAt: "2026-10-27T09:00:00.000Z" })],
+    };
+    view.rerender(
+      <AppShell>
+        <InspectionEditScreen />
+      </AppShell>,
+    );
+
+    await vi.waitFor(() =>
+      expect(chip("Bancada", "Ausente").getAttribute("aria-checked")).toBe("true"),
+    );
+    await new Promise((done) => setTimeout(done, 1800));
+    expect(saveInspection).not.toHaveBeenCalled();
+  });
+
   it("estado 3 (offline, transação na fila): segue editável e uma mudança vai de novo para a fila (ADR 0021)", async () => {
     const user = userEvent.setup();
     open({
