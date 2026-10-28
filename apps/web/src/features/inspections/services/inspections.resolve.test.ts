@@ -3,8 +3,15 @@ import { describe, expect, it } from "vitest";
 import type { DraftRecord } from "@/shared/sync/drafts";
 
 import type { InspectionRecord, ItemRecord } from "../models/inspection";
-import { collisionKey, inspectionConflictOf, resolveInspection } from "./inspections.resolve";
-import { conflictGroups, conflictPlaces } from "./inspections.view";
+import {
+  changeSummary,
+  collisionKey,
+  conflictKindOf,
+  inspectionConflictOf,
+  recreatedInspection,
+  resolveInspection,
+} from "./inspections.resolve";
+import { conflictGroups, conflictPlaces, deletedConflictView } from "./inspections.view";
 
 // As escolhas do ConflictResolver sobre o merge da vistoria (#103): campo da raiz, do ambiente e do item, e ambiente ou
 // item removido de um lado e alterado do outro.
@@ -90,6 +97,117 @@ describe("inspectionConflictOf", () => {
         conflict: { current: undefined, collisions: [] },
       }),
     ).toBeUndefined();
+  });
+
+  it("os tipos excluído e exclusão alterada não são conflito de edição, mesmo com current", () => {
+    const removal = draftOf(base, base);
+    removal.conflict = { ...removal.conflict!, type: "removal" };
+    expect(inspectionConflictOf(removal)).toBeUndefined();
+    expect(
+      inspectionConflictOf({
+        ...draftOf(base, base),
+        conflict: { type: "deleted", current: undefined, collisions: [] },
+      }),
+    ).toBeUndefined();
+  });
+});
+
+describe("conflictKindOf", () => {
+  it("sem type é edição; deleted e removal pelo type; sem conflito, nada", () => {
+    const draft = draftOf(base, base);
+    expect(conflictKindOf(draft)).toBe("edit");
+    expect(conflictKindOf({ ...draft, conflict: { ...draft.conflict!, type: "deleted" } })).toBe(
+      "deleted",
+    );
+    expect(conflictKindOf({ ...draft, conflict: { ...draft.conflict!, type: "removal" } })).toBe(
+      "removal",
+    );
+    expect(conflictKindOf({ ...draft, status: "rejected" })).toBeUndefined();
+    expect(conflictKindOf(undefined)).toBeUndefined();
+  });
+});
+
+describe("changeSummary", () => {
+  it("conta itens alterados, incluídos e removidos e os ambientes deles; a posição não conta", () => {
+    const local = edited((v) => {
+      itemOf(v, "t1").notes = "Risco";
+      v.rooms[0]!.items.reverse().forEach((entry, position) => (entry.position = position));
+      v.rooms[1]!.items.push(item("t4", "Torneira", 1));
+      v.rooms.push({
+        id: "r3",
+        name: "Quarto",
+        position: 2,
+        notes: null,
+        items: [item("t5", "Piso", 0)],
+      });
+    });
+    expect(changeSummary(base, local)).toEqual({ items: 3, rooms: 3 });
+    expect(changeSummary(base, base)).toEqual({ items: 0, rooms: 0 });
+  });
+
+  it("sem base (criada neste aparelho), tudo conta", () => {
+    expect(changeSummary(undefined, base)).toEqual({ items: 3, rooms: 2 });
+  });
+});
+
+describe("recreatedInspection", () => {
+  it("os mesmos dados com ids novos na raiz, nos ambientes e nos itens, e sem version", () => {
+    const fresh = recreatedInspection({ ...base, deleting: true });
+    const ids = (record: InspectionRecord) => [
+      record.id,
+      ...record.rooms.flatMap((room) => [room.id, ...room.items.map((entry) => entry.id)]),
+    ];
+    expect(ids(fresh).some((id) => ids(base).includes(id))).toBe(false);
+    expect(new Set(ids(fresh)).size).toBe(ids(fresh).length);
+    expect(fresh.version).toBeNull();
+    expect(fresh).not.toHaveProperty("deleting");
+    const strip = (record: InspectionRecord) =>
+      record.rooms.map(({ id: _id, items, ...room }) => ({
+        ...room,
+        items: items.map(({ id: _item, ...entry }) => entry),
+      }));
+    expect(strip(fresh)).toEqual(strip(base));
+    expect(fresh).toMatchObject({ propertyId: "p1", kind: "moveIn", startedAt: base.startedAt });
+  });
+});
+
+describe("deletedConflictView", () => {
+  const header = { title: "Apto 302, R. das Flores", compactSubtitle: "Vistoria de entrada" };
+  const now = new Date(2026, 9, 28, 16, 0);
+
+  it("os textos do Figma 32:1472", () => {
+    const view = deletedConflictView(
+      header,
+      new Date(2026, 9, 28, 14, 58).toISOString(),
+      { items: 12, rooms: 4 },
+      now,
+    );
+    expect(view).toEqual({
+      description:
+        "Apto 302, R. das Flores · Vistoria de entrada. Ela foi excluída em outro aparelho, mas as suas alterações continuam salvas neste. Recrie a vistoria com os mesmos dados ou descarte as alterações.",
+      deleted: "Excluída às 14:58 em outro aparelho",
+      changes:
+        "Neste aparelho: 12 itens alterados em 4 ambientes. Recriar gera uma vistoria nova, com outro código.",
+    });
+  });
+
+  it("de outro dia, com a data; sem deletedAt e sem alteração, só o que dá para dizer", () => {
+    expect(
+      deletedConflictView(
+        header,
+        new Date(2026, 9, 20, 9, 5).toISOString(),
+        { items: 1, rooms: 1 },
+        now,
+      ),
+    ).toMatchObject({
+      deleted: "Excluída em 20/10 às 09:05 em outro aparelho",
+      changes:
+        "Neste aparelho: 1 item alterado em 1 ambiente. Recriar gera uma vistoria nova, com outro código.",
+    });
+    expect(deletedConflictView(header, undefined, { items: 0, rooms: 0 }, now)).toMatchObject({
+      deleted: "Excluída em outro aparelho",
+      changes: "Recriar gera uma vistoria nova, com outro código.",
+    });
   });
 });
 

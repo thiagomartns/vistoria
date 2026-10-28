@@ -1,6 +1,6 @@
 import type { PendingMutation } from "@tanstack/db";
 
-import type { DraftsCollection } from "./drafts";
+import { type DraftsCollection, recordConflict } from "./drafts";
 import {
   type Outbox,
   type OutboxMutationFn,
@@ -11,12 +11,21 @@ import {
   waitRetryAfter,
 } from "./outbox";
 import { recordSyncSuccess } from "./sync-status";
-import { type LocalCollection, type SyncRecord, confirmedOf } from "./upsert";
+import {
+  type LocalCollection,
+  type MergeStrategy,
+  type SyncRecord,
+  adoptServer,
+  confirmedOf,
+  dropConfirmed,
+  versionConflictCurrent,
+} from "./upsert";
 
 // A exclusão de um registro pela outbox (frontend.md, "Escrita (push)"; ADR 0039), a contraparte do `upsert.ts`. Ela
 // entra na fila única atrás do que já estava lá, e o `DELETE` só se decide no envio, pela store confirmada: o que o
 // servidor nunca aceitou sai do aparelho sem requisição. Até o 204, o registro fica com `deleting` na camada otimista,
-// e a tela o mostra "Excluindo", só leitura.
+// e a tela o mostra "Excluindo", só leitura. Um `DELETE` num registro alterado em outro aparelho pede a pessoa
+// ("Excluir mesmo assim?", ADR 0040).
 
 /** A chamada gerada do `DELETE /api/v1/<entidade>/{id}`. */
 export type DeleteCall = (request: {
@@ -39,15 +48,23 @@ async function forget<T extends SyncRecord>(
  * Envia a exclusão. Com o registro na store confirmada, `DELETE` com `If-Match` da versão dela e a chave da transação;
  * o 204 vale também para o que já tinha sumido. Sem ele (criado no aparelho e nunca aceito), não há o que excluir no
  * servidor. Nos dois casos, o registro e o rascunho saem do aparelho. Uma recusa sai da fila pelo `syncFailure` e desfaz
- * o `deleting`; a reação ao 412 e ao `locked` é da #109 e do M5.
+ * o `deleting`. No `version-conflict` (frontend.md, "Conflito", passo 5), o `current` já vai para a store confirmada,
+ * para a tela mostrar o que mudou, e o rascunho fica em conflito `removal`: a pessoa decide se exclui mesmo assim
+ * (`enqueueRemoval` de novo, com a versão nova e chave nova) ou fica com o servidor (`keepServer`). A reação ao
+ * `locked` é do M5.
  */
 export function removeMutation<T extends SyncRecord>({
   store,
   drafts,
+  entity,
+  shape,
   send,
 }: {
   store: LocalCollection<T>;
   drafts: DraftsCollection;
+  entity: string;
+  /** O `current` do servidor na forma do registro local (o mesmo do merge). */
+  shape: MergeStrategy<T>["shape"];
   send: DeleteCall;
 }): OutboxMutationFn<T> {
   return async ({ transaction, idempotencyKey }) => {
@@ -68,6 +85,16 @@ export function removeMutation<T extends SyncRecord>({
       });
       if (result.error !== undefined || !result.response?.ok) {
         const error = syncFailure({ error: result.error, response: result.response });
+        const current =
+          error instanceof RejectedSyncError && error.group === "user-decision"
+            ? versionConflictCurrent(error.failure)
+            : undefined;
+        if (current) {
+          const { deleting: _deleting, ...like } = mutation.modified;
+          const server = shape(current, like as T);
+          await adoptServer(store, server);
+          recordConflict(drafts, entity, server, { type: "removal", current, collisions: [] });
+        }
         await waitRetryAfter(error);
         throw error;
       }
@@ -109,4 +136,29 @@ export async function enqueueRemoval<T extends SyncRecord>({
       store.delete(id);
     }
   });
+}
+
+/**
+ * "Cancelar" no "Excluir mesmo assim?": a exclusão já saiu da fila e o `current` já está na store confirmada, então só
+ * o conflito sai, e o registro volta a ser editável.
+ */
+export function keepServer(drafts: DraftsCollection, id: string): void {
+  if (drafts.has(id)) drafts.delete(id);
+}
+
+/**
+ * "Descartar alterações" num registro excluído em outro aparelho: ele sai da store confirmada e o rascunho é apagado,
+ * sem requisição e sem fila (o servidor já não o tem).
+ */
+export async function discardDeleted<T extends SyncRecord>({
+  store,
+  drafts,
+  id,
+}: {
+  store: LocalCollection<T>;
+  drafts: DraftsCollection;
+  id: string;
+}): Promise<void> {
+  await dropConfirmed(store, id);
+  if (drafts.has(id)) drafts.delete(id);
 }

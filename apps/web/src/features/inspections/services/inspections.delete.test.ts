@@ -365,19 +365,4 @@ describe("exclusão da vistoria na outbox", () => {
     expect(queued.map(({ mutationFnName }) => mutationFnName)).toEqual([DELETE_INSPECTION]);
     expect(local.inspections.get(record.id)).toMatchObject({ deleting: true });
   });
-
-  it("DELETE recusado (412): sai da fila, o 'Excluindo' é desfeito e a vistoria continua", async () => {
-    const server = fakeServer();
-    server.answers.remove = 412;
-    const local = await start(server);
-    const record = local.known();
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-
-    await deleteInspection(local.store, record.id);
-    await drained(local.outbox);
-
-    await vi.waitFor(() => expect(local.inspections.get(record.id)?.deleting).toBeUndefined());
-    expect(local.inspections.get(record.id)).toMatchObject({ id: record.id, version: "v1" });
-    expect(local.confirmed.get(record.id)).toMatchObject({ version: "v1" });
-  });
 });

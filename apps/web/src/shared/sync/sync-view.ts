@@ -60,6 +60,16 @@ export function registerConflictView(entity: string, view: ConflictView): void {
 }
 
 export const CONFLICT_DETAIL = "Alterada também em outro aparelho";
+export const DELETED_DETAIL = "Excluída em outro aparelho";
+export const REMOVAL_DETAIL = "Alterada antes da exclusão";
+
+/** O detalhe do item pelo tipo do conflito (ADR 0040): edição, excluído ou exclusão alterada. */
+const conflictDetail = (draft: DraftRecord) =>
+  draft.conflict?.type === "deleted"
+    ? DELETED_DETAIL
+    : draft.conflict?.type === "removal"
+      ? REMOVAL_DETAIL
+      : CONFLICT_DETAIL;
 
 /**
  * Os rascunhos em conflito, como itens de "Ação necessária" (Figma OutboxPanel/Item 13:932): a transação já saiu da
@@ -74,7 +84,7 @@ export function conflictItems(drafts: readonly DraftRecord[]): OutboxItemView[] 
         id: `conflict:${draft.id}`,
         state: "conflito" as const,
         title: view.title(draft.data),
-        detail: CONFLICT_DETAIL,
+        detail: conflictDetail(draft),
         href: view.href(draft.id),
       },
     ];

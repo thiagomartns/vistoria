@@ -1,9 +1,17 @@
 "use client";
 
 import { Button } from "@sanjou/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@sanjou/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@sanjou/ui/radio-group";
 import { Separator } from "@sanjou/ui/separator";
-import { Circle, CircleCheck, Cloud, type LucideIcon, Smartphone } from "lucide-react";
+import { Circle, CircleCheck, Cloud, type LucideIcon, Smartphone, Trash2 } from "lucide-react";
 import { Fragment } from "react";
 
 import { SyncBadge } from "./sync-badge";
@@ -11,8 +19,9 @@ import { SyncBadge } from "./sync-badge";
 // O ConflictResolver tipo edição (Figma 32:1787) e o campo em disputa (ConflictResolver/Campo 30:1431): só o que os
 // dois lados mudaram, agrupado por ambiente, com "Neste aparelho" ou "No servidor" por campo. O campo é um radiogroup
 // do Sanjou com o cartão inteiro clicável; o escolhido ganha borda primary de 2 px, fundo accent e o CircleCheck, então
-// a escolha não depende só da cor. Lado a lado a partir de `md` (largo), empilhado abaixo (estreito). Os tipos
-// "excluído" e "exclusão alterada" chegam na #109. Específico do vistoria (ADR 0020).
+// a escolha não depende só da cor. Lado a lado a partir de `md` (largo), empilhado abaixo (estreito). O tipo excluído
+// (32:1472) e o tipo exclusão alterada (32:1514, um Dialog do Sanjou) ficam no fim (ADR 0040). Específico do vistoria
+// (ADR 0020).
 
 export type ConflictChoice = "meu" | "servidor";
 
@@ -219,5 +228,116 @@ export function ConflictResolver({
         </div>
       </div>
     </section>
+  );
+}
+
+type DeletedConflictProps = {
+  /** "Apto 302, R. das Flores · Vistoria de entrada. Ela foi excluída em outro aparelho, …". */
+  description: string;
+  /** "Excluída às 14:58 em outro aparelho". */
+  deleted: string;
+  /** "Neste aparelho: 12 itens alterados em 4 ambientes. Recriar gera uma vistoria nova, com outro código." */
+  changes: string;
+  busy?: boolean;
+  onRecreate: () => void;
+  onDiscard: () => void;
+};
+
+/** O ConflictResolver tipo excluído (Figma 32:1472 e 32:1710): recriar com os mesmos dados ou descartar. */
+export function DeletedConflict({
+  description,
+  deleted,
+  changes,
+  busy = false,
+  onRecreate,
+  onDiscard,
+}: DeletedConflictProps) {
+  return (
+    <section
+      aria-labelledby="vistoria-excluida"
+      className="flex w-full max-w-[720px] flex-col gap-6 bg-background py-2 md:p-6"
+    >
+      <div className="flex flex-col items-start gap-2">
+        <SyncBadge state="conflito" />
+        <h2 id="vistoria-excluida" className="text-lg font-semibold text-foreground">
+          Vistoria excluída em outro aparelho
+        </h2>
+        <p className="text-sm text-muted-foreground">{description}</p>
+      </div>
+      <div className="flex gap-3 rounded-lg border border-border px-4 py-3">
+        <Trash2 className="size-4 shrink-0 text-foreground" aria-hidden="true" />
+        <div className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
+          <p className="font-medium text-foreground">{deleted}</p>
+          <p className="text-muted-foreground">{changes}</p>
+        </div>
+      </div>
+      {/* No celular, empilhados com a ação principal primeiro; no desktop, à direita, Recriar por último. */}
+      <div className="flex flex-col gap-2 border-t border-border pt-4 md:flex-row-reverse md:justify-start">
+        <Button
+          size="lg"
+          className="w-full md:h-8 md:w-auto md:px-3"
+          disabled={busy}
+          onClick={onRecreate}
+        >
+          Recriar vistoria
+        </Button>
+        <Button
+          variant="outline"
+          size="lg"
+          className="w-full md:h-8 md:w-auto md:px-3"
+          disabled={busy}
+          onClick={onDiscard}
+        >
+          Descartar alterações
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+export const REMOVAL_CONFLICT_TITLE = "Excluir mesmo assim?";
+
+type RemovalConflictDialogProps = {
+  open: boolean;
+  /** O × e o Esc: sai sem decidir, e o conflito fica. */
+  onDismiss: () => void;
+  /** "Cancelar": fica com a vistoria como o servidor a tem. */
+  onKeep: () => void;
+  /** "Excluir vistoria": a exclusão volta para a fila, com a versão nova. */
+  onConfirm: () => void;
+};
+
+/** O ConflictResolver tipo exclusão alterada (Figma 32:1514 e 32:1752): o Dialog do Sanjou sobre a tela de campo. */
+export function RemovalConflictDialog({
+  open,
+  onDismiss,
+  onKeep,
+  onConfirm,
+}: RemovalConflictDialogProps) {
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onDismiss();
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{REMOVAL_CONFLICT_TITLE}</DialogTitle>
+          <DialogDescription>
+            Esta vistoria foi alterada em outro aparelho depois que você a abriu. Ao excluir, as
+            alterações feitas lá também se perdem.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={onKeep}>
+            Cancelar
+          </Button>
+          <Button variant="destructive" onClick={onConfirm}>
+            Excluir vistoria
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

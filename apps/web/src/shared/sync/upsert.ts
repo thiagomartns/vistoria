@@ -5,6 +5,7 @@ import {
   type DraftsCollection,
   clearDraft,
   currentOf,
+  deletedAtOf,
   rebaseDraft,
   recordConflict,
   recordRejection,
@@ -95,8 +96,33 @@ async function confirm<T extends SyncRecord>(
   });
 }
 
+const isDeleted = (failure: ApiFailure) =>
+  failure.kind === "problem" && failure.problem.type === "urn:vistoria:problem:deleted";
+
+/**
+ * Um `PUT` num registro excluído em outro aparelho (frontend.md, "Conflito", passo 4): o rascunho fica em conflito
+ * `deleted`, com o local mais novo, a base confirmada e o `deletedAt`, para a pessoa recriar ou descartar. O registro
+ * que já saiu do aparelho (descartado ou recriado, sem store nem rascunho) não volta: um `PUT` que ainda estava atrás
+ * na fila só sai dela (ADR 0040).
+ */
+async function recordDeleted<T extends SyncRecord>(
+  { store, drafts, entity }: { store: ConfirmedStore<T>; drafts: DraftsCollection; entity: string },
+  sent: T,
+  failure: ApiFailure,
+): Promise<void> {
+  const base = await confirmedOf(store, sent.id);
+  if (!base && !drafts.has(sent.id)) return;
+  recordConflict(drafts, entity, sent, {
+    type: "deleted",
+    current: undefined,
+    base,
+    collisions: [],
+    deletedAt: deletedAtOf(failure),
+  });
+}
+
 /** O `current` de um `version-conflict`. `deleted` e uma resposta sem `current` (fora do contrato) não têm. */
-function versionConflictCurrent(failure: ApiFailure): Record<string, unknown> | undefined {
+export function versionConflictCurrent(failure: ApiFailure): Record<string, unknown> | undefined {
   if (
     failure.kind !== "problem" ||
     failure.problem.type !== "urn:vistoria:problem:version-conflict"
@@ -157,7 +183,9 @@ export function upsertMutation<T extends SyncRecord>({
           current &&
           (await settleConflict({ store, drafts, entity, strategy, requeue }, mutation, current));
         if (settled) return;
-        if (!current) {
+        if (isDeleted(error.failure)) {
+          await recordDeleted({ store, drafts, entity }, mutation.modified, error.failure);
+        } else if (!current) {
           recordConflict(drafts, entity, mutation.modified, {
             current: currentOf(error.failure),
             collisions: [],
@@ -244,7 +272,7 @@ async function settleConflict<T extends SyncRecord>(
  * Grava na store confirmada, fora do envio de uma transação, o registro como o servidor o tem: a store só aceita o que
  * vem por uma mutação, então ela leva uma mutação da própria collection, sem transação.
  */
-async function adoptServer<T extends SyncRecord>(
+export async function adoptServer<T extends SyncRecord>(
   store: LocalCollection<T>,
   record: T,
 ): Promise<void> {
@@ -253,6 +281,21 @@ async function adoptServer<T extends SyncRecord>(
     mutations: [
       { collection: store, type: known ? "update" : "insert", key: record.id, modified: record },
     ],
+  } as unknown as { mutations: PendingMutation[] });
+}
+
+/**
+ * Tira da store confirmada, fora do envio de uma transação, um registro que o servidor não tem mais (excluído em outro
+ * aparelho): a contraparte do `adoptServer`.
+ */
+export async function dropConfirmed<T extends SyncRecord>(
+  store: LocalCollection<T>,
+  id: string,
+): Promise<void> {
+  const known = await confirmedOf(store, id);
+  if (!known) return;
+  await store.utils.acceptMutations({
+    mutations: [{ collection: store, type: "delete", key: id, modified: known }],
   } as unknown as { mutations: PendingMutation[] });
 }
 

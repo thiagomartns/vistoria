@@ -1,16 +1,30 @@
 import { useLocalStore } from "@/features/local-store/hooks/useLocalStore";
 import { conflictOrigin, useConflictChoices } from "@/shared/sync/useConflictChoices";
 
-import { INSPECTION_ENTITY } from "../models/inspection";
-import { inspectionConflictOf, resolveInspection } from "../services/inspections.resolve";
-import { resolveInspectionConflict } from "../services/inspections.sync";
-import { conflictGroups, fieldHeader } from "../services/inspections.view";
+import { INSPECTION_ENTITY, type InspectionRecord } from "../models/inspection";
+import {
+  changeSummary,
+  conflictKindOf,
+  inspectionConflictOf,
+  resolveInspection,
+} from "../services/inspections.resolve";
+import {
+  deleteInspection,
+  discardDeletedInspection,
+  keepInspection,
+  recreateInspection,
+  resolveInspectionConflict,
+} from "../services/inspections.sync";
+import { conflictGroups, deletedConflictView, fieldHeader } from "../services/inspections.view";
 import { placesOf } from "./useInspections";
 
 /**
- * O ConflictResolver de uma vistoria (frontend.md, "Conflito"): o merge refeito a partir do rascunho em conflito, as
- * escolhas da pessoa ("meu" ou "servidor" por campo) e o envio da resolução. As escolhas vivem só na tela: sair sem
- * enviar deixa o conflito como estava.
+ * O ConflictResolver de uma vistoria (frontend.md, "Conflito"), pelo tipo do conflito (ADR 0040):
+ *
+ * - `edit`: o merge refeito a partir do rascunho em conflito, as escolhas da pessoa ("meu" ou "servidor" por campo) e o
+ *   envio da resolução. As escolhas vivem só na tela: sair sem enviar deixa o conflito como estava.
+ * - `deleted`: excluída em outro aparelho; recriar (vistoria nova, ids novos) ou descartar.
+ * - `removal`: alterada antes da exclusão; excluir mesmo assim ou ficar com o servidor.
  */
 export function useInspectionConflict(id: string | null) {
   const { store, ready, inspections, properties, clients, drafts } = useLocalStore();
@@ -18,8 +32,19 @@ export function useInspectionConflict(id: string | null) {
   const draft = id
     ? drafts.find((candidate) => candidate.id === id && candidate.entity === INSPECTION_ENTITY)
     : undefined;
+  const kind = conflictKindOf(draft);
   const conflict = inspectionConflictOf(draft);
   const places = placesOf(properties, clients);
+  const local = draft?.data as InspectionRecord | undefined;
+  const base = draft?.conflict?.base as InspectionRecord | undefined;
+  const deleted =
+    kind === "deleted" && local
+      ? deletedConflictView(
+          fieldHeader(local, places.get(local.propertyId)),
+          draft?.conflict?.deletedAt,
+          changeSummary(base, local),
+        )
+      : undefined;
   const groups = conflict ? conflictGroups(conflict, places) : [];
   const { choices, done, submit, ...resolution } = useConflictChoices(
     groups.flatMap((group) => group.fields.map((field) => field.key)),
@@ -30,12 +55,16 @@ export function useInspectionConflict(id: string | null) {
 
   return {
     ...resolution,
+    /** O tipo do conflito; `undefined` sem conflito. */
+    kind,
+    /** Tipo excluído: a descrição, quando foi excluída e o que mudou neste aparelho. */
+    deleted,
     /** `done`: a resolução saiu e o rascunho já não está em conflito; a tela só sai. */
     status: done
       ? ("done" as const)
       : !ready
         ? ("loading" as const)
-        : conflict
+        : conflict || (kind !== undefined && kind !== "edit")
           ? ("found" as const)
           : ("none" as const),
     /** A vistoria existe neste aparelho (para "Abrir a vistoria" quando não há conflito). */
@@ -59,5 +88,20 @@ export function useInspectionConflict(id: string | null) {
             }),
           )
         : Promise.resolve(false),
+    /** Tipo excluído: "Recriar vistoria". Devolve o id da vistoria nova. */
+    recreate: (): Promise<string | undefined> =>
+      store && id && kind === "deleted"
+        ? recreateInspection(store, id)
+        : Promise.resolve(undefined),
+    /** Tipo excluído: "Descartar alterações". */
+    discard: (): Promise<void> =>
+      store && id && kind === "deleted" ? discardDeletedInspection(store, id) : Promise.resolve(),
+    /** Tipo exclusão alterada: "Excluir vistoria" (de novo, com a versão nova). */
+    confirmDeletion: (): Promise<void> =>
+      store && id && kind === "removal" ? deleteInspection(store, id) : Promise.resolve(),
+    /** Tipo exclusão alterada: "Cancelar"; a vistoria fica como o servidor a tem. */
+    keep: (): void => {
+      if (store && id && kind === "removal") keepInspection(store, id);
+    },
   };
 }

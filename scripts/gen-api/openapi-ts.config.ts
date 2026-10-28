@@ -6,5 +6,12 @@ import { defineConfig } from "@hey-api/openapi-ts";
 export default defineConfig({
   input: "../../apps/api/openapi.json",
   output: { path: "../../apps/web/src/shared/api/generated" },
-  plugins: ["@hey-api/typescript", "@hey-api/client-fetch", "@hey-api/sdk", "zod"],
+  // A API serializa DateTimeOffset com o fuso ("+00:00"), não com "Z": sem `offset`, o Zod recusaria o `deletedAt` do
+  // 410 e o ProblemDetails inteiro viraria resposta ilegível (tentar de novo, para sempre).
+  plugins: [
+    "@hey-api/typescript",
+    "@hey-api/client-fetch",
+    "@hey-api/sdk",
+    { name: "zod", dates: { offset: true } },
+  ],
 });

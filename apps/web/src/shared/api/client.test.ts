@@ -110,6 +110,29 @@ describe("readFailure", () => {
     expect(readFailure(result)).toEqual({ kind: "problem", problem: problemDetails });
   });
 
+  it("410 deleted com o deletedAt como a API serializa (com fuso, não com Z) → problem", async () => {
+    // O corpo real do PUT numa vistoria excluída: o DateTimeOffset do .NET sai com "+00:00" e 7 casas.
+    const deleted = {
+      type: "urn:vistoria:problem:deleted",
+      title: "Registro excluído",
+      status: 410,
+      detail: "O registro foi excluído.",
+      deletedAt: "2026-10-28T20:37:57.9603612+00:00",
+      traceId: "00-trace",
+    };
+    const { client } = setup(
+      () => null,
+      () =>
+        Response.json(deleted, {
+          status: 410,
+          headers: { "Content-Type": "application/problem+json" },
+        }),
+    );
+    const result = await getClient({ client, path: { id } });
+
+    expect(readFailure(result)).toEqual({ kind: "problem", problem: deleted });
+  });
+
   it("fetch que lança → network", async () => {
     const cause = new TypeError("fetch failed");
     const { client } = setup(

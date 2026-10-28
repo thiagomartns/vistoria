@@ -16,7 +16,7 @@ import {
 } from "../models/inspection";
 import { CONDITIONS, roomOfError } from "../schemas/inspection.schemas";
 import type { InspectionCollision } from "./inspections.merge";
-import { type InspectionConflict, collisionKey } from "./inspections.resolve";
+import { type ChangeSummary, type InspectionConflict, collisionKey } from "./inspections.resolve";
 
 // Do banco local para o que a lista de vistorias e a tela de campo mostram. Funções puras: cada estado cabe num
 // teste, e os componentes recebem só o resultado.
@@ -420,4 +420,43 @@ export function conflictPlaces(conflict: InspectionConflict | undefined): {
     if (collision.itemId) items.add(collision.itemId);
   }
   return { rooms, items };
+}
+
+// --- Conflito: excluída em outro aparelho (Figma 32:1472, ADR 0040) ---
+
+/** O que o ConflictResolver tipo excluído mostra. */
+export interface DeletedConflictView {
+  /** "Apto 302, R. das Flores · Vistoria de entrada. Ela foi excluída em outro aparelho, …". */
+  description: string;
+  /** "Excluída às 14:58 em outro aparelho". */
+  deleted: string;
+  /** "Neste aparelho: 12 itens alterados em 4 ambientes. Recriar gera uma vistoria nova, com outro código." */
+  changes: string;
+}
+
+/** "Excluída às 14:58 em outro aparelho"; de outro dia, "Excluída em 20/10 às 14:58 em outro aparelho". */
+function deletedLabel(deletedAt: string | undefined, now: Date): string {
+  const date = deletedAt ? new Date(deletedAt) : undefined;
+  if (!date || Number.isNaN(date.getTime())) return "Excluída em outro aparelho";
+  const { day, time } = dayAndTime(date);
+  const when = date.toDateString() === now.toDateString() ? `às ${time}` : `em ${day} às ${time}`;
+  return `Excluída ${when} em outro aparelho`;
+}
+
+const RECREATE_NOTE = "Recriar gera uma vistoria nova, com outro código.";
+
+export function deletedConflictView(
+  header: { title: string; compactSubtitle: string },
+  deletedAt: string | undefined,
+  changes: ChangeSummary,
+  now: Date = new Date(),
+): DeletedConflictView {
+  return {
+    description: `${header.title} · ${header.compactSubtitle}. Ela foi excluída em outro aparelho, mas as suas alterações continuam salvas neste. Recrie a vistoria com os mesmos dados ou descarte as alterações.`,
+    deleted: deletedLabel(deletedAt, now),
+    changes:
+      changes.items === 0
+        ? RECREATE_NOTE
+        : `Neste aparelho: ${plural(changes.items, "item alterado", "itens alterados")} em ${plural(changes.rooms, "ambiente", "ambientes")}. ${RECREATE_NOTE}`,
+  };
 }

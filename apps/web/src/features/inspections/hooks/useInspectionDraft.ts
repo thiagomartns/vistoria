@@ -18,7 +18,11 @@ import {
   roomOfError,
   roomStepSchema,
 } from "../schemas/inspection.schemas";
-import { conflictHref, inspectionConflictOf } from "../services/inspections.resolve";
+import {
+  conflictHref,
+  conflictKindOf,
+  inspectionConflictOf,
+} from "../services/inspections.resolve";
 import {
   deleteInspection,
   saveInspection,
@@ -46,6 +50,16 @@ export const REJECTED_TITLE = "O servidor recusou esta vistoria";
 export const CONFLICT_TITLE = "Esta vistoria foi alterada em outro aparelho";
 export const CONFLICT_DESCRIPTION =
   "Suas alterações estão salvas neste aparelho. Escolha o que fica em cada campo para enviar de novo.";
+
+/** O aviso de uma vistoria excluída em outro aparelho (tipo excluído do ConflictResolver, ADR 0040). */
+export const DELETED_TITLE = "Esta vistoria foi excluída em outro aparelho";
+export const DELETED_DESCRIPTION =
+  "Suas alterações estão salvas neste aparelho. Recrie a vistoria com os mesmos dados ou descarte as alterações.";
+
+/** O aviso de uma exclusão que achou a vistoria alterada (tipo exclusão alterada, ADR 0040): só leitura. */
+export const REMOVAL_TITLE = "Esta vistoria foi alterada antes da exclusão";
+export const REMOVAL_DESCRIPTION =
+  "A exclusão não saiu. A tela mostra a vistoria como está no servidor; decida se exclui mesmo assim.";
 
 /** O aviso do estado 6 do #107: a exclusão está na fila, e a tela fica só leitura. */
 export const DELETION_TITLE = "Exclusão aguardando envio";
@@ -109,6 +123,8 @@ function initialStep(draft: DraftRecord | undefined, rooms: number): number {
  *   ConflictResolver, que parte dele. Enfileirar levaria a versão de antes do conflito, e o 412 voltaria a cada mudança.
  * - Excluir (`remove`) põe a exclusão na fila e para de gravar e de enfileirar, inclusive no flush de sair da tela: um
  *   `PUT` depois do `DELETE` não pode sair (ADR 0039). Com a exclusão na fila, a tela fica só leitura (estado 6 do #107).
+ * - Excluída em outro aparelho, segue como no conflito de edição, com o aviso do tipo excluído. Com a exclusão
+ *   recusada porque a vistoria mudou, fica só leitura com o que o servidor tem, até "Excluir mesmo assim?" (ADR 0040).
  */
 export function useInspectionDraft(id: string | null) {
   const { store, ready, inspections, properties, clients, drafts, states, bases } = useLocalStore();
@@ -121,7 +137,10 @@ export function useInspectionDraft(id: string | null) {
   const source = (draft?.data as InspectionRecord | undefined) ?? record;
   const status = !ready ? "loading" : !id || !source ? "missing" : "found";
   const inConflict = draft?.status === "conflict";
+  const conflictKind = conflictKindOf(draft);
   const deleting = record?.deleting === true;
+  /** A exclusão achou a vistoria alterada: a tela mostra o servidor, só leitura, até a pessoa decidir (ADR 0040). */
+  const removalConflict = conflictKind === "removal";
   /** A pessoa confirmou a exclusão nesta tela: nada mais vai para o rascunho nem para a fila. */
   const removed = useRef(false);
 
@@ -340,12 +359,15 @@ export function useInspectionDraft(id: string | null) {
       sync: itemSync(item.id, index),
     })),
     room: rooms[step],
-    /** Envio da vistoria no ar (ADR 0021) ou exclusão na fila: o formulário fica só leitura. */
-    readOnly: sending || deleting,
+    /**
+     * Envio da vistoria no ar (ADR 0021), exclusão na fila ou exclusão recusada à espera da pessoa: o formulário fica
+     * só leitura.
+     */
+    readOnly: sending || deleting || removalConflict,
     /** Estado 6 do #107: a exclusão está na fila. */
     deletion: deleting ? { title: DELETION_TITLE, description: DELETION_DESCRIPTION } : null,
     /** O "···" com "Excluir vistoria": só em andamento e uma vez só. */
-    deletable: source?.status === "inProgress" && !deleting,
+    deletable: source?.status === "inProgress" && !deleting && !removalConflict,
     /** O que o Dialog de exclusão nomeia, e se ele avisa que há alteração não enviada (estado 3 do #107). */
     deleteSubject: header
       ? deletionSubject(header.title, source ? INSPECTION_KINDS[source.kind] : null)
@@ -358,11 +380,16 @@ export function useInspectionDraft(id: string | null) {
       await deleteInspection(store, id);
     },
     rejection,
-    /** Estado 5: o aviso e o caminho para o ConflictResolver (o `deleted` chega na #109). */
-    conflict:
-      inConflict && conflict && id
-        ? { title: CONFLICT_TITLE, description: CONFLICT_DESCRIPTION, href: conflictHref(id) }
-        : null,
+    /** Estado 5 e os tipos excluído e exclusão alterada: o aviso e o caminho para o ConflictResolver. */
+    conflict: !id
+      ? null
+      : conflictKind === "deleted"
+        ? { title: DELETED_TITLE, description: DELETED_DESCRIPTION, href: conflictHref(id) }
+        : removalConflict
+          ? { title: REMOVAL_TITLE, description: REMOVAL_DESCRIPTION, href: conflictHref(id) }
+          : inConflict && conflict
+            ? { title: CONFLICT_TITLE, description: CONFLICT_DESCRIPTION, href: conflictHref(id) }
+            : null,
     conditions: CONDITION_VALUES.map((value) => ({ value, label: CONDITIONS[value] })),
     notesMax: NOTES_MAX,
   };
