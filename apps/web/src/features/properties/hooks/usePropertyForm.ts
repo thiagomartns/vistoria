@@ -5,6 +5,7 @@ import { type FieldErrors, useForm, useFormState } from "react-hook-form";
 import { useLocalStore } from "@/features/local-store/hooks/useLocalStore";
 import type { DraftRecord } from "@/shared/sync/drafts";
 import { flatConflictOf } from "@/shared/sync/flat-conflict";
+import { type UnavailableMessages, useFetchMissing } from "@/shared/sync/useFetchMissing";
 
 import {
   PROPERTY_FIELDS,
@@ -15,7 +16,7 @@ import {
   propertyErrors,
   propertyFormSchema,
 } from "../schemas/property.schemas";
-import { propertyConflictHref, saveProperty } from "../services/properties.sync";
+import { fetchProperty, propertyConflictHref, saveProperty } from "../services/properties.sync";
 import { type PropertyRow, clientOptionsOf, propertyRowOf } from "../services/properties.view";
 
 /** Para onde o formulário volta: a lista. */
@@ -26,6 +27,14 @@ export const PROPERTIES_HREF = "/properties";
 export const CONFLICT_TITLE = "Este imóvel foi alterado em outro aparelho";
 export const CONFLICT_DESCRIPTION =
   "Suas alterações estão salvas neste aparelho. Escolha o que fica em cada campo para enviar de novo.";
+
+/** Sem o registro no aparelho (leitura por id, frontend.md, "Leitura (pull)"). */
+export const UNAVAILABLE: UnavailableMessages = {
+  offline:
+    "Este imóvel ainda não está neste aparelho. Abra-o uma vez com internet para trabalhar nele offline.",
+  notFound: "Este imóvel não existe ou foi excluído.",
+  failed: "Não foi possível buscar este imóvel agora.",
+};
 
 export const SERVER_REJECTED = "O servidor recusou este cadastro. Corrija e salve de novo.";
 
@@ -88,7 +97,22 @@ export function usePropertyForm(id: string | null) {
   const draft = id ? drafts.find((candidate) => candidate.id === id) : undefined;
   const property = id ? properties.find((candidate) => candidate.id === id) : undefined;
   const row = id ? propertyRowOf(property, draft, states.get(id), clientNames) : undefined;
-  const status = !ready ? "loading" : id === null ? "new" : row ? "found" : "missing";
+  // Um id que o aparelho não tem é buscado no servidor; até chegar, a tela segue carregando.
+  const missing = ready && id !== null && !row;
+  const { unavailable } = useFetchMissing(
+    missing ? id : null,
+    store && ((key) => fetchProperty(store, key)),
+    UNAVAILABLE,
+  );
+  const status = !ready
+    ? "loading"
+    : id === null
+      ? "new"
+      : row
+        ? "found"
+        : unavailable
+          ? "unavailable"
+          : "loading";
 
   const form = useForm<PropertyFormValues, unknown, PropertyFormOutput>({
     resolver: zodResolver(propertyFormSchema, propertyErrors),
@@ -113,6 +137,8 @@ export function usePropertyForm(id: string | null) {
 
   return {
     status,
+    /** Sem o registro: sem rede, não encontrado ou falha do servidor (`RecordUnavailable`). */
+    unavailable,
     /** O endereço salvo (não o que está sendo digitado), ou "Novo imóvel". */
     title: status === "new" ? "Novo imóvel" : status === "found" && row ? row.address : "Imóvel",
     sync: status === "found" ? row?.sync : undefined,

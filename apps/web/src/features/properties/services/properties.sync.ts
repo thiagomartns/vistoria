@@ -1,11 +1,15 @@
-import { upsertProperty } from "@/shared/api/generated";
+import { type PropertyDto, getProperty, upsertProperty } from "@/shared/api/generated";
 import type { Client } from "@/shared/api/generated/client";
 import { type DraftsCollection, clearDraft, keepConflictData } from "@/shared/sync/drafts";
+import { type FetchOutcome, fetchMissing } from "@/shared/sync/fetch";
 import { flatConflictOf } from "@/shared/sync/flat-conflict";
 import { newId } from "@/shared/sync/ids";
 import { type Outbox, type OutboxMutationFn, enqueue } from "@/shared/sync/outbox";
 import { registerConflictView, registerRecordLabel } from "@/shared/sync/sync-view";
 import { resolveConflict, upsertMutation } from "@/shared/sync/upsert";
+
+import type { ClientsCollection } from "@/features/clients/services/clients.collection";
+import { fetchClient } from "@/features/clients/services/clients.sync";
 
 import { PROPERTY_ENTITY, type PropertyRecord } from "../models/property";
 import type { PropertiesCollection } from "./properties.collection";
@@ -94,5 +98,43 @@ export function resolvePropertyConflict(
     mutationFnName: UPSERT_PROPERTY,
     server,
     resolved,
+  });
+}
+
+/** Do DTO do servidor para o registro local: fica o que vai no `PUT` e a `version`; as datas são do servidor. */
+export function propertyRecordOf(dto: PropertyDto): PropertyRecord {
+  return {
+    id: dto.id,
+    version: dto.version,
+    clientId: dto.clientId,
+    street: dto.street,
+    number: dto.number,
+    complement: dto.complement,
+    district: dto.district,
+    city: dto.city,
+    state: dto.state,
+    zipCode: dto.zipCode,
+    type: dto.type,
+    notes: dto.notes,
+  };
+}
+
+/**
+ * Abre pelo id um imóvel que não está no aparelho (`fetchMissing`): `GET /api/v1/properties/{id}`, e antes de gravá-lo
+ * o cliente dele, se também faltar. Uma falha no cliente não segura o imóvel: o cliente é pedido de novo quando a
+ * tela dele abrir.
+ */
+export function fetchProperty(
+  store: { properties: PropertiesCollection; clients: ClientsCollection; drafts: DraftsCollection },
+  id: string,
+  client?: Client,
+): Promise<FetchOutcome> {
+  return fetchMissing({
+    store: store.properties,
+    drafts: store.drafts,
+    id,
+    get: (request) => getProperty({ client, ...request }),
+    shape: propertyRecordOf,
+    before: (property) => fetchClient(store, property.clientId, client),
   });
 }

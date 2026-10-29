@@ -1,14 +1,20 @@
 import {
   type InspectionDto,
   deleteInspection as sendDelete,
+  getInspection,
   upsertInspection,
 } from "@/shared/api/generated";
 import type { Client } from "@/shared/api/generated/client";
 import { type DraftsCollection, clearDraft, saveDraftValues } from "@/shared/sync/drafts";
+import { type FetchOutcome, fetchMissing } from "@/shared/sync/fetch";
 import { type Outbox, type OutboxMutationFn, enqueue } from "@/shared/sync/outbox";
 import { discardDeleted, enqueueRemoval, keepServer, removeMutation } from "@/shared/sync/remove";
 import { registerConflictView, registerRecordLabel } from "@/shared/sync/sync-view";
 import { type MergeStrategy, resolveConflict, upsertMutation } from "@/shared/sync/upsert";
+
+import type { ClientsCollection } from "@/features/clients/services/clients.collection";
+import type { PropertiesCollection } from "@/features/properties/services/properties.collection";
+import { fetchProperty } from "@/features/properties/services/properties.sync";
 
 import { INSPECTION_ENTITY, type InspectionRecord } from "../models/inspection";
 import type { InspectionsCollection } from "./inspections.collection";
@@ -206,4 +212,30 @@ export function discardDeletedInspection(
  */
 export function keepInspection({ drafts }: Pick<InspectionStore, "drafts">, id: string): void {
   keepServer(drafts, id);
+}
+
+/**
+ * Abre pelo id uma vistoria que não está no aparelho (frontend.md, "Leitura (pull)"; ADR 0038):
+ * `GET /api/v1/inspections/{id}` e o agregado na store confirmada, com a `version`. Antes de gravá-la, o imóvel dela e
+ * o cliente do imóvel, se faltarem, para a tela de campo abrir com o endereço. Uma vistoria com pendência (na fila ou
+ * em rascunho) nunca é pedida nem sobrescrita.
+ */
+export function fetchInspection(
+  store: {
+    inspections: InspectionsCollection;
+    properties: PropertiesCollection;
+    clients: ClientsCollection;
+    drafts: DraftsCollection;
+  },
+  id: string,
+  client?: Client,
+): Promise<FetchOutcome> {
+  return fetchMissing({
+    store: store.inspections,
+    drafts: store.drafts,
+    id,
+    get: (request) => getInspection({ client, ...request }),
+    shape: inspectionRecordOf,
+    before: (inspection) => fetchProperty(store, inspection.propertyId, client),
+  });
 }

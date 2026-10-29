@@ -6,12 +6,14 @@ import type { ClientRecord } from "@/features/clients/models/client";
 import type { InspectionRecord } from "@/features/inspections/models/inspection";
 import {
   deleteInspection,
+  fetchInspection,
   saveInspection,
   saveInspectionDraft,
 } from "@/features/inspections/services/inspections.sync";
 import type { PropertyRecord } from "@/features/properties/models/property";
 import { resetSession } from "@/shared/auth/session";
 import type { DraftRecord } from "@/shared/sync/drafts";
+import type { FetchOutcome } from "@/shared/sync/fetch";
 import { resetSyncStatus } from "@/shared/sync/sync-status";
 import type { RecordSyncState } from "@/shared/sync/sync-view";
 
@@ -52,6 +54,9 @@ vi.mock("@/features/inspections/services/inspections.sync", () => ({
   saveInspection: vi.fn<() => string>(() => "i1"),
   saveInspectionDraft: vi.fn<() => void>(),
   deleteInspection: vi.fn<() => Promise<void>>(async () => {}),
+  fetchInspection: vi.fn<(store: unknown, id: string) => Promise<FetchOutcome>>(
+    async () => "not-found",
+  ),
 }));
 
 const lar: ClientRecord = {
@@ -154,6 +159,7 @@ afterEach(() => {
   vi.mocked(saveInspection).mockClear();
   vi.mocked(saveInspectionDraft).mockClear();
   vi.mocked(deleteInspection).mockClear();
+  vi.mocked(fetchInspection).mockReset().mockResolvedValue("not-found");
   navigation.push.mockClear();
   resetSyncStatus();
   resetSession();
@@ -585,12 +591,73 @@ describe("InspectionEditScreen", () => {
     expect(screen.queryByRole("button", { name: "Mais ações" })).toBeNull();
   });
 
-  it("vistoria que não está no aparelho", () => {
-    open({ inspections: [] });
+  describe("vistoria que não está no aparelho (leitura por id)", () => {
+    it("busca no servidor e, enquanto busca, fica carregando", () => {
+      vi.mocked(fetchInspection).mockReturnValue(new Promise(() => {}));
+      open({ inspections: [] });
 
-    expect(screen.getByText("Esta vistoria não está neste aparelho.")).toBeDefined();
-    expect(screen.getByRole("link", { name: "Voltar para a lista" }).getAttribute("href")).toBe(
-      "/inspections",
-    );
+      expect(vi.mocked(fetchInspection)).toHaveBeenCalledWith(local.value.store, "i1");
+      expect(heading().textContent).toBe("Vistoria");
+      expect(screen.queryByRole("status")).toBeNull();
+      expect(screen.queryByRole("navigation", { name: "Ambientes" })).toBeNull();
+    });
+
+    it("a que está no aparelho (ou só no rascunho) não é buscada", () => {
+      open();
+      open({ inspections: [], drafts: [draftOf({ status: "rejected" })] });
+
+      expect(vi.mocked(fetchInspection)).not.toHaveBeenCalled();
+    });
+
+    it("gravada pela busca, abre a tela de campo com o imóvel e o cliente", async () => {
+      vi.mocked(fetchInspection).mockResolvedValue("found");
+      const { rerender } = open({ clients: [], properties: [], inspections: [] });
+      await vi.waitFor(() => expect(vi.mocked(fetchInspection)).toHaveBeenCalledOnce());
+
+      // O banco local entrega o que a busca gravou: o cliente, o imóvel e a vistoria.
+      local.value = { ...local.value, clients: [lar], properties: [apto], inspections: [vistoria] };
+      rerender(
+        <AppShell>
+          <InspectionEditScreen />
+        </AppShell>,
+      );
+
+      expect(
+        await screen.findByRole("heading", { level: 1, name: "R. das Flores, 120 · Apto 302" }),
+      ).toBeDefined();
+      expect(screen.getByText(/Imobiliária Lar/)).toBeDefined();
+      expect(screen.getByRole("heading", { level: 2, name: "Sala" })).toBeDefined();
+    });
+
+    it("404: não encontrada, com a volta para a lista", async () => {
+      open({ inspections: [] });
+
+      expect(await screen.findByText("Esta vistoria não existe ou foi excluída.")).toBeDefined();
+      expect(screen.getByRole("link", { name: "Voltar para a lista" }).getAttribute("href")).toBe(
+        "/inspections",
+      );
+    });
+
+    it("sem rede: explica que é preciso abrir uma vez com internet", async () => {
+      vi.mocked(fetchInspection).mockResolvedValue("offline");
+      open({ inspections: [] });
+
+      expect(
+        await screen.findByText(
+          "Esta vistoria ainda não está neste aparelho. Abra-a uma vez com internet para trabalhar nela offline.",
+        ),
+      ).toBeDefined();
+    });
+
+    it("falha do servidor: Tentar de novo busca outra vez", async () => {
+      const user = userEvent.setup();
+      vi.mocked(fetchInspection).mockResolvedValue("failed");
+      open({ inspections: [] });
+
+      await user.click(await screen.findByRole("button", { name: "Tentar de novo" }));
+
+      expect(screen.getByText("Não foi possível buscar esta vistoria agora.")).toBeDefined();
+      await vi.waitFor(() => expect(vi.mocked(fetchInspection)).toHaveBeenCalledTimes(2));
+    });
   });
 });
