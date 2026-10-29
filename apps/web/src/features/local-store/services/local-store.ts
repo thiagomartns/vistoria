@@ -1,13 +1,27 @@
 import { closeLocalDb, openLocalDb } from "@/shared/db/local-db";
 import { type DraftsCollection, createDraftsCollection } from "@/shared/sync/drafts";
 import { type Outbox, startOutbox } from "@/shared/sync/outbox";
+import {
+  type CursorsCollection,
+  type SkipMarksCollection,
+  createCursorsCollection,
+  createSkipMarksCollection,
+  cursorStoreOf,
+  pullOnce,
+  skipMarksOf,
+} from "@/shared/sync/pull";
+import { type PullTriggers, startPull } from "@/shared/sync/pull-triggers";
 import { trackOutbox } from "@/shared/sync/sync-status";
 
 import {
   type ClientsCollection,
   createClientsCollection,
 } from "@/features/clients/services/clients.collection";
-import { UPSERT_CLIENT, upsertClientMutation } from "@/features/clients/services/clients.sync";
+import {
+  UPSERT_CLIENT,
+  clientsPull,
+  upsertClientMutation,
+} from "@/features/clients/services/clients.sync";
 import {
   type InspectionsCollection,
   createInspectionsCollection,
@@ -24,12 +38,13 @@ import {
 } from "@/features/properties/services/properties.collection";
 import {
   UPSERT_PROPERTY,
+  propertiesPull,
   upsertPropertyMutation,
 } from "@/features/properties/services/properties.sync";
 
-// O banco local do usuário: as collections de cada feature e uma outbox só para todas. É o único módulo que junta
-// as features, porque a fila é uma: um imóvel criado com um cliente pendente sai depois dele, e uma vistoria, depois do
-// imóvel (ADR 0034).
+// O banco local do usuário: as collections de cada feature, uma outbox só para todas e o pull. É o único módulo que
+// junta as features, porque a fila é uma: um imóvel criado com um cliente pendente sai depois dele, e uma vistoria,
+// depois do imóvel (ADR 0034). O pull também segue a ordem: clientes antes de imóveis.
 
 export interface LocalStore {
   clients: ClientsCollection;
@@ -37,6 +52,9 @@ export interface LocalStore {
   inspections: InspectionsCollection;
   drafts: DraftsCollection;
   outbox: Outbox;
+  cursors: CursorsCollection;
+  skipped: SkipMarksCollection;
+  pull: PullTriggers;
 }
 
 let current: { ownerId: string; opening: Promise<LocalStore> } | undefined;
@@ -60,16 +78,33 @@ async function open(ownerId: string): Promise<LocalStore> {
   });
   await outbox.waitForInit();
   trackOutbox(outbox);
-  return { clients, properties, inspections, drafts, outbox };
+  const cursors = createCursorsCollection(db);
+  const skipped = createSkipMarksCollection(db);
+  const state = { drafts, cursors: cursorStoreOf(cursors), marks: skipMarksOf(skipped) };
+  const entities = [clientsPull(clients), propertiesPull(properties)];
+  const pull = startPull({
+    ownerId,
+    drafts,
+    // Sem tela aberta, as collections podem ter sido recolhidas: o ciclo só confere pendência e cursor com elas
+    // carregadas (um rascunho que não carregou não pode deixar o pull sobrescrever o registro).
+    run: async () => {
+      await Promise.all([clients, properties, drafts, cursors, skipped].map((c) => c.preload()));
+      return pullOnce(state, entities);
+    },
+  });
+  return { clients, properties, inspections, drafts, outbox, cursors, skipped, pull };
 }
 
 async function close(ownerId: string, opening: Promise<LocalStore>): Promise<void> {
   const store = await opening.catch(() => undefined);
+  store?.pull.dispose();
   store?.outbox.dispose();
   await store?.clients.cleanup();
   await store?.properties.cleanup();
   await store?.inspections.cleanup();
   await store?.drafts.cleanup();
+  await store?.cursors.cleanup();
+  await store?.skipped.cleanup();
   await closeLocalDb(ownerId);
 }
 

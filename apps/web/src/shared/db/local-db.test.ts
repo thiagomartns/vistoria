@@ -24,6 +24,8 @@ describe("banco local por usuário", () => {
       "properties",
       "inspections",
       "drafts",
+      "cursors",
+      "skipped",
     ]);
 
     await closeLocalDb("ana");

@@ -2,11 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { closeLocalDb, openLocalDb } from "@/shared/db/local-db";
 import { startOutbox } from "@/shared/sync/outbox";
+import { startPull } from "@/shared/sync/pull-triggers";
 
 import { closeLocalStore, openLocalStore } from "./local-store";
 
-// Um banco e uma outbox por usuário, a mesma para clients, properties e inspections: trocar de dono fecha os do anterior, e a
-// fila dele não sai com o outro.
+// Um banco, uma outbox e um pull por usuário, a mesma outbox para clients, properties e inspections: trocar de dono fecha
+// os do anterior, e a fila dele não sai com o outro.
 
 vi.mock("@/shared/db/local-db", () => ({
   openLocalDb: vi.fn<(ownerId: string) => Promise<object>>(async (ownerId) => ({ name: ownerId })),
@@ -27,6 +28,16 @@ vi.mock("@/features/inspections/services/inspections.collection", () => ({
 
 vi.mock("@/shared/sync/drafts", () => ({
   createDraftsCollection: () => ({ cleanup: vi.fn<() => Promise<void>>(async () => {}) }),
+}));
+
+vi.mock("@/shared/sync/pull", async (original) => ({
+  ...(await original<typeof import("@/shared/sync/pull")>()),
+  createCursorsCollection: () => ({ cleanup: vi.fn<() => Promise<void>>(async () => {}) }),
+  createSkipMarksCollection: () => ({ cleanup: vi.fn<() => Promise<void>>(async () => {}) }),
+}));
+
+vi.mock("@/shared/sync/pull-triggers", () => ({
+  startPull: vi.fn<() => object>(() => ({ trigger: vi.fn<() => void>(), dispose: vi.fn<() => void>() })),
 }));
 
 vi.mock("@/shared/sync/outbox", async (original) => ({
@@ -52,6 +63,7 @@ describe("openLocalStore", () => {
     await first;
     expect(openLocalDb).toHaveBeenCalledExactlyOnceWith("ana");
     expect(vi.mocked(startOutbox).mock.calls[0]?.[0]).toMatchObject({ ownerId: "ana" });
+    expect(vi.mocked(startPull).mock.calls[0]?.[0]).toMatchObject({ ownerId: "ana" });
   });
 
   it("uma outbox só, com as collections e as mutationFns de clients, properties e inspections", async () => {
@@ -74,16 +86,19 @@ describe("openLocalStore", () => {
     expect([...(config.removals ?? [])]).toEqual(["deleteInspection"]);
   });
 
-  it("trocar de dono fecha a outbox, as collections e o banco do anterior antes de abrir os do novo", async () => {
+  it("trocar de dono fecha o pull, a outbox, as collections e o banco do anterior antes de abrir os do novo", async () => {
     const ana = await openLocalStore("ana");
 
     const bia = await openLocalStore("bia");
 
+    expect(ana.pull.dispose).toHaveBeenCalledOnce();
     expect(ana.outbox.dispose).toHaveBeenCalledOnce();
     expect(ana.clients.cleanup).toHaveBeenCalledOnce();
     expect(ana.properties.cleanup).toHaveBeenCalledOnce();
     expect(ana.inspections.cleanup).toHaveBeenCalledOnce();
     expect(ana.drafts.cleanup).toHaveBeenCalledOnce();
+    expect(ana.cursors.cleanup).toHaveBeenCalledOnce();
+    expect(ana.skipped.cleanup).toHaveBeenCalledOnce();
     expect(closeLocalDb).toHaveBeenCalledExactlyOnceWith("ana");
     expect(bia).not.toBe(ana);
     expect(vi.mocked(startOutbox).mock.calls.map(([config]) => config.ownerId)).toEqual([

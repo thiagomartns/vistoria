@@ -1,10 +1,11 @@
-import { type PropertyDto, getProperty, upsertProperty } from "@/shared/api/generated";
+import { type PropertyDto, getProperty, syncProperties, upsertProperty } from "@/shared/api/generated";
 import type { Client } from "@/shared/api/generated/client";
 import { type DraftsCollection, clearDraft, keepConflictData } from "@/shared/sync/drafts";
 import { type FetchOutcome, fetchMissing } from "@/shared/sync/fetch";
 import { flatConflictOf } from "@/shared/sync/flat-conflict";
 import { newId } from "@/shared/sync/ids";
 import { type Outbox, type OutboxMutationFn, enqueue } from "@/shared/sync/outbox";
+import type { PullEntity } from "@/shared/sync/pull";
 import { registerConflictView, registerRecordLabel } from "@/shared/sync/sync-view";
 import { resolveConflict, upsertMutation } from "@/shared/sync/upsert";
 
@@ -137,4 +138,21 @@ export function fetchProperty(
     shape: propertyRecordOf,
     before: (property) => fetchClient(store, property.clientId, client),
   });
+}
+
+/**
+ * O laço de imóveis do pull (`syncProperties`), depois do de clientes: o cliente de um imóvel novo já chegou no laço
+ * anterior.
+ */
+export function propertiesPull(
+  properties: PropertiesCollection,
+  client?: Client,
+): PullEntity<PropertyRecord, PropertyDto> {
+  return {
+    name: "properties",
+    store: properties,
+    page: (request) => syncProperties({ client, ...request }),
+    get: (request) => getProperty({ client, ...request }),
+    shape: propertyRecordOf,
+  };
 }
