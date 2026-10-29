@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Vistoria.Api.Model;
 using Vistoria.Api.Model.Context;
 using Vistoria.Api.Repositories;
 using Vistoria.Api.Repositories.Impl;
@@ -17,6 +18,8 @@ public static class DatabaseConfig
             options.UseSqlServer(configuration.GetConnectionString(ConnectionStringName)));
         services.AddScoped(typeof(IRepository<>), typeof(GenericRepository<>));
         services.AddScoped<IInspectionRepository, InspectionRepository>();
+        // A vistoria pelo genérico (o delta) também traz o agregado, não um GenericRepository<Inspection> sem filhos.
+        services.AddScoped<IRepository<Inspection>>(sp => sp.GetRequiredService<IInspectionRepository>());
         return services;
     }
 

@@ -16,7 +16,11 @@ namespace Vistoria.Api.Controllers.V1;
     StatusCodes.Status400BadRequest,
     StatusCodes.Status401Unauthorized,
     StatusCodes.Status410Gone)]
-public class SyncController(ISyncService<ClientDto> clients, ISyncService<PropertyDto> properties)
+public class SyncController(
+    ISyncService<ClientDto> clients,
+    ISyncService<PropertyDto> properties,
+    ISyncService<TemplateDto> templates,
+    ISyncService<InspectionDto> inspections)
     : ControllerBase
 {
     private const string LimitMessage = "O limite precisa ser de {1} a {2}.";
@@ -38,4 +42,23 @@ public class SyncController(ISyncService<ClientDto> clients, ISyncService<Proper
         CancellationToken cancellationToken,
         [FromQuery, Range(1, SyncConfig.MaxPageSize, ErrorMessage = LimitMessage)] int limit = SyncConfig.DefaultPageSize) =>
         Ok(await properties.PageAsync(User.GetUserId(), cursor, limit, cancellationToken));
+
+    [HttpGet("templates")]
+    [EndpointName("syncTemplates")]
+    [ProducesResponseType<SyncPageDto<TemplateDto>>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<SyncPageDto<TemplateDto>>> Templates(
+        [FromQuery] string? cursor,
+        CancellationToken cancellationToken,
+        [FromQuery, Range(1, SyncConfig.MaxPageSize, ErrorMessage = LimitMessage)] int limit = SyncConfig.DefaultPageSize) =>
+        Ok(await templates.PageAsync(User.GetUserId(), cursor, limit, cancellationToken));
+
+    // Cada vistoria vem com o agregado inteiro, como no GET (IInspectionRepository).
+    [HttpGet("inspections")]
+    [EndpointName("syncInspections")]
+    [ProducesResponseType<SyncPageDto<InspectionDto>>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<SyncPageDto<InspectionDto>>> Inspections(
+        [FromQuery] string? cursor,
+        CancellationToken cancellationToken,
+        [FromQuery, Range(1, SyncConfig.MaxPageSize, ErrorMessage = LimitMessage)] int limit = SyncConfig.DefaultPageSize) =>
+        Ok(await inspections.PageAsync(User.GetUserId(), cursor, limit, cancellationToken));
 }
