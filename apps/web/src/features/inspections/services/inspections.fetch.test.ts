@@ -11,6 +11,7 @@ import { fetchProperty } from "@/features/properties/services/properties.sync";
 import { configureClient } from "@/shared/api/client";
 import { createClient, createConfig } from "@/shared/api/generated/client";
 import type { DraftsCollection } from "@/shared/sync/drafts";
+import type { CursorsCollection } from "@/shared/sync/pull";
 
 import type { InspectionRecord } from "../models/inspection";
 import type { InspectionsCollection } from "./inspections.collection";
@@ -99,7 +100,11 @@ function collection<T extends { id: string }>(name: string, writes: string[], st
 
 function setup(
   server: Record<string, unknown>,
-  { clients = [] as ClientRecord[], properties = [] as PropertyRecord[] } = {},
+  {
+    clients = [] as ClientRecord[],
+    properties = [] as PropertyRecord[],
+    pulled = [] as string[],
+  } = {},
 ) {
   const requests: string[] = [];
   const client = configureClient(createClient(createConfig()), {
@@ -120,6 +125,10 @@ function setup(
     properties: p.collection as unknown as PropertiesCollection,
     inspections: i.collection as unknown as InspectionsCollection,
     drafts: { has: () => false } as unknown as DraftsCollection,
+    // `pulled`: os laços que já chegaram ao fim uma vez (ADR 0043).
+    cursors: {
+      get: (entity: string) => (pulled.includes(entity) ? { id: entity, complete: true } : undefined),
+    } as unknown as CursorsCollection,
   };
   return {
     store,
@@ -169,6 +178,24 @@ describe("fetchInspection", () => {
     const local = setup(withoutProperty);
 
     expect(await fetchInspection(local.store, vistoria.id, local.client)).toBe("found");
+    expect(local.writes).toEqual(["vistoria"]);
+  });
+
+  it("depois do primeiro pull de vistorias: não existe ou foi excluída, sem GET", async () => {
+    const local = setup(routes, { pulled: ["inspections"] });
+
+    expect(await fetchInspection(local.store, vistoria.id, local.client)).toBe("not-found");
+
+    expect(local.requests).toEqual([]);
+    expect(local.writes).toEqual([]);
+  });
+
+  it("antes do primeiro pull de vistorias, mas depois do de imóveis e clientes: só a vistoria é pedida", async () => {
+    const local = setup(routes, { pulled: ["clients", "properties"] });
+
+    expect(await fetchInspection(local.store, vistoria.id, local.client)).toBe("found");
+
+    expect(local.requests).toEqual([`/api/v1/inspections/${vistoria.id}`]);
     expect(local.writes).toEqual(["vistoria"]);
   });
 

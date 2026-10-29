@@ -30,6 +30,7 @@ import {
   DELETE_INSPECTION,
   UPSERT_INSPECTION,
   deleteInspectionMutation,
+  inspectionsPull,
   upsertInspectionMutation,
 } from "@/features/inspections/services/inspections.sync";
 import {
@@ -44,7 +45,7 @@ import {
 
 // O banco local do usuário: as collections de cada feature, uma outbox só para todas e o pull. É o único módulo que
 // junta as features, porque a fila é uma: um imóvel criado com um cliente pendente sai depois dele, e uma vistoria,
-// depois do imóvel (ADR 0034). O pull também segue a ordem: clientes antes de imóveis.
+// depois do imóvel (ADR 0034). O pull também segue a ordem: clientes, imóveis e só então vistorias.
 
 export interface LocalStore {
   clients: ClientsCollection;
@@ -81,14 +82,16 @@ async function open(ownerId: string): Promise<LocalStore> {
   const cursors = createCursorsCollection(db);
   const skipped = createSkipMarksCollection(db);
   const state = { drafts, cursors: cursorStoreOf(cursors), marks: skipMarksOf(skipped) };
-  const entities = [clientsPull(clients), propertiesPull(properties)];
+  const entities = [clientsPull(clients), propertiesPull(properties), inspectionsPull(inspections)];
   const pull = startPull({
     ownerId,
     drafts,
     // Sem tela aberta, as collections podem ter sido recolhidas: o ciclo só confere pendência e cursor com elas
     // carregadas (um rascunho que não carregou não pode deixar o pull sobrescrever o registro).
     run: async () => {
-      await Promise.all([clients, properties, drafts, cursors, skipped].map((c) => c.preload()));
+      await Promise.all(
+        [clients, properties, inspections, drafts, cursors, skipped].map((c) => c.preload()),
+      );
       return pullOnce(state, entities);
     },
   });

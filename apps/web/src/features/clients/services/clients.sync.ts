@@ -5,7 +5,7 @@ import { type FetchOutcome, fetchMissing } from "@/shared/sync/fetch";
 import { flatConflictOf } from "@/shared/sync/flat-conflict";
 import { newId } from "@/shared/sync/ids";
 import { type Outbox, type OutboxMutationFn, enqueue } from "@/shared/sync/outbox";
-import type { PullEntity } from "@/shared/sync/pull";
+import { type CursorsCollection, type PullEntity, pulledOnce } from "@/shared/sync/pull";
 import { registerConflictView, registerRecordLabel } from "@/shared/sync/sync-view";
 import { resolveConflict, upsertMutation } from "@/shared/sync/upsert";
 
@@ -13,6 +13,8 @@ import { CLIENT_ENTITY, type ClientRecord } from "../models/client";
 import type { ClientsCollection } from "./clients.collection";
 
 export const UPSERT_CLIENT = "upsertClient";
+/** O laço de clientes no pull, que dá nome ao cursor e às marcas. */
+export const CLIENTS_PULL = "clients";
 
 const clientLabel = (record: Record<string, unknown>) => `Cliente · ${String(record.name ?? "")}`;
 
@@ -107,10 +109,15 @@ export function clientRecordOf(dto: ClientDto): ClientRecord {
 
 /**
  * Abre pelo id um cliente que não está no aparelho (`fetchMissing`): `GET /api/v1/clients/{id}` e a resposta na store
- * confirmada. O que já está no aparelho, confirmado, na fila ou em rascunho, não é pedido.
+ * confirmada. O que já está no aparelho, confirmado, na fila ou em rascunho, não é pedido, nem o que falta depois do
+ * primeiro pull completo de clientes (`cursors`).
  */
 export function fetchClient(
-  { clients, drafts }: { clients: ClientsCollection; drafts: DraftsCollection },
+  {
+    clients,
+    drafts,
+    cursors,
+  }: { clients: ClientsCollection; drafts: DraftsCollection; cursors?: CursorsCollection },
   id: string,
   client?: Client,
 ): Promise<FetchOutcome> {
@@ -120,13 +127,14 @@ export function fetchClient(
     id,
     get: (request) => getClient({ client, ...request }),
     shape: clientRecordOf,
+    synced: () => cursors !== undefined && pulledOnce(cursors, CLIENTS_PULL),
   });
 }
 
 /** O laço de clientes do pull (`syncClients`): a página na store confirmada, menos o que tem pendência (ADR 0041). */
 export function clientsPull(clients: ClientsCollection, client?: Client): PullEntity<ClientRecord, ClientDto> {
   return {
-    name: "clients",
+    name: CLIENTS_PULL,
     store: clients,
     page: (request) => syncClients({ client, ...request }),
     get: (request) => getClient({ client, ...request }),

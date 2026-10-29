@@ -9,7 +9,7 @@ import { expireSession } from "../auth/session";
 import { readFailure } from "../api/client";
 import { handleProblem } from "../api/problems";
 import type { DraftsCollection } from "./drafts";
-import { type GetCall, hasPending, refetchById } from "./fetch";
+import { type GetCall, dropClean, hasPending, rebaseClean, refetchById } from "./fetch";
 import type { LocalCollection, SyncRecord } from "./upsert";
 
 // O pull por delta (frontend.md, "Leitura (pull)"): um laço por entidade, cada um com o seu cursor, repetido enquanto
@@ -18,6 +18,9 @@ import type { LocalCollection, SyncRecord } from "./upsert";
 // A página não cabe numa transação local com o cursor: a collection IndexedDB grava cada store na sua. Por isso a ordem
 // é registros, marcas e só então o cursor (ADR 0042). Se o pull cair no meio, a mesma página volta, e reaplicá-la não
 // muda nada: o eco pela `version`, a exclusão do que já saiu e a marca que já existe.
+// O cursor vencido ou ilegível (`cursor-expired`, `invalid-cursor`) pede o resync completo da entidade: puxa do zero
+// gravando por cima do que o aparelho tem e só no fim tira o que não veio, menos o que tem pendência, que ganha a marca
+// (ADR 0043). Se cair no meio, o próximo ciclo recomeça do zero: a collection nunca fica vazia no caminho.
 
 /** Uma página do delta (`SyncPageDto` do backend.md, "Leitura por delta"). */
 export interface SyncPage<D> {
@@ -46,7 +49,14 @@ export interface PullEntity<T extends SyncRecord = any, D = any> {
 /** O cursor de cada laço, no banco local do usuário. Vazio é o primeiro sync. */
 export interface CursorStore {
   get: (entity: string) => string | undefined;
-  set: (entity: string, cursor: string) => Promise<void>;
+  /** Grava o cursor da página aplicada; `complete` quando ela foi a última (`hasMore` falso). */
+  set: (entity: string, cursor: string, complete?: boolean) => Promise<void>;
+  /** O laço já chegou ao fim uma vez: o que não está no aparelho não existe ou foi excluído. */
+  complete: (entity: string) => boolean;
+  /** Um resync começou e não terminou. */
+  resyncing: (entity: string) => boolean;
+  /** Começa (zera o cursor e marca) ou termina o resync. */
+  resync: (entity: string, on: boolean) => Promise<void>;
 }
 
 /** As marcas dos registros que o pull pulou por ter pendência: entidade e id, sem a versão (ADR 0041). */
@@ -109,13 +119,39 @@ async function resolveMarks(state: PullState, entity: PullEntity): Promise<PullO
   return "done";
 }
 
+/**
+ * O laço de uma entidade, página a página. No resync, guarda os ids que vieram, para a varredura do fim; um resync que
+ * caiu num ciclo anterior recomeça do zero, porque os ids que vieram antes se perderam. Um segundo cursor recusado no
+ * mesmo laço (do zero, ele não deveria vir) para o ciclo, sem laço.
+ */
 async function pullEntity(state: PullState, entity: PullEntity): Promise<PullOutcome> {
+  const { cursors } = state;
+  let seen: Set<string> | undefined;
+  if (cursors.resyncing(entity.name)) {
+    await cursors.resync(entity.name, true);
+    seen = new Set();
+  }
   for (;;) {
-    const cursor = state.cursors.get(entity.name);
+    const cursor = cursors.get(entity.name);
     const result = await entity.page({ query: cursor ? { cursor } : {} });
-    if (!result.data) return failureOf(entity, result);
-    await applyPage(state, entity, result.data);
-    if (!result.data.hasMore) return "done";
+    if (!result.data) {
+      const failure = failureOf(entity, result);
+      if (failure !== "resync") return failure;
+      if (seen) {
+        console.warn("[pull] cursor recusado no resync", entity.name);
+        return "failed";
+      }
+      await cursors.resync(entity.name, true);
+      seen = new Set();
+      continue;
+    }
+    await applyPage(state, entity, result.data, seen);
+    if (result.data.hasMore) continue;
+    if (seen) {
+      await sweep(state, entity, seen);
+      await cursors.resync(entity.name, false);
+    }
+    return "done";
   }
 }
 
@@ -123,56 +159,98 @@ async function pullEntity(state: PullState, entity: PullEntity): Promise<PullOut
 function failureOf(
   entity: PullEntity,
   result: { error?: unknown; response?: Response },
-): PullOutcome {
+): PullOutcome | "resync" {
   const failure = readFailure({ error: result.error, response: result.response });
   if (failure.kind === "network") return "offline";
   const group = handleProblem(failure);
-  if (group === "renew-session") {
-    expireSession();
-  } else {
-    // `resync` (cursor vencido ou ilegível): o resync completo da entidade é da #131; até lá, o ciclo só para.
-    console.warn("[pull] página recusada", entity.name, group, failure);
-  }
+  if (group === "resync") return "resync";
+  if (group === "renew-session") expireSession();
+  else console.warn("[pull] página recusada", entity.name, group, failure);
   return "failed";
 }
+
+type Mutation = { type: "insert" | "update" | "delete"; key: string; modified: SyncRecord };
+/** A gravação de um rascunho que mudou com a página. */
+type Persisting = { isPersisted: { promise: Promise<unknown> } } | undefined;
 
 /**
  * Aplica uma página: os `items` vão para a store confirmada e os `deletedIds` saem dela, menos os de registro com
  * pendência, que ganham a marca. Um item com a `version` que a store já tem é o eco da própria escrita: não regrava o
- * registro. A pendência é a da hora de aplicar, não a de quando a requisição saiu: entre a conferência e a gravação não
- * há `await`, então uma escrita feita com a página em voo vence. O cursor só é gravado depois.
+ * registro. O rascunho limpo de um registro gravado passa à versão nova (`rebaseClean`) e o de um excluído sai com ele
+ * (ADR 0043). A pendência é a da hora de aplicar, não a de quando a requisição saiu: entre a conferência e a gravação
+ * não há `await`, então uma escrita feita com a página em voo vence. O cursor só é gravado depois.
  */
 async function applyPage(
   state: PullState,
   entity: PullEntity,
   page: SyncPage<unknown>,
+  seen?: Set<string>,
 ): Promise<void> {
   const { store } = entity;
+  const { drafts } = state;
   const confirmed = new Map((await store.utils.exportData()).map((record) => [record.id, record]));
   const skipped: string[] = [];
-  const mutations: { type: "insert" | "update" | "delete"; key: string; modified: SyncRecord }[] =
-    [];
+  const mutations: Mutation[] = [];
+  const rewritten: Persisting[] = [];
   for (const dto of page.items) {
     const record = entity.shape(dto);
     const known = confirmed.get(record.id);
-    if (hasPending(store, state.drafts, record.id)) skipped.push(record.id);
+    seen?.add(record.id);
+    if (hasPending(store, drafts, record.id)) skipped.push(record.id);
     else if (known?.version !== record.version) {
       mutations.push({ type: known ? "update" : "insert", key: record.id, modified: record });
+      rewritten.push(rebaseClean(drafts, record));
     }
   }
   for (const id of page.deletedIds) {
     const known = confirmed.get(id);
-    if (hasPending(store, state.drafts, id)) skipped.push(id);
-    else if (known) mutations.push({ type: "delete", key: id, modified: known });
+    if (hasPending(store, drafts, id)) skipped.push(id);
+    else if (known) {
+      mutations.push({ type: "delete", key: id, modified: known });
+      rewritten.push(dropClean(drafts, id));
+    }
   }
+  await write(store, mutations, rewritten);
+  if (skipped.length > 0) await state.marks.add(entity.name, skipped);
+  await state.cursors.set(entity.name, page.nextCursor, !page.hasMore);
+}
+
+/**
+ * O fim do resync: o confirmado que não veio do zero foi excluído no servidor (o primeiro sync só traz registros
+ * vivos). Sem pendência, sai do aparelho com o rascunho limpo; com pendência, fica e ganha a marca, e a fila segue
+ * com a base que tinha. A conferência e a gravação ficam no mesmo tick, como na página.
+ */
+async function sweep(state: PullState, entity: PullEntity, seen: Set<string>): Promise<void> {
+  const { store } = entity;
+  const { drafts } = state;
+  const skipped: string[] = [];
+  const mutations: Mutation[] = [];
+  const dropped: Persisting[] = [];
+  for (const known of await store.utils.exportData()) {
+    if (seen.has(known.id)) continue;
+    if (hasPending(store, drafts, known.id)) skipped.push(known.id);
+    else {
+      mutations.push({ type: "delete", key: known.id, modified: known });
+      dropped.push(dropClean(drafts, known.id));
+    }
+  }
+  await write(store, mutations, dropped);
+  if (skipped.length > 0) await state.marks.add(entity.name, skipped);
+}
+
+/** Grava as mutações na store confirmada e espera os rascunhos que mudaram junto. */
+async function write(
+  store: PullEntity["store"],
+  mutations: Mutation[],
+  drafts: Persisting[],
+): Promise<void> {
   if (mutations.length > 0) {
     // Na 0.15, acceptMutations tipa as mutações como Record<string, unknown>, não pelo item da collection.
     await store.utils.acceptMutations({
       mutations: mutations.map((mutation) => ({ ...mutation, collection: store })),
     } as unknown as { mutations: PendingMutation[] });
   }
-  if (skipped.length > 0) await state.marks.add(entity.name, skipped);
-  await state.cursors.set(entity.name, page.nextCursor);
+  await Promise.all(drafts.map((transaction) => transaction?.isPersisted.promise));
 }
 
 // Cursores e marcas no banco local do usuário, uma collection IndexedDB cada, como os rascunhos. Saem com o banco.
@@ -180,7 +258,12 @@ async function applyPage(
 interface CursorRow {
   /** O nome do laço ("clients"). */
   id: string;
-  cursor: string;
+  /** Sem cursor, o próximo pedido é do zero (o primeiro sync ou um resync). */
+  cursor?: string;
+  /** O laço já chegou ao fim uma vez. Fica com o resync: os registros só saem na varredura do fim dele. */
+  complete?: true;
+  /** Um resync começou e não terminou. */
+  resyncing?: true;
 }
 
 interface SkipMarkRow {
@@ -213,18 +296,39 @@ export type SkipMarksCollection = ReturnType<typeof createSkipMarksCollection>;
 export function cursorStoreOf(
   cursors: Pick<CursorsCollection, "get" | "has" | "insert" | "update">,
 ): CursorStore {
+  const save = async (entity: string, change: (row: CursorRow) => void) => {
+    if (cursors.has(entity)) {
+      await cursors.update(entity, change).isPersisted.promise;
+      return;
+    }
+    const row: CursorRow = { id: entity };
+    change(row);
+    await cursors.insert(row).isPersisted.promise;
+  };
   return {
     get: (entity) => cursors.get(entity)?.cursor,
-    async set(entity, cursor) {
-      const transaction = cursors.has(entity)
-        ? cursors.update(entity, (row) => {
-            row.cursor = cursor;
-          })
-        : cursors.insert({ id: entity, cursor });
-      await transaction.isPersisted.promise;
-    },
+    set: (entity, cursor, complete) =>
+      save(entity, (row) => {
+        row.cursor = cursor;
+        if (complete) row.complete = true;
+      }),
+    complete: (entity) => pulledOnce(cursors, entity),
+    resyncing: (entity) => cursors.get(entity)?.resyncing === true,
+    resync: (entity, on) =>
+      save(entity, (row) => {
+        if (on) {
+          delete row.cursor;
+          row.resyncing = true;
+        } else {
+          delete row.resyncing;
+        }
+      }),
   };
 }
+
+/** O primeiro pull completo da entidade já rodou (a leitura por id deixa de pedir o `GET`, ADR 0043). */
+export const pulledOnce = (cursors: Pick<CursorsCollection, "get">, entity: string): boolean =>
+  cursors.get(entity)?.complete === true;
 
 const markKey = (entity: string, id: string) => `${entity}:${id}`;
 

@@ -71,6 +71,36 @@ export function recordWith<T extends Pick<InspectionRecord, "rooms">>(
 }
 
 /**
+ * Os valores do formulário para `next`, uma versão nova que o pull trouxe com a tela aberta, sem perder o que a pessoa
+ * marcou e ainda não foi para o rascunho: os itens em que `values` difere de `defaults`, na estrutura de `shown` (o
+ * registro que o formulário mostrava), casados com os de `next` pelo id. Um item que saiu em `next` leva a marcação
+ * junto (ADR 0043).
+ */
+export function withUnsaved(
+  next: Pick<InspectionRecord, "rooms">,
+  shown: Pick<InspectionRecord, "rooms">,
+  values: InspectionFormValues,
+  defaults: InspectionFormValues,
+): InspectionFormValues {
+  const unsaved = new Map<string, ItemFormValues>();
+  shown.rooms.forEach((room, r) => {
+    room.items.forEach((item, i) => {
+      const value = values.rooms[r]?.items[i];
+      const base = defaults.rooms[r]?.items[i];
+      if (value && (value.condition !== base?.condition || value.notes !== base?.notes)) {
+        unsaved.set(item.id, value);
+      }
+    });
+  });
+  const fresh = formValuesOf(next);
+  return {
+    rooms: next.rooms.map((room, r) => ({
+      items: room.items.map((item, i) => unsaved.get(item.id) ?? fresh.rooms[r]!.items[i]!),
+    })),
+  };
+}
+
+/**
  * Da chave de erro do backend para o caminho do formulário: `rooms[2].items[4].condition` →
  * `rooms.2.items.4.condition`. Só condição e observação de item existem no formulário; o resto → `undefined`.
  */

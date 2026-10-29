@@ -168,22 +168,20 @@ export function clearDraft(drafts: DraftsCollection, id: string): void {
 /**
  * Um merge sem colisão foi para a fila: o rascunho do formulário profundo passa a ter o registro mesclado, sem recusa
  * nem conflito, e marca `rebasedAt` para a tela aberta recarregar o formulário (senão o próximo envio levaria os
- * valores de antes por cima do que veio do servidor). Rascunho sem `step` é apagado, como em `clearDraft`.
+ * valores de antes por cima do que veio do servidor). Rascunho sem `step` é apagado, como em `clearDraft`. O pull faz o
+ * mesmo com o rascunho limpo, e espera a gravação pela transação devolvida.
  */
 export function rebaseDraft(
   drafts: DraftsCollection,
   id: string,
   data: Record<string, unknown>,
   now: Date = new Date(),
-): void {
+) {
   const draft = drafts.get(id);
-  if (!draft) return;
-  if (!keepsStep(draft)) {
-    drafts.delete(id);
-    return;
-  }
+  if (!draft) return undefined;
+  if (!keepsStep(draft)) return drafts.delete(id);
   const at = now.toISOString();
-  drafts.update(id, (current) => {
+  return drafts.update(id, (current) => {
     delete current.conflict;
     Object.assign(current, { data, status: "draft", errors: {}, rebasedAt: at, updatedAt: at });
   });
