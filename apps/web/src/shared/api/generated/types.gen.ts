@@ -140,8 +140,22 @@ export type SyncPageDtoOfClientDto = {
     hasMore: boolean;
 };
 
+export type SyncPageDtoOfInspectionDto = {
+    items: Array<InspectionDto>;
+    deletedIds: Array<string>;
+    nextCursor: string;
+    hasMore: boolean;
+};
+
 export type SyncPageDtoOfPropertyDto = {
     items: Array<PropertyDto>;
+    deletedIds: Array<string>;
+    nextCursor: string;
+    hasMore: boolean;
+};
+
+export type SyncPageDtoOfTemplateDto = {
+    items: Array<TemplateDto>;
     deletedIds: Array<string>;
     nextCursor: string;
     hasMore: boolean;
@@ -754,6 +768,78 @@ export type SyncPropertiesResponses = {
 };
 
 export type SyncPropertiesResponse = SyncPropertiesResponses[keyof SyncPropertiesResponses];
+
+export type SyncTemplatesData = {
+    body?: never;
+    path?: never;
+    query?: {
+        cursor?: string;
+        limit?: number;
+    };
+    url: '/api/v1/sync/templates';
+};
+
+export type SyncTemplatesErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Unauthorized
+     */
+    401: ProblemDetails;
+    /**
+     * Gone
+     */
+    410: ProblemDetails;
+};
+
+export type SyncTemplatesError = SyncTemplatesErrors[keyof SyncTemplatesErrors];
+
+export type SyncTemplatesResponses = {
+    /**
+     * OK
+     */
+    200: SyncPageDtoOfTemplateDto;
+};
+
+export type SyncTemplatesResponse = SyncTemplatesResponses[keyof SyncTemplatesResponses];
+
+export type SyncInspectionsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        cursor?: string;
+        limit?: number;
+    };
+    url: '/api/v1/sync/inspections';
+};
+
+export type SyncInspectionsErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Unauthorized
+     */
+    401: ProblemDetails;
+    /**
+     * Gone
+     */
+    410: ProblemDetails;
+};
+
+export type SyncInspectionsError = SyncInspectionsErrors[keyof SyncInspectionsErrors];
+
+export type SyncInspectionsResponses = {
+    /**
+     * OK
+     */
+    200: SyncPageDtoOfInspectionDto;
+};
+
+export type SyncInspectionsResponse = SyncInspectionsResponses[keyof SyncInspectionsResponses];
 
 export type GetTemplateData = {
     body?: never;

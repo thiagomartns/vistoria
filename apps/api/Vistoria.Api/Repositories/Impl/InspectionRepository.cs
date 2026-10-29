@@ -9,14 +9,22 @@ public class InspectionRepository(AppDbContext db) : GenericRepository<Inspectio
 {
     private static readonly string[] SoftDelete = [AppDbContext.SoftDeleteFilter];
 
-    // O filtro global de soft delete vale também dentro do Include: ambiente ou item excluído não vem. Uma consulta só,
-    // não split: duas leituras poderiam pegar a raiz de uma versão e os filhos de outra, com uma gravação no meio.
     public override Task<Inspection?> FindByIdAsync(Guid id, CancellationToken cancellationToken) =>
-        Set.AsNoTracking()
-            .Include(i => i.Rooms.OrderBy(r => r.Position))
-            .ThenInclude(r => r.Items.OrderBy(it => it.Position))
-            .AsSingleQuery()
-            .SingleOrDefaultAsync(i => i.Id == id, cancellationToken);
+        WithLiveChildren(Set.AsNoTracking()).SingleOrDefaultAsync(i => i.Id == id, cancellationToken);
+
+    // A página sai da raiz (versão, dono, tombstones) e só depois ganha os filhos: uma consulta por página, com
+    // quantas vistorias vierem.
+    public override async Task<IReadOnlyList<Inspection>> ChangedSinceAsync(
+        Guid ownerId, byte[] afterVersion, int take, bool liveOnly, CancellationToken cancellationToken)
+    {
+        var query = ChangedSince(ownerId, afterVersion);
+        if (liveOnly)
+        {
+            query = query.Where(e => e.DeletedAt == null);
+        }
+
+        return await WithLiveChildren(query.OrderBy(e => e.Version).Take(take)).ToListAsync(cancellationToken);
+    }
 
     public override async Task<Inspection> AddAsync(Inspection entity, CancellationToken cancellationToken)
     {
@@ -103,6 +111,15 @@ public class InspectionRepository(AppDbContext db) : GenericRepository<Inspectio
             .ToListAsync(cancellationToken);
         return rooms.Concat(items).ToHashSet();
     }
+
+    // Ambientes e itens vivos, em ordem de position. O Where é explícito porque o delta ignora o filtro de soft delete
+    // na consulta inteira, Include incluído. Uma consulta só, não split: duas leituras poderiam pegar a raiz de uma
+    // versão e os filhos de outra, com uma gravação no meio.
+    private static IQueryable<Inspection> WithLiveChildren(IQueryable<Inspection> roots) =>
+        roots
+            .Include(i => i.Rooms.Where(r => r.DeletedAt == null).OrderBy(r => r.Position))
+            .ThenInclude(r => r.Items.Where(it => it.DeletedAt == null).OrderBy(it => it.Position))
+            .AsSingleQuery();
 
     // O filho carregado com esse id, vivo de novo se estava excluído, ou um novo já Added.
     private T FindOrAdd<T>(Dictionary<Guid, T> loaded, Guid id) where T : AggregateChild, new()

@@ -152,6 +152,13 @@ export const zSyncPageDtoOfClientDto = z.object({
     hasMore: z.boolean()
 });
 
+export const zSyncPageDtoOfInspectionDto = z.object({
+    items: z.array(zInspectionDto),
+    deletedIds: z.array(z.uuid()),
+    nextCursor: z.string(),
+    hasMore: z.boolean()
+});
+
 export const zSyncPageDtoOfPropertyDto = z.object({
     items: z.array(zPropertyDto),
     deletedIds: z.array(z.uuid()),
@@ -179,6 +186,13 @@ export const zTemplateDto = z.object({
     version: z.string(),
     createdAt: z.iso.datetime({ offset: true }),
     updatedAt: z.iso.datetime({ offset: true })
+});
+
+export const zSyncPageDtoOfTemplateDto = z.object({
+    items: z.array(zTemplateDto),
+    deletedIds: z.array(z.uuid()),
+    nextCursor: z.string(),
+    hasMore: z.boolean()
 });
 
 export const zUpsertClientDto = z.object({
@@ -371,6 +385,26 @@ export const zSyncPropertiesQuery = z.object({
  * OK
  */
 export const zSyncPropertiesResponse = zSyncPageDtoOfPropertyDto;
+
+export const zSyncTemplatesQuery = z.object({
+    cursor: z.string().optional(),
+    limit: z.int().gte(1).lte(1000).optional().default(500)
+});
+
+/**
+ * OK
+ */
+export const zSyncTemplatesResponse = zSyncPageDtoOfTemplateDto;
+
+export const zSyncInspectionsQuery = z.object({
+    cursor: z.string().optional(),
+    limit: z.int().gte(1).lte(1000).optional().default(500)
+});
+
+/**
+ * OK
+ */
+export const zSyncInspectionsResponse = zSyncPageDtoOfInspectionDto;
 
 export const zGetTemplatePath = z.object({
     id: z.uuid()

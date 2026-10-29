@@ -9,6 +9,8 @@ namespace Vistoria.Api.Repositories;
 /// e um excluído reenviado volta. <c>StartedAt</c>, <c>ReferenceInspectionId</c> e a referência dos itens ficam como
 /// estavam: a regravação não os toca. <c>CompletedAt</c> é gravado como veio, carimbado pelo service na conclusão.
 /// <see cref="IRepository{T}.DeleteAsync"/> marca só a raiz: ambientes e itens ficam como estão.
+/// <see cref="IRepository{T}.ChangedSinceAsync"/> pagina pela raiz e traz cada vistoria como o
+/// <see cref="IRepository{T}.FindByIdAsync"/>, com os ambientes e itens vivos, numa consulta só.
 /// </summary>
 public interface IInspectionRepository : IRepository<Inspection>
 {

@@ -17,6 +17,8 @@ public static class DomainConfig
         // Delta por entidade (SyncController).
         services.AddScoped<ISyncService<ClientDto>, SyncService<Client, ClientDto>>();
         services.AddScoped<ISyncService<PropertyDto>, SyncService<Property, PropertyDto>>();
+        services.AddScoped<ISyncService<TemplateDto>, SyncService<Template, TemplateDto>>();
+        services.AddScoped<ISyncService<InspectionDto>, SyncService<Inspection, InspectionDto>>();
         return services;
     }
 }

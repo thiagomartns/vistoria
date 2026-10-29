@@ -114,6 +114,8 @@ public class CommittedOpenApiTests
     [Theory]
     [InlineData("clients", "syncClients", "ClientDto")]
     [InlineData("properties", "syncProperties", "PropertyDto")]
+    [InlineData("templates", "syncTemplates", "TemplateDto")]
+    [InlineData("inspections", "syncInspections", "InspectionDto")]
     public void SyncOperations_ReturnTheEntityPage_WithCursorAndLimit(string resource, string operationId, string dto)
     {
         var document = Document();

@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { DeleteInspectionData, DeleteInspectionErrors, DeleteInspectionResponses, GetClientData, GetClientErrors, GetClientResponses, GetHealthData, GetHealthResponses, GetInspectionData, GetInspectionErrors, GetInspectionResponses, GetPropertyData, GetPropertyErrors, GetPropertyResponses, GetTemplateData, GetTemplateErrors, GetTemplateResponses, SignInData, SignInErrors, SignInResponses, SignUpData, SignUpErrors, SignUpResponses, SyncClientsData, SyncClientsErrors, SyncClientsResponses, SyncPropertiesData, SyncPropertiesErrors, SyncPropertiesResponses, UpsertClientData, UpsertClientErrors, UpsertClientResponses, UpsertInspectionData, UpsertInspectionErrors, UpsertInspectionResponses, UpsertPropertyData, UpsertPropertyErrors, UpsertPropertyResponses, UpsertTemplateData, UpsertTemplateErrors, UpsertTemplateResponses } from './types.gen';
+import type { DeleteInspectionData, DeleteInspectionErrors, DeleteInspectionResponses, GetClientData, GetClientErrors, GetClientResponses, GetHealthData, GetHealthResponses, GetInspectionData, GetInspectionErrors, GetInspectionResponses, GetPropertyData, GetPropertyErrors, GetPropertyResponses, GetTemplateData, GetTemplateErrors, GetTemplateResponses, SignInData, SignInErrors, SignInResponses, SignUpData, SignUpErrors, SignUpResponses, SyncClientsData, SyncClientsErrors, SyncClientsResponses, SyncInspectionsData, SyncInspectionsErrors, SyncInspectionsResponses, SyncPropertiesData, SyncPropertiesErrors, SyncPropertiesResponses, SyncTemplatesData, SyncTemplatesErrors, SyncTemplatesResponses, UpsertClientData, UpsertClientErrors, UpsertClientResponses, UpsertInspectionData, UpsertInspectionErrors, UpsertInspectionResponses, UpsertPropertyData, UpsertPropertyErrors, UpsertPropertyResponses, UpsertTemplateData, UpsertTemplateErrors, UpsertTemplateResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -76,6 +76,10 @@ export const upsertProperty = <ThrowOnError extends boolean = false>(options: Op
 export const syncClients = <ThrowOnError extends boolean = false>(options?: Options<SyncClientsData, ThrowOnError>): RequestResult<SyncClientsResponses, SyncClientsErrors, ThrowOnError> => (options?.client ?? client).get<SyncClientsResponses, SyncClientsErrors, ThrowOnError>({ url: '/api/v1/sync/clients', ...options });
 
 export const syncProperties = <ThrowOnError extends boolean = false>(options?: Options<SyncPropertiesData, ThrowOnError>): RequestResult<SyncPropertiesResponses, SyncPropertiesErrors, ThrowOnError> => (options?.client ?? client).get<SyncPropertiesResponses, SyncPropertiesErrors, ThrowOnError>({ url: '/api/v1/sync/properties', ...options });
+
+export const syncTemplates = <ThrowOnError extends boolean = false>(options?: Options<SyncTemplatesData, ThrowOnError>): RequestResult<SyncTemplatesResponses, SyncTemplatesErrors, ThrowOnError> => (options?.client ?? client).get<SyncTemplatesResponses, SyncTemplatesErrors, ThrowOnError>({ url: '/api/v1/sync/templates', ...options });
+
+export const syncInspections = <ThrowOnError extends boolean = false>(options?: Options<SyncInspectionsData, ThrowOnError>): RequestResult<SyncInspectionsResponses, SyncInspectionsErrors, ThrowOnError> => (options?.client ?? client).get<SyncInspectionsResponses, SyncInspectionsErrors, ThrowOnError>({ url: '/api/v1/sync/inspections', ...options });
 
 export const getTemplate = <ThrowOnError extends boolean = false>(options: Options<GetTemplateData, ThrowOnError>): RequestResult<GetTemplateResponses, GetTemplateErrors, ThrowOnError> => (options.client ?? client).get<GetTemplateResponses, GetTemplateErrors, ThrowOnError>({ url: '/api/v1/templates/{id}', ...options });
 
