@@ -16,6 +16,7 @@
     "test:api": "cd apps/api && dotnet test --solution Vistoria.sln",
     "screens": "pnpm --filter screens start",
     "spike:outbox": "pnpm --filter outbox-spike start",
+    "spike:conflict": "pnpm --filter conflict-spike start",
     "spike:shell": "pnpm --filter shell-spike start"
   }
 }
