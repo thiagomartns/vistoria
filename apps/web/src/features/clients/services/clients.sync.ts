@@ -1,6 +1,7 @@
-import { upsertClient } from "@/shared/api/generated";
+import { type ClientDto, getClient, upsertClient } from "@/shared/api/generated";
 import type { Client } from "@/shared/api/generated/client";
 import { type DraftsCollection, clearDraft, keepConflictData } from "@/shared/sync/drafts";
+import { type FetchOutcome, fetchMissing } from "@/shared/sync/fetch";
 import { flatConflictOf } from "@/shared/sync/flat-conflict";
 import { newId } from "@/shared/sync/ids";
 import { type Outbox, type OutboxMutationFn, enqueue } from "@/shared/sync/outbox";
@@ -88,5 +89,35 @@ export function resolveClientConflict(
     mutationFnName: UPSERT_CLIENT,
     server,
     resolved,
+  });
+}
+
+/** Do DTO do servidor para o registro local: fica o que vai no `PUT` e a `version`; as datas são do servidor. */
+export function clientRecordOf(dto: ClientDto): ClientRecord {
+  return {
+    id: dto.id,
+    version: dto.version,
+    name: dto.name,
+    document: dto.document,
+    email: dto.email,
+    phone: dto.phone,
+  };
+}
+
+/**
+ * Abre pelo id um cliente que não está no aparelho (`fetchMissing`): `GET /api/v1/clients/{id}` e a resposta na store
+ * confirmada. O que já está no aparelho, confirmado, na fila ou em rascunho, não é pedido.
+ */
+export function fetchClient(
+  { clients, drafts }: { clients: ClientsCollection; drafts: DraftsCollection },
+  id: string,
+  client?: Client,
+): Promise<FetchOutcome> {
+  return fetchMissing({
+    store: clients,
+    drafts,
+    id,
+    get: (request) => getClient({ client, ...request }),
+    shape: clientRecordOf,
   });
 }

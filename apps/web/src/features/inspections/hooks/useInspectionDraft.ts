@@ -5,6 +5,7 @@ import { useLocalStore } from "@/features/local-store/hooks/useLocalStore";
 import type { FieldSyncState } from "@/shared/components/field-sync-indicator";
 import type { SyncBadgeState } from "@/shared/components/sync-badge";
 import type { DraftRecord } from "@/shared/sync/drafts";
+import { type UnavailableMessages, useFetchMissing } from "@/shared/sync/useFetchMissing";
 
 import { INSPECTION_ENTITY, type InspectionRecord } from "../models/inspection";
 import {
@@ -25,6 +26,7 @@ import {
 } from "../services/inspections.resolve";
 import {
   deleteInspection,
+  fetchInspection,
   saveInspection,
   saveInspectionDraft,
 } from "../services/inspections.sync";
@@ -60,6 +62,14 @@ export const DELETED_DESCRIPTION =
 export const REMOVAL_TITLE = "Esta vistoria foi alterada antes da exclusão";
 export const REMOVAL_DESCRIPTION =
   "A exclusão não saiu. A tela mostra a vistoria como está no servidor; decida se exclui mesmo assim.";
+
+/** Sem a vistoria no aparelho (leitura por id, frontend.md, "Leitura (pull)"). */
+export const UNAVAILABLE: UnavailableMessages = {
+  offline:
+    "Esta vistoria ainda não está neste aparelho. Abra-a uma vez com internet para trabalhar nela offline.",
+  notFound: "Esta vistoria não existe ou foi excluída.",
+  failed: "Não foi possível buscar esta vistoria agora.",
+};
 
 /** O aviso do estado 6 do #107: a exclusão está na fila, e a tela fica só leitura. */
 export const DELETION_TITLE = "Exclusão aguardando envio";
@@ -135,7 +145,20 @@ export function useInspectionDraft(id: string | null) {
     : undefined;
   // A vistoria que a tela mostra: o rascunho tem o mais novo (numa criação recusada, é o único lugar onde ela existe).
   const source = (draft?.data as InspectionRecord | undefined) ?? record;
-  const status = !ready ? "loading" : !id || !source ? "missing" : "found";
+  // Um id que o aparelho não tem é buscado no servidor, com o imóvel e o cliente; até chegar, a tela segue carregando.
+  const fetched = useFetchMissing(
+    ready && id && !source ? id : null,
+    store && ((key) => fetchInspection(store, key)),
+    UNAVAILABLE,
+  );
+  const unavailable = id ? fetched.unavailable : { description: UNAVAILABLE.notFound };
+  const status = !ready
+    ? "loading"
+    : source && id
+      ? "found"
+      : unavailable
+        ? "unavailable"
+        : "loading";
   const inConflict = draft?.status === "conflict";
   const conflictKind = conflictKindOf(draft);
   const deleting = record?.deleting === true;
@@ -343,6 +366,8 @@ export function useInspectionDraft(id: string | null) {
 
   return {
     status: status === "found" && !hydrated ? ("loading" as const) : status,
+    /** Sem a vistoria: sem rede, não encontrada ou falha do servidor (`RecordUnavailable`). */
+    unavailable,
     header: header && { ...header, sync: rowSync },
     form,
     step,

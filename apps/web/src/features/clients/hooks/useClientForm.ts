@@ -5,6 +5,7 @@ import { type FieldErrors, useForm, useFormState } from "react-hook-form";
 import { useLocalStore } from "@/features/local-store/hooks/useLocalStore";
 import type { DraftRecord } from "@/shared/sync/drafts";
 import { flatConflictOf } from "@/shared/sync/flat-conflict";
+import { type UnavailableMessages, useFetchMissing } from "@/shared/sync/useFetchMissing";
 
 import {
   CLIENT_FIELDS,
@@ -14,7 +15,7 @@ import {
   clientFormSchema,
   formatDocument,
 } from "../schemas/client.schemas";
-import { clientConflictHref, saveClient } from "../services/clients.sync";
+import { fetchClient, clientConflictHref, saveClient } from "../services/clients.sync";
 import { type ClientRow, clientRowOf } from "../services/clients.view";
 
 /** Para onde o formulário volta: a lista. */
@@ -25,6 +26,14 @@ export const CLIENTS_HREF = "/clients";
 export const CONFLICT_TITLE = "Este cliente foi alterado em outro aparelho";
 export const CONFLICT_DESCRIPTION =
   "Suas alterações estão salvas neste aparelho. Escolha o que fica em cada campo para enviar de novo.";
+
+/** Sem o registro no aparelho (leitura por id, frontend.md, "Leitura (pull)"). */
+export const UNAVAILABLE: UnavailableMessages = {
+  offline:
+    "Este cliente ainda não está neste aparelho. Abra-o uma vez com internet para trabalhar nele offline.",
+  notFound: "Este cliente não existe ou foi excluído.",
+  failed: "Não foi possível buscar este cliente agora.",
+};
 
 export const SERVER_REJECTED = "O servidor recusou este cadastro. Corrija e salve de novo.";
 
@@ -69,7 +78,22 @@ export function useClientForm(id: string | null) {
   const draft = id ? drafts.find((candidate) => candidate.id === id) : undefined;
   const client = id ? clients.find((candidate) => candidate.id === id) : undefined;
   const row = id ? clientRowOf(client, draft, states.get(id)) : undefined;
-  const status = !ready ? "loading" : id === null ? "new" : row ? "found" : "missing";
+  // Um id que o aparelho não tem é buscado no servidor; até chegar, a tela segue carregando.
+  const missing = ready && id !== null && !row;
+  const { unavailable } = useFetchMissing(
+    missing ? id : null,
+    store && ((key) => fetchClient(store, key)),
+    UNAVAILABLE,
+  );
+  const status = !ready
+    ? "loading"
+    : id === null
+      ? "new"
+      : row
+        ? "found"
+        : unavailable
+          ? "unavailable"
+          : "loading";
 
   const form = useForm<ClientFormValues, unknown, ClientFormOutput>({
     resolver: zodResolver(clientFormSchema, clientErrors),
@@ -100,6 +124,8 @@ export function useClientForm(id: string | null) {
 
   return {
     status,
+    /** Sem o registro: sem rede, não encontrado ou falha do servidor (`RecordUnavailable`). */
+    unavailable,
     /** O nome salvo (não o que está sendo digitado), ou "Novo cliente". */
     title: status === "new" ? "Novo cliente" : status === "found" && row ? row.name : "Cliente",
     sync: status === "found" ? row?.sync : undefined,

@@ -26,6 +26,9 @@
 // e editada aqui volta 410; recriar a põe no servidor com id novo e os mesmos dados, e descartar a tira do aparelho.
 // A vistoria alterada por outro aparelho e excluída aqui volta 412; "Excluir mesmo assim" sai com If-Match do current
 // e chave nova (GET 404), e "Cancelar" a deixa editável, com o que o servidor tem. Com SCREENS=1, os prints dos dois.
+// Desde o #101 cobre a leitura por id (ADR 0038): num contexto novo do navegador, a vistoria aberta pelo id chega com o
+// imóvel e o cliente, sem nada na fila; um id que o servidor não tem mostra "não existe"; sem rede, o aviso, e a busca
+// sai sozinha quando a rede volta. Com SCREENS=1, os prints dos três.
 
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
@@ -230,8 +233,9 @@ async function askToDelete(page, scope) {
 const inspectionRow = (page, id) => page.getByRole("row").filter({ has: page.locator(`a[href$="id=${id}"]`) });
 
 /** Entra pelo /login e volta para a lista de clientes pelo `?next=`, sem recarregar (o token fica na memória). */
-async function signIn(page, user, { expired } = {}) {
-  await page.goto(`${base}/login?next=${encodeURIComponent(route)}`);
+/** Entra pelo /login e volta para `next` (a lista de clientes, onde espera o título, ou outra tela, que o chamador espera). */
+async function signIn(page, user, { expired, next = route } = {}) {
+  await page.goto(`${base}/login?next=${encodeURIComponent(next)}`);
   if (expired) await page.getByText("Sua sessão expirou").waitFor();
   const notice = expired ? await page.getByRole("status").first().textContent() : null;
   await page.getByLabel("E-mail").fill(user.email);
@@ -246,7 +250,7 @@ async function signIn(page, user, { expired } = {}) {
     console.log(`   · signin 429 rate-limited: espera o Retry-After de ${seconds} s`);
     await wait(seconds * 1000);
   }
-  await page.getByRole("heading", { level: 1, name: "Clientes" }).waitFor();
+  if (next === route) await page.getByRole("heading", { level: 1, name: "Clientes" }).waitFor();
   return notice;
 }
 
@@ -1320,6 +1324,60 @@ try {
     await until(async () => (await inspectionRow(page, leftover).count()) === 0, "a vistoria do 12e sai da lista", 90_000);
   }
   await goTo(page, "Clientes");
+
+  step("12f", "Contexto novo do navegador: abrir pelo id o que só está no servidor (leitura por id, #101)");
+  // Sem service worker, para o modo avião e o `route` do Playwright alcançarem o fetch da página (ver o passo 13).
+  const fresh = await browser.newContext({ viewport: { width: 1440, height: 900 }, serviceWorkers: "block" });
+  const freshPage = await fresh.newPage();
+  const freshPuts = watchPuts(freshPage);
+  const gets = [];
+  freshPage.on("response", (res) => {
+    const path = new URL(res.url()).pathname;
+    if (res.request().method() === "GET" && /^\/api\/v1\/(clients|properties|inspections)\//.test(path)) {
+      gets.push(`${path.split("/")[3]} ${res.status()}`);
+    }
+  });
+  const onServer = (await serverInspection(user, campo)).body;
+  const place = (await serverProperty(user, onServer.propertyId)).body;
+  const owner = (await serverClient(user, place.clientId)).body;
+  await signIn(freshPage, user, { next: `/inspections/edit?id=${campo}` });
+  await freshPage.getByRole("heading", { level: 1, name: roteiro }).waitFor();
+  await freshPage.getByText(owner.name).first().waitFor();
+  assert.deepEqual(gets, ["inspections 200", "properties 200", "clients 200"]);
+  ok(`a vistoria abre com o imóvel e o cliente (${owner.name}): três GET, da vistoria ao cliente`);
+  await shoot(freshPage, "id-1-aberta");
+  const shownPiso = await chipsOf(freshPage, "Piso").getByRole("radio", { checked: true }).textContent();
+  await wait(3000);
+  assert.equal(freshPuts.length, 0, "abrir pelo id não põe nada na fila");
+  assert.equal(await outboxCount(freshPage, user), 0);
+  ok(`a tela de campo mostra o que o servidor tem (Piso "${shownPiso}"), e nada vai para a fila`);
+  await freshPage.getByRole("link", { name: "Voltar" }).click();
+  await inspectionRow(freshPage, campo).waitFor();
+  ok("de volta na lista, a vistoria está neste aparelho");
+
+  // 404: um id que o servidor não tem.
+  const missingPage = await fresh.newPage();
+  await signIn(missingPage, user, { next: `/clients/edit?id=${uuidv7()}` });
+  await missingPage.getByText("Este cliente não existe ou foi excluído.").waitFor();
+  ok("id que o servidor não tem: \"Este cliente não existe ou foi excluído.\"");
+  await shoot(missingPage, "id-2-nao-encontrado");
+  await missingPage.close();
+
+  // Sem rede, num contexto que nunca viu o cliente: o aviso, e a busca de novo quando a rede volta.
+  const offlineContext = await browser.newContext({ viewport: { width: 1440, height: 900 }, serviceWorkers: "block" });
+  const offlinePage = await offlineContext.newPage();
+  await offlinePage.route("**/api/v1/clients/**", (r) => r.abort("internetdisconnected"));
+  await signIn(offlinePage, user, { next: `/clients/edit?id=${owner.id}` });
+  await offlinePage.getByText("Este cliente ainda não está neste aparelho.", { exact: false }).waitFor();
+  ok("sem rede: o aviso de abrir uma vez com internet");
+  await shoot(offlinePage, "id-3-sem-rede");
+  await offlinePage.unroute("**/api/v1/clients/**");
+  await offlineContext.setOffline(true);
+  await offlineContext.setOffline(false);
+  await until(async () => (await offlinePage.getByLabel("Nome").inputValue().catch(() => "")) === owner.name, "o cliente chega quando a rede volta");
+  ok(`a rede volta: a busca sai sozinha, e o formulário abre com "${owner.name}"`);
+  await offlineContext.close();
+  await fresh.close();
 
   step(13, "Outro usuário entra: a fila do anterior não sai com a conta dele");
   // Com a página controlada pelo service worker, o modo avião do Playwright não barra o fetch que passa por ele;

@@ -1,15 +1,12 @@
 "use client";
 
-import { Alert, AlertDescription } from "@sanjou/ui/alert";
-import { Button } from "@sanjou/ui/button";
-import { CircleAlert } from "lucide-react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { DeleteInspection } from "@/features/inspections/components/delete-inspection";
 import { RoomStep } from "@/features/inspections/components/room-step";
 import { INSPECTIONS_HREF } from "@/features/inspections/hooks/useInspections";
 import { useInspectionDraft } from "@/features/inspections/hooks/useInspectionDraft";
+import { RecordUnavailable } from "@/shared/components/record-unavailable";
 import { StepperForm } from "@/shared/components/stepper-form";
 
 import { PageHeader } from "../../shell-header";
@@ -19,25 +16,18 @@ import { PageHeader } from "../../shell-header";
 // Anterior/Próximo no rodapé. Editável com transação na fila; só leitura com o envio no ar (ADR 0021). No último
 // ambiente, Próximo fica desabilitado: concluir chega no M5. Em andamento, o "···" do header exclui a vistoria (#107):
 // confirmada, a exclusão vai para a fila e a tela volta para a lista; aberta com a exclusão na fila, fica só leitura.
+// Uma vistoria que o aparelho não tem é buscada no servidor, com o imóvel e o cliente (#101).
 
 export function InspectionEditScreen() {
   const id = useSearchParams().get("id");
   const router = useRouter();
   const field = useInspectionDraft(id);
 
-  if (field.status === "missing") {
+  if (field.unavailable) {
     return (
       <>
         <PageHeader title="Vistoria" backHref={INSPECTIONS_HREF} />
-        <div className="flex flex-col items-start gap-4">
-          <Alert variant="warning" role="status">
-            <CircleAlert aria-hidden="true" />
-            <AlertDescription>Esta vistoria não está neste aparelho.</AlertDescription>
-          </Alert>
-          <Button asChild variant="outline">
-            <Link href={INSPECTIONS_HREF}>Voltar para a lista</Link>
-          </Button>
-        </div>
+        <RecordUnavailable {...field.unavailable} backHref={INSPECTIONS_HREF} />
       </>
     );
   }

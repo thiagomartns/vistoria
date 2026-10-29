@@ -4,9 +4,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ClientRecord } from "@/features/clients/models/client";
 import type { PropertyRecord } from "@/features/properties/models/property";
-import { saveProperty } from "@/features/properties/services/properties.sync";
+import { fetchProperty, saveProperty } from "@/features/properties/services/properties.sync";
 import { resetSession } from "@/shared/auth/session";
 import type { DraftRecord } from "@/shared/sync/drafts";
+import type { FetchOutcome } from "@/shared/sync/fetch";
 import { resetSyncStatus } from "@/shared/sync/sync-status";
 import type { RecordSyncState } from "@/shared/sync/sync-view";
 
@@ -45,6 +46,7 @@ vi.mock("@/features/local-store/hooks/useLocalStore", () => ({
 
 vi.mock("@/features/properties/services/properties.sync", () => ({
   saveProperty: vi.fn<() => string>(() => "novo-id"),
+  fetchProperty: vi.fn<(store: unknown, id: string) => Promise<FetchOutcome>>(async () => "not-found"),
   propertyConflictHref: (id: string) => `/properties/conflict?id=${id}`,
 }));
 
@@ -119,6 +121,7 @@ afterEach(() => {
   };
   navigation.push.mockReset();
   vi.mocked(saveProperty).mockClear();
+  vi.mocked(fetchProperty).mockReset().mockResolvedValue("not-found");
   resetSyncStatus();
   resetSession();
 });
@@ -341,12 +344,53 @@ describe("PropertyEditScreen", () => {
     });
   });
 
-  it("id que não está no aparelho: aviso e volta para a lista", () => {
-    open("nao-existe");
+  describe("id que não está no aparelho (leitura por id)", () => {
+    it("busca no servidor e, enquanto busca, não mostra aviso nem formulário", () => {
+      vi.mocked(fetchProperty).mockReturnValue(new Promise(() => {}));
+      open("nao-existe");
 
-    expect(heading().textContent).toBe("Imóvel");
-    expect(screen.getByText("Este imóvel não está neste aparelho.")).toBeDefined();
-    expect(screen.getByRole("link", { name: "Voltar para a lista" }).getAttribute("href")).toBe("/properties");
-    expect(screen.queryByRole("textbox")).toBeNull();
+      expect(vi.mocked(fetchProperty)).toHaveBeenCalledWith(local.value.store, "nao-existe");
+      expect(heading().textContent).toBe("Imóvel");
+      expect(screen.queryByRole("status")).toBeNull();
+      expect(screen.queryByRole("textbox")).toBeNull();
+    });
+
+    it("o que já está no aparelho não é buscado", () => {
+      open(null);
+
+      expect(vi.mocked(fetchProperty)).not.toHaveBeenCalled();
+    });
+
+    it("404: não encontrado, com a volta para a lista", async () => {
+      open("nao-existe");
+
+      expect(await screen.findByText("Este imóvel não existe ou foi excluído.")).toBeDefined();
+      expect(screen.getByRole("link", { name: "Voltar para a lista" }).getAttribute("href")).toBe("/properties");
+      expect(screen.queryByRole("button", { name: "Tentar de novo" })).toBeNull();
+      expect(screen.queryByRole("textbox")).toBeNull();
+    });
+
+    it("sem rede: explica que é preciso abrir uma vez com internet", async () => {
+      vi.mocked(fetchProperty).mockResolvedValue("offline");
+      open("nao-existe");
+
+      expect(
+        await screen.findByText(
+          "Este imóvel ainda não está neste aparelho. Abra-o uma vez com internet para trabalhar nele offline.",
+        ),
+      ).toBeDefined();
+      expect(screen.queryByRole("button", { name: "Tentar de novo" })).toBeNull();
+    });
+
+    it("falha do servidor: Tentar de novo busca outra vez", async () => {
+      const user = userEvent.setup();
+      vi.mocked(fetchProperty).mockResolvedValue("failed");
+      open("nao-existe");
+
+      await user.click(await screen.findByRole("button", { name: "Tentar de novo" }));
+
+      expect(screen.getByText("Não foi possível buscar este imóvel agora.")).toBeDefined();
+      await vi.waitFor(() => expect(vi.mocked(fetchProperty)).toHaveBeenCalledTimes(2));
+    });
   });
 });
