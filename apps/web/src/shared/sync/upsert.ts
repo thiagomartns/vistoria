@@ -73,7 +73,7 @@ export const flatMerge: MergeStrategy<any> = { shape: recordShape, merge: mergeF
  * O registro como o servidor o confirmou por último (a `serverShadow` do merge), lido da store na hora do envio. A
  * `version` dele é a versão-base do envio (e não a da transação). Assim duas edições seguidas saem encadeadas: a segunda leva a versão que a primeira
  * devolveu. Vale porque a store só recebe o que o servidor confirmou; o pull do M4 não pode sobrescrever registro
- * com pendência (frontend.md, "Leitura").
+ * com pendência (frontend.md, "Leitura"; ADR 0041).
  */
 export async function confirmedOf<T extends SyncRecord>(
   store: ConfirmedStore<T>,
