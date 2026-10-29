@@ -47,3 +47,4 @@ uma decisão nova o substitui e diz qual substituiu. Novo ADR: `/adr <título>` 
 | [0040](0040-conflitos-da-exclusao-tipo-no-rascunho-current-adotado-no-412-e-recriar-com-ids-novos.md) | Conflitos da exclusão: tipo no rascunho, current adotado no 412 e recriar com ids novos | Proposto | 2026-10-28 |
 | [0041](0041-o-pull-nao-toca-registro-com-pendencia.md) | O pull não toca registro com pendência | Proposto | 2026-10-29 |
 | [0042](0042-pull-grava-a-pagina-antes-do-cursor-e-reaplica-sem-efeito.md) | Pull grava a página antes do cursor e reaplica sem efeito | Proposto | 2026-10-29 |
+| [0043](0043-rascunho-limpo-nao-segura-o-pull-e-o-resync-varre-no-fim.md) | Rascunho limpo não segura o pull, e o resync varre no fim | Proposto | 2026-10-29 |
