@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { expireSession } from "../auth/session";
 import type { DraftsCollection } from "./drafts";
-import { type GetCall, fetchMissing } from "./fetch";
+import { type GetCall, fetchMissing, refetchById } from "./fetch";
 import type { LocalCollection } from "./upsert";
 
 // A leitura por id com um GET falso e uma store em memória: o que é gravado, o que nunca é pedido nem sobrescrito e a
@@ -25,8 +25,12 @@ const dto: Dto = {
 const shape = ({ createdAt: _createdAt, ...row }: Dto): Row => row;
 
 /** A store confirmada e a camada otimista por cima (o que está na fila), como na collection do TanStack DB. */
-function setup({ queued = [] as Row[], drafted = [] as string[] } = {}) {
-  const confirmed = new Map<string, Row>();
+function setup({
+  queued = [] as Row[],
+  drafted = [] as string[],
+  stored = [] as Row[],
+} = {}) {
+  const confirmed = new Map<string, Row>(stored.map((row) => [row.id, row]));
   const optimistic = new Map(queued.map((row) => [row.id, row]));
   const acceptMutations = vi.fn<
     (transaction: { mutations: { type: string; modified: Row }[] }) => Promise<void>
@@ -38,7 +42,9 @@ function setup({ queued = [] as Row[], drafted = [] as string[] } = {}) {
   });
   const store = {
     utils: { acceptMutations, exportData: async () => [...confirmed.values()] },
-    get: (key: string) => optimistic.get(key) ?? confirmed.get(key),
+    // O que está na fila leva `$hasPendingWrites`, como a linha otimista do TanStack DB.
+    get: (key: string) =>
+      optimistic.has(key) ? { ...optimistic.get(key), $hasPendingWrites: true } : confirmed.get(key),
     has: (key: string) => optimistic.has(key) || confirmed.has(key),
     insert: (row: Row) => optimistic.set(row.id, row),
     update: () => {},
@@ -166,5 +172,59 @@ describe("fetchMissing", () => {
     });
     expect(await fetchMissing({ ...setup(), id, get: html, shape })).toBe("failed");
     expect(expireSession).not.toHaveBeenCalled();
+  });
+});
+
+// A marca de um registro que o pull pulou (ADR 0041): o registro está no aparelho e é buscado de novo, a menos que tenha
+// pendência.
+describe("refetchById", () => {
+  const stored: Row = { id, version: "AAAAAAAAB9I=", name: "Antigo" };
+
+  it("o registro confirmado no aparelho é buscado de novo e atualizado", async () => {
+    const local = setup({ stored: [stored] });
+
+    expect(await refetchById({ ...local, id, get: ok, shape })).toBe("found");
+
+    expect(local.confirmed.get(id)).toEqual({ id, version: "AAAAAAAAB9M=", name: "Do servidor" });
+  });
+
+  it("com pendência (na fila ou em rascunho): nada é pedido", async () => {
+    const get = vi.fn<GetCall<Dto>>(ok);
+
+    const queued = setup({ stored: [stored], queued: [{ ...stored, name: "Meu" }] });
+    expect(await refetchById({ ...queued, id, get, shape })).toBe("local");
+    const drafted = setup({ stored: [stored], drafted: [id] });
+    expect(await refetchById({ ...drafted, id, get, shape })).toBe("local");
+
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it("a pendência que volta durante o GET vence: a resposta é descartada, também no 404", async () => {
+    const local = setup({ stored: [stored] });
+    const drafts = new Set<string>();
+    const drafted = { ...local, drafts: { has: (key: string) => drafts.has(key) } as never };
+    const answer =
+      (response: GetCall<Dto>): GetCall<Dto> =>
+      async (request) => {
+        drafts.add(id);
+        return response(request);
+      };
+
+    expect(await refetchById({ ...drafted, id, get: answer(ok), shape })).toBe("local");
+    drafts.clear();
+    expect(await refetchById({ ...drafted, id, get: answer(problem("not-found", 404)), shape })).toBe(
+      "local",
+    );
+
+    expect(local.acceptMutations).not.toHaveBeenCalled();
+    expect(local.confirmed.get(id)).toEqual(stored);
+  });
+
+  it("404 not-found: o registro sai da store", async () => {
+    const local = setup({ stored: [stored] });
+
+    expect(await refetchById({ ...local, id, get: problem("not-found", 404), shape })).toBe("not-found");
+
+    expect(local.confirmed.size).toBe(0);
   });
 });

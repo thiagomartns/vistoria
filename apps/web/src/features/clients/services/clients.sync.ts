@@ -1,10 +1,11 @@
-import { type ClientDto, getClient, upsertClient } from "@/shared/api/generated";
+import { type ClientDto, getClient, syncClients, upsertClient } from "@/shared/api/generated";
 import type { Client } from "@/shared/api/generated/client";
 import { type DraftsCollection, clearDraft, keepConflictData } from "@/shared/sync/drafts";
 import { type FetchOutcome, fetchMissing } from "@/shared/sync/fetch";
 import { flatConflictOf } from "@/shared/sync/flat-conflict";
 import { newId } from "@/shared/sync/ids";
 import { type Outbox, type OutboxMutationFn, enqueue } from "@/shared/sync/outbox";
+import type { PullEntity } from "@/shared/sync/pull";
 import { registerConflictView, registerRecordLabel } from "@/shared/sync/sync-view";
 import { resolveConflict, upsertMutation } from "@/shared/sync/upsert";
 
@@ -120,4 +121,15 @@ export function fetchClient(
     get: (request) => getClient({ client, ...request }),
     shape: clientRecordOf,
   });
+}
+
+/** O laço de clientes do pull (`syncClients`): a página na store confirmada, menos o que tem pendência (ADR 0041). */
+export function clientsPull(clients: ClientsCollection, client?: Client): PullEntity<ClientRecord, ClientDto> {
+  return {
+    name: "clients",
+    store: clients,
+    page: (request) => syncClients({ client, ...request }),
+    get: (request) => getClient({ client, ...request }),
+    shape: clientRecordOf,
+  };
 }

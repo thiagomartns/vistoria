@@ -147,6 +147,27 @@ describe("ClientEditScreen", () => {
     );
   });
 
+  it("o pull muda o registro com a tela aberta: o campo intocado mostra o novo, o que a pessoa editou fica", async () => {
+    const user = userEvent.setup();
+    const { rerender } = open("c2", { clients: [maria] });
+    await user.clear(field("Telefone"));
+    await user.type(field("Telefone"), "(11) 95555-6666");
+
+    local.value = {
+      ...local.value,
+      clients: [{ ...maria, version: "AAAAAAAAB9Q=", name: "Maria S. Souza", phone: "(11) 90000-0000" }],
+    };
+    rerender(
+      <AppShell>
+        <ClientEditScreen />
+      </AppShell>,
+    );
+
+    await vi.waitFor(() => expect(field("Nome").value).toBe("Maria S. Souza"));
+    expect(heading().textContent).toBe("Maria S. Souza");
+    expect(field("Telefone").value).toBe("(11) 95555-6666");
+  });
+
   it("edição pendente: 'Salvo no aparelho' no cabeçalho", () => {
     open("c2", { clients: [maria], states: new Map([["c2", "local"]]) });
 
