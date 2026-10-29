@@ -299,7 +299,7 @@ Um termo, um significado, em todos os documentos, issues e prompts.
 | Versão / ETag | Identificador da versão do registro no servidor (rowversion), usado para detectar conflito |
 | `If-Match` | Cabeçalho em que o cliente diz sobre qual versão está escrevendo |
 | `Idempotency-Key` | Chave que faz um reenvio ter o mesmo efeito do envio original |
-| `serverShadow` | Última versão do servidor que o aparelho viu; base do merge |
+| `serverShadow` | Versão do servidor sobre a qual o aparelho edita (a store confirmada); base do merge |
 | Merge de três vias | Compara base, local e servidor; só vai para o usuário o que os dois lados mudaram |
 | `ProblemType` | Lista fechada de tipos de erro do catálogo, gerada do contrato |
 | Static export | Build do Next.js em arquivos estáticos, sem servidor |

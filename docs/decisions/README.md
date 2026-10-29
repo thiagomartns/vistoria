@@ -45,3 +45,4 @@ uma decisão nova o substitui e diz qual substituiu. Novo ADR: `/adr <título>` 
 | [0038](0038-escopo-do-m3-leitura-por-id-conflito-de-cadastro-e-exclusao.md) | Escopo do M3: leitura por id, conflito de cadastro e exclusão | Proposto | 2026-10-27 |
 | [0039](0039-exclusao-de-vistoria-pela-outbox-marca-otimista-compactacao-por-exclusao-e-delete-decidido-no-envio.md) | Exclusão de vistoria pela outbox: marca otimista, compactação por exclusão e DELETE decidido no envio | Proposto | 2026-10-28 |
 | [0040](0040-conflitos-da-exclusao-tipo-no-rascunho-current-adotado-no-412-e-recriar-com-ids-novos.md) | Conflitos da exclusão: tipo no rascunho, current adotado no 412 e recriar com ids novos | Proposto | 2026-10-28 |
+| [0041](0041-o-pull-nao-toca-registro-com-pendencia.md) | O pull não toca registro com pendência | Proposto | 2026-10-29 |

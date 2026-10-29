@@ -6,7 +6,8 @@ import { type LocalCollection, type SyncRecord, adoptServer, dropConfirmed } fro
 
 // A leitura por id (frontend.md, "Leitura (pull)"; ADR 0038): abrir um registro que não está no banco local busca o
 // `GET` dele e grava a resposta na store confirmada, com a `version`, como depois de um envio aceito. Ela vira a
-// `serverShadow` do próximo merge. Com o delta (M4), fica só para o link aberto antes do primeiro pull.
+// `serverShadow` do próximo merge. Com o delta (M4), fica para o link aberto antes do primeiro pull e para a marca de
+// um registro que o pull pulou por ter pendência (ADR 0041).
 
 /**
  * - `local`: o registro já está no aparelho (confirmado, na fila ou num rascunho); nada foi pedido.
