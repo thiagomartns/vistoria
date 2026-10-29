@@ -71,5 +71,9 @@ public class ClientServiceTests
 
         public Task<bool> DeleteAsync(Guid id, byte[] version, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
+
+        public Task<IReadOnlyList<Client>> ChangedSinceAsync(
+            Guid ownerId, byte[] afterVersion, int take, bool liveOnly, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 }

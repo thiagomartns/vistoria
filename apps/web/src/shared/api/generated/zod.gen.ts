@@ -145,6 +145,20 @@ export const zSignUpDto = z.object({
     password: z.string().min(8).max(128)
 });
 
+export const zSyncPageDtoOfClientDto = z.object({
+    items: z.array(zClientDto),
+    deletedIds: z.array(z.uuid()),
+    nextCursor: z.string(),
+    hasMore: z.boolean()
+});
+
+export const zSyncPageDtoOfPropertyDto = z.object({
+    items: z.array(zPropertyDto),
+    deletedIds: z.array(z.uuid()),
+    nextCursor: z.string(),
+    hasMore: z.boolean()
+});
+
 export const zTemplateItemDto = z.object({
     id: z.uuid(),
     name: z.string(),
@@ -337,6 +351,26 @@ export const zUpsertPropertyPath = z.object({
  * OK
  */
 export const zUpsertPropertyResponse = zPropertyDto;
+
+export const zSyncClientsQuery = z.object({
+    cursor: z.string().optional(),
+    limit: z.int().gte(1).lte(1000).optional().default(500)
+});
+
+/**
+ * OK
+ */
+export const zSyncClientsResponse = zSyncPageDtoOfClientDto;
+
+export const zSyncPropertiesQuery = z.object({
+    cursor: z.string().optional(),
+    limit: z.int().gte(1).lte(1000).optional().default(500)
+});
+
+/**
+ * OK
+ */
+export const zSyncPropertiesResponse = zSyncPageDtoOfPropertyDto;
 
 export const zGetTemplatePath = z.object({
     id: z.uuid()

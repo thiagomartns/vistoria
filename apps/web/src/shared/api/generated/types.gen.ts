@@ -133,6 +133,20 @@ export type SignUpDto = {
     password: string;
 };
 
+export type SyncPageDtoOfClientDto = {
+    items: Array<ClientDto>;
+    deletedIds: Array<string>;
+    nextCursor: string;
+    hasMore: boolean;
+};
+
+export type SyncPageDtoOfPropertyDto = {
+    items: Array<PropertyDto>;
+    deletedIds: Array<string>;
+    nextCursor: string;
+    hasMore: boolean;
+};
+
 export type TemplateDto = {
     id: string;
     name: string;
@@ -668,6 +682,78 @@ export type UpsertPropertyResponses = {
 };
 
 export type UpsertPropertyResponse = UpsertPropertyResponses[keyof UpsertPropertyResponses];
+
+export type SyncClientsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        cursor?: string;
+        limit?: number;
+    };
+    url: '/api/v1/sync/clients';
+};
+
+export type SyncClientsErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Unauthorized
+     */
+    401: ProblemDetails;
+    /**
+     * Gone
+     */
+    410: ProblemDetails;
+};
+
+export type SyncClientsError = SyncClientsErrors[keyof SyncClientsErrors];
+
+export type SyncClientsResponses = {
+    /**
+     * OK
+     */
+    200: SyncPageDtoOfClientDto;
+};
+
+export type SyncClientsResponse = SyncClientsResponses[keyof SyncClientsResponses];
+
+export type SyncPropertiesData = {
+    body?: never;
+    path?: never;
+    query?: {
+        cursor?: string;
+        limit?: number;
+    };
+    url: '/api/v1/sync/properties';
+};
+
+export type SyncPropertiesErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Unauthorized
+     */
+    401: ProblemDetails;
+    /**
+     * Gone
+     */
+    410: ProblemDetails;
+};
+
+export type SyncPropertiesError = SyncPropertiesErrors[keyof SyncPropertiesErrors];
+
+export type SyncPropertiesResponses = {
+    /**
+     * OK
+     */
+    200: SyncPageDtoOfPropertyDto;
+};
+
+export type SyncPropertiesResponse = SyncPropertiesResponses[keyof SyncPropertiesResponses];
 
 export type GetTemplateData = {
     body?: never;

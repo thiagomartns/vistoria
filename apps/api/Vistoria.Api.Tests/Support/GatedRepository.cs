@@ -90,6 +90,10 @@ public class GatedRepository<T> : IRepository<T> where T : SyncEntity
         await _gate.PassAsync(id, cancellationToken);
         return await _inner.DeleteAsync(id, version, cancellationToken);
     }
+
+    public Task<IReadOnlyList<T>> ChangedSinceAsync(
+        Guid ownerId, byte[] afterVersion, int take, bool liveOnly, CancellationToken cancellationToken) =>
+        _inner.ChangedSinceAsync(ownerId, afterVersion, take, liveOnly, cancellationToken);
 }
 
 /// <summary><see cref="GatedRepository{T}"/> sobre o <see cref="InspectionRepository"/>.</summary>

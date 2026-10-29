@@ -110,6 +110,44 @@ public class CommittedOpenApiTests
         }
     }
 
+    // backend.md, "Leitura por delta": a página com os DTOs da entidade, cursor e limit na query, e os erros do delta.
+    [Theory]
+    [InlineData("clients", "syncClients", "ClientDto")]
+    [InlineData("properties", "syncProperties", "PropertyDto")]
+    public void SyncOperations_ReturnTheEntityPage_WithCursorAndLimit(string resource, string operationId, string dto)
+    {
+        var document = Document();
+        var operation = document.GetProperty("paths").GetProperty($"/api/v1/sync/{resource}").GetProperty("get");
+        var responses = operation.GetProperty("responses");
+
+        operation.GetProperty("operationId").GetString().Should().Be(operationId);
+        responses.EnumerateObject().Select(r => r.Name).Should().BeEquivalentTo("200", "400", "401", "410");
+        foreach (var status in new[] { "400", "401", "410" })
+        {
+            responses.GetProperty(status).GetProperty("content").GetProperty("application/problem+json")
+                .GetProperty("schema").GetProperty("$ref").GetString()
+                .Should().Be("#/components/schemas/ProblemDetails");
+        }
+
+        var parameters = operation.GetProperty("parameters").EnumerateArray().ToList();
+        parameters.Select(p => (p.GetProperty("name").GetString(), p.GetProperty("in").GetString()))
+            .Should().BeEquivalentTo([("cursor", "query"), ("limit", "query")]);
+        var limit = parameters.Single(p => p.GetProperty("name").GetString() == "limit").GetProperty("schema");
+        limit.GetProperty("minimum").GetInt32().Should().Be(1);
+        limit.GetProperty("maximum").GetInt32().Should().Be(1000);
+        limit.GetProperty("default").GetInt32().Should().Be(500);
+
+        var pageRef = responses.GetProperty("200").GetProperty("content").GetProperty("application/json")
+            .GetProperty("schema").GetProperty("$ref").GetString()!;
+        var page = document.GetProperty("components").GetProperty("schemas").GetProperty(pageRef.Split('/')[^1]);
+        page.GetProperty("required").EnumerateArray().Select(e => e.GetString())
+            .Should().BeEquivalentTo("items", "deletedIds", "nextCursor", "hasMore");
+        page.GetProperty("properties").GetProperty("items").GetProperty("items").GetProperty("$ref").GetString()
+            .Should().Be($"#/components/schemas/{dto}");
+        page.GetProperty("properties").GetProperty("deletedIds").GetProperty("items").GetProperty("format")
+            .GetString().Should().Be("uuid");
+    }
+
     // Status da tabela de Endpoints do backend.md.
     [Theory]
     [InlineData("/api/v1/auth/signup", "signUp", "201", new[] { "400", "429" })]

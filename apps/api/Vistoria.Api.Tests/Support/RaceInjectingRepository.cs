@@ -127,6 +127,10 @@ public class RaceInjectingRepository<T> : IRepository<T> where T : SyncEntity
         return await _inner.DeleteAsync(id, version, cancellationToken);
     }
 
+    public Task<IReadOnlyList<T>> ChangedSinceAsync(
+        Guid ownerId, byte[] afterVersion, int take, bool liveOnly, CancellationToken cancellationToken) =>
+        _inner.ChangedSinceAsync(ownerId, afterVersion, take, liveOnly, cancellationToken);
+
     /// <summary>Só regrava, sem mudar nada: o bastante para o rowversion subir.</summary>
     private static async Task Rewrite(AppDbContext other, Guid id, CancellationToken cancellationToken) =>
         await other.Set<T>().Where(e => e.Id == id)
