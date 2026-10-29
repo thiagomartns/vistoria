@@ -72,6 +72,7 @@ Vistoria.Api/
     Impl/PropertyService.cs
     Impl/TemplateService.cs
     Impl/AuthService.cs          # cadastro, tokens, rotação, tolerância
+    Impl/SyncService.cs          # delta paginado, genérico por entidade (ISyncService<TDto>)
   Repositories/
     IRepository.cs               # genérico, async, sobre SyncEntity
     IInspectionRepository.cs
@@ -281,9 +282,10 @@ A ordem importa: idempotência primeiro (um retry nunca reexecuta nada), depois 
 
 Cada entidade tem seu endpoint de delta (`/api/v1/sync/inspections`, `/clients`, `/properties`, `/templates`), todos com o mesmo formato: um `SyncPageDto` com `items` (agregados completos), `deletedIds`, `nextCursor` e `hasMore`. O cliente repete a chamada enquanto `hasMore` for verdadeiro, com um cursor por entidade.
 
-- **Cursor:** base64 opaco de `{ version, issuedAt }`, onde `version` é o rowversion da última raiz enviada. O rowversion cresce a cada escrita no banco inteiro, então "tudo com `Version` maior que o cursor" é exatamente "tudo o que mudou desde então".
+- **Cursor:** base64 opaco (base64url, que vai na query string sem escape) de `{ version, issuedAt }`, onde `version` é o rowversion da última raiz enviada. O rowversion cresce a cada escrita no banco inteiro, então "tudo com `Version` maior que o cursor" é exatamente "tudo o que mudou desde então". Toda página traz `nextCursor`, mesmo vazia (com a versão do cursor recebido).
+- **`issuedAt`:** desde quando o aparelho não perdeu nenhum tombstone. É o instante da requisição quando a página chega ao fim (`hasMore` falso); no meio da paginação, fica o do cursor recebido, e no primeiro sync, o da primeira página. Assim uma paginação longa não rejuvenesce o cursor por cima de um tombstone já purgado, e um aparelho que sincroniza sempre, mesmo sem mudanças, nunca chega a `cursor-expired`.
 - **Teto `MIN_ACTIVE_ROWVERSION()`.** Uma transação ainda aberta pode gravar uma versão menor que outra já confirmada. Sem esse teto, o delta pularia essa linha para sempre.
-- **Consulta:** `WHERE OwnerId = @user AND Version > @cursor AND Version < MIN_ACTIVE_ROWVERSION() ORDER BY Version`, buscando `limit + 1` linhas para saber se há mais. Como o EF não compara `byte[]` com `>`, ela roda via `FromSql($"...")`, que parametriza os valores interpolados (ao contrário do `FromSqlRaw` com string montada do curso).
+- **Consulta:** `WHERE OwnerId = @user AND Version > @cursor AND Version < MIN_ACTIVE_ROWVERSION() ORDER BY Version`, buscando `limit + 1` linhas para saber se há mais. Como o EF não compara `byte[]` com `>`, o filtro roda via `FromSql`, que parametriza dono e versão (ao contrário do `FromSqlRaw` com string montada do curso); o nome da tabela vem do modelo do EF, e a ordem e o `limit` vêm em LINQ por cima (`GenericRepository.ChangedSinceAsync`, que a vistoria sobrescreve para trazer o agregado).
 - **Tombstones:** a consulta usa `IgnoreQueryFilters()`. Raízes com `DeletedAt` vão para `deletedIds`; as outras, para `items`. Ambientes e itens excluídos de uma vistoria viva simplesmente não aparecem nela.
 - **Primeiro sync** (cursor vazio): devolve só registros vivos.
 - **Cursor vencido:** `issuedAt` mais velho que a retenção de tombstones (90 dias) → 410 `cursor-expired`. O cliente pode ter perdido exclusões já purgadas, então refaz o sync do zero. Cursor ilegível → 400 `invalid-cursor`, mesma reação.

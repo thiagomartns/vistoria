@@ -1,3 +1,5 @@
+using Vistoria.Api.Data.DTO.V1;
+using Vistoria.Api.Model;
 using Vistoria.Api.Services;
 using Vistoria.Api.Services.Impl;
 
@@ -12,6 +14,9 @@ public static class DomainConfig
         services.AddScoped<IPropertyService, PropertyService>();
         services.AddScoped<ITemplateService, TemplateService>();
         services.AddScoped<IInspectionService, InspectionService>();
+        // Delta por entidade (SyncController).
+        services.AddScoped<ISyncService<ClientDto>, SyncService<Client, ClientDto>>();
+        services.AddScoped<ISyncService<PropertyDto>, SyncService<Property, PropertyDto>>();
         return services;
     }
 }

@@ -34,6 +34,15 @@ public interface IRepository<T> where T : SyncEntity
     /// existe ou já foi excluído.
     /// </summary>
     Task<bool> DeleteAsync(Guid id, byte[] version, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Até <paramref name="take"/> registros de <paramref name="ownerId"/> com versão maior que
+    /// <paramref name="afterVersion"/>, na ordem da versão, inclusive os excluídos (tombstones), a não ser com
+    /// <paramref name="liveOnly"/>. O teto é <c>MIN_ACTIVE_ROWVERSION()</c>: uma transação ainda aberta pode gravar uma
+    /// versão menor que outra já confirmada, e nada acima dela sai antes do commit, para o cursor não passar por cima.
+    /// </summary>
+    Task<IReadOnlyList<T>> ChangedSinceAsync(
+        Guid ownerId, byte[] afterVersion, int take, bool liveOnly, CancellationToken cancellationToken);
 }
 
 /// <summary>O que resta de um registro excluído para o <c>PUT</c> responder: de quem é e quando saiu.</summary>
