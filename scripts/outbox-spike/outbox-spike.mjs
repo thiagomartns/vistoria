@@ -29,6 +29,9 @@
 // Desde o #101 cobre a leitura por id (ADR 0038): num contexto novo do navegador, a vistoria aberta pelo id chega com o
 // imóvel e o cliente, sem nada na fila; um id que o servidor não tem mostra "não existe"; sem rede, o aviso, e a busca
 // sai sozinha quando a rede volta. Com SCREENS=1, os prints dos três.
+// Desde o #144 o pull entra no roteiro de forma explícita: os passos em que outro aparelho grava e este age sem ter
+// visto seguram o pull (`holdPull`); o 10c e o 12g forçam o pull no meio de uma escrita (`pullNow`), com o formulário
+// aberto e com a página lida antes do envio daqui confirmar. Com PULL_CHAOS=1, o pull roda a cada 1,5 s no roteiro todo.
 
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
@@ -46,6 +49,7 @@ import {
   deleteOnServer,
   editNotes,
   goTo,
+  holdPull,
   inspectionRow,
   inspectionSettled,
   launch,
@@ -54,8 +58,10 @@ import {
   ok,
   openRoom,
   outboxCount,
+  printTrace,
   outboxKeys,
   problem,
+  pullNow,
   root,
   route,
   rowOf,
@@ -392,6 +398,8 @@ try {
 
   step(10, "412 version-conflict: outro aparelho mudou o client; marca o conflito e não entra em laço");
   await goTo(page, "Clientes");
+  // Este aparelho não vê o que o outro gravou até o 412: sem o pull, o envio sai com a version de antes.
+  let releasePull = await holdPull(context);
   const known = await serverClient(user, alfa);
   const elsewhere = await callApi(`/api/v1/clients/${alfa}`, {
     method: "PUT",
@@ -411,6 +419,7 @@ try {
   await page.getByRole("button", { name: "Salvar" }).click();
   await page.getByRole("heading", { level: 1, name: "Clientes" }).waitFor();
   await settled(page, user, puts, fromConflict, 412, "o 412 tira a transação da fila");
+  await releasePull();
   await wait(5000);
   const conflictPuts = puts.slice(fromConflict);
   assert.equal(conflictPuts.length, 1, "version-conflict não pode ser reenviado");
@@ -446,6 +455,7 @@ try {
   ok(`"Resolver conflito" → só Telefone; "Neste aparelho" → PUT com If-Match ${clientResolution[0].ifMatch} e chave nova → 200; servidor com o telefone daqui e o e-mail de lá`);
 
   step("10b", "412 em campos diferentes do client: converge sem perguntar, num reenvio com chave nova");
+  releasePull = await holdPull(context);
   const lastClient = (await serverClient(user, alfa)).body;
   const otherClient = await callApi(`/api/v1/clients/${alfa}`, {
     method: "PUT",
@@ -464,6 +474,7 @@ try {
   await page.getByRole("button", { name: "Salvar" }).click();
   await page.getByRole("heading", { level: 1, name: "Clientes" }).waitFor();
   await settled(page, user, puts, fromMerge, 200, "o merge sincroniza");
+  await releasePull();
   const mergePuts = puts.slice(fromMerge);
   assert.deepEqual(mergePuts.map((put) => put.status), [412, 200], "um 412 e um reenvio");
   assert.equal(mergePuts[1].ifMatch, `"${otherClient.body.version}"`);
@@ -473,6 +484,39 @@ try {
   assert.equal(merged.body.email, "vendas@alfa.com");
   assert.equal(await rowOf(page, "Imobiliária Alfa").getByText("Conflito").count(), 0);
   ok(`412 → reenvio com If-Match ${mergePuts[1].ifMatch} e chave nova → 200; servidor com o telefone daqui e o e-mail de lá, sem perguntar`);
+
+  step("10c", "O pull chega com o formulário aberto: a tela mostra o e-mail de lá, e salvar leva o telefone daqui, sem 412");
+  const seenClient = (await serverClient(user, alfa)).body;
+  const pulledFirst = await callApi(`/api/v1/clients/${alfa}`, {
+    method: "PUT",
+    headers: {
+      authorization: `Bearer ${user.token}`,
+      "if-match": `"${seenClient.version}"`,
+      "idempotency-key": uuidv7(),
+    },
+    body: JSON.stringify({ name: seenClient.name, document: null, email: "compras@alfa.com", phone: seenClient.phone }),
+  });
+  assert.equal(pulledFirst.status, 200, `o PUT do outro aparelho respondeu ${pulledFirst.status}`);
+  await rowOf(page, "Imobiliária Alfa").getByRole("link").click();
+  await page.getByRole("heading", { level: 1, name: "Imobiliária Alfa" }).waitFor();
+  await page.getByLabel("Telefone").fill("(71) 6666-0000");
+  await pullNow(context, page);
+  await until(
+    async () => (await page.getByLabel("E-mail").inputValue()) === "compras@alfa.com",
+    "o pull traz o e-mail de lá para a tela aberta",
+  );
+  assert.equal(await page.getByLabel("Telefone").inputValue(), "(71) 6666-0000", "o que foi digitado fica");
+  const fromPulled = puts.length;
+  await page.getByRole("button", { name: "Salvar" }).click();
+  await page.getByRole("heading", { level: 1, name: "Clientes" }).waitFor();
+  await settled(page, user, puts, fromPulled, 200, "o telefone daqui sincroniza");
+  const pulledPuts = puts.slice(fromPulled);
+  assert.deepEqual(pulledPuts.map((put) => put.status), [200], "um envio só, sem 412");
+  assert.equal(pulledPuts[0].ifMatch, `"${pulledFirst.body.version}"`);
+  const both = await serverClient(user, alfa);
+  assert.equal(both.body.phone, "(71) 6666-0000");
+  assert.equal(both.body.email, "compras@alfa.com");
+  ok(`PUT com If-Match ${pulledPuts[0].ifMatch} (a version que o pull trouxe) → 200; servidor com o telefone daqui e o e-mail de lá`);
 
   step(11, "409 idempotency-in-progress: a nova tentativa espera o Retry-After, com a mesma chave");
   let inProgress = 0;
@@ -534,7 +578,7 @@ try {
   await page.getByText(refused).waitFor();
   assert.equal(await page.getByLabel("Nome").getAttribute("aria-invalid"), "true");
   ok(`o formulário reabre com "${refused}" no campo Nome`);
-  await page.getByRole("link", { name: "Voltar" }).click();
+  await page.getByRole("link", { name: "Voltar", exact: true }).click();
   await page.getByRole("heading", { level: 1, name: "Clientes" }).waitFor();
 
   step("12b", "Tela de campo no desktop: sincronizada, enviando, recusada e offline; o 400 num item volta ao chip");
@@ -593,7 +637,7 @@ try {
   await wait(1800);
   await settled(page, user, puts, fromRefusal, 400, "a vistoria recusada sai da fila");
   await context.unroute("**/api/v1/inspections/*");
-  await page.getByRole("link", { name: "Voltar" }).click();
+  await page.getByRole("link", { name: "Voltar", exact: true }).click();
   await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
   await rowOf(page, roteiro).getByText("Correção necessária").waitFor();
   ok("400 validation → a linha da vistoria fica com \"Correção necessária\"");
@@ -635,7 +679,44 @@ try {
   await until(async () => (await page.getByText("Não enviado").count()) === 0, "o 'Não enviado' some");
   ok("a rede volta, a fila sai e o \"Não enviado\" some");
 
-  await page.getByRole("link", { name: "Voltar" }).click();
+  step("12g", "A página do pull lida antes do envio daqui confirmar e entregue depois não volta a tela nem a versão (#144)");
+  let deliverPage;
+  const pageDelivered = new Promise((done) => (deliverPage = done));
+  let pageRead;
+  const read = new Promise((done) => (pageRead = done));
+  const SYNC_INSPECTIONS = /\/api\/v1\/sync\/inspections/;
+  const late = async (r) => {
+    const response = await r.fetch();
+    pageRead();
+    await pageDelivered;
+    await r.fulfill({ response });
+  };
+  await context.route(SYNC_INSPECTIONS, late);
+  await context.setOffline(true);
+  await wait(200);
+  await context.setOffline(false);
+  await read;
+  const fromLate = puts.length;
+  await mark(page, "Teto", "Regular");
+  await inspectionSettled(page, user, "o Teto sincroniza com a página em voo");
+  deliverPage();
+  await wait(2000);
+  await context.unroute(SYNC_INSPECTIONS, late);
+  assert.ok(await checked(page, "Teto", "Regular"), "a página atrasada não desfaz o Teto na tela");
+  await mark(page, "Armários", "Novo");
+  await inspectionSettled(page, user, "os Armários sincronizam");
+  assert.deepEqual(
+    puts.slice(fromLate).map((put) => put.status),
+    [200, 200],
+    "sem 412: a store não voltou à versão da página",
+  );
+  const lateCozinha = (await serverInspection(user, campo)).body.rooms.find((room) => room.name === "Cozinha");
+  const conditionOf = (name) => lateCozinha.items.find((item) => item.name === name).condition;
+  assert.equal(conditionOf("Teto"), "fair");
+  assert.equal(conditionOf("Armários"), "new");
+  ok("a página lida antes do 200 chega depois: o Teto fica na tela, e o envio seguinte sai com a version certa, sem 412");
+
+  await page.getByRole("link", { name: "Voltar", exact: true }).click();
   await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
   await shoot(page, "inspections");
   await page.getByRole("link", { name: "Nova vistoria" }).first().click();
@@ -656,6 +737,7 @@ try {
   await wait(1800);
   assert.ok((await outboxCount(page, user)) >= 1, "offline, a edição fica na fila");
   // O outro aparelho: o mesmo Piso e a mesma observação de Paredes, e uma observação na Sala que só ele muda.
+  releasePull = await holdPull(context);
   const lastSeen = (await serverInspection(user, campo)).body;
   const otherDevice = {
     propertyId: lastSeen.propertyId,
@@ -691,6 +773,7 @@ try {
   const fromFieldConflict = puts.length;
   await context.setOffline(false);
   await settled(page, user, puts, fromFieldConflict, 412, "o 412 tira a vistoria da fila");
+  await releasePull();
   await page.getByText("Esta vistoria foi alterada em outro aparelho").waitFor();
   assert.equal(await page.getByText("Em conflito").count(), 2, "Piso e Paredes ficam \"Em conflito\"");
   await wait(1800);
@@ -724,7 +807,7 @@ try {
   assert.equal(itemIn("Sala", "Piso").notes, "Riscos perto da porta.");
   assert.equal(await page.getByText("Esta vistoria foi alterada em outro aparelho").count(), 0);
   ok("misto: um PUT com If-Match do current e chave nova; o servidor fica com Piso daqui, Paredes de lá e a Sala de lá");
-  await page.getByRole("link", { name: "Voltar" }).click();
+  await page.getByRole("link", { name: "Voltar", exact: true }).click();
   await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
   await goTo(page, "Clientes");
 
@@ -745,7 +828,7 @@ try {
   assert.ok(!(await synced.textContent()).includes("não enviadas"), "sincronizada, o Dialog não fala de alteração pendente");
   await shoot(page, "excluir-2-confirmacao");
   await synced.getByRole("button", { name: "Cancelar" }).click();
-  await page.getByRole("link", { name: "Voltar" }).click();
+  await page.getByRole("link", { name: "Voltar", exact: true }).click();
   await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
   // O DELETE fica 8 s no ar, para a linha "Excluindo" aparecer (e o print dela).
   await context.route("**/api/v1/inspections/*", async (r) => {
@@ -797,7 +880,7 @@ try {
   assert.equal(await page.getByRole("banner").getByRole("button", { name: "Mais ações" }).count(), 0);
   ok("a linha fica \"Excluindo\"; a tela de campo abre só leitura, com o aviso e sem o ···");
   await shoot(page, "excluir-6-campo-pendente");
-  await page.getByRole("link", { name: "Voltar" }).click();
+  await page.getByRole("link", { name: "Voltar", exact: true }).click();
   await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
   await context.setOffline(false);
   await until(async () => (await offlineRow.count()) === 0 && (await outboxCount(page, user)) === 0, "a exclusão sai quando a rede volta", 90_000);
@@ -849,10 +932,13 @@ try {
   const gone = await createInspection(page, roteiroOption);
   await mark(page, "Piso", "Bom");
   await inspectionSettled(page, user, "a vistoria que o outro aparelho exclui sincroniza");
+  // Até o 410, este aparelho não sabe da exclusão: com o pull, ela sairia daqui antes da edição.
+  releasePull = await holdPull(context);
   await deleteOnServer(user, gone);
   const fromGone = puts.length;
   await mark(page, "Paredes", "Ruim");
   await settled(page, user, puts, fromGone, 410, "o 410 tira a edição da fila");
+  await releasePull();
   await page.getByText("Esta vistoria foi excluída em outro aparelho").waitFor();
   await wait(1800);
   assert.equal(puts.length - fromGone, 1, "o 410 não volta sozinho para a fila");
@@ -881,11 +967,13 @@ try {
   const dropped = await createInspection(page, roteiroOption);
   await mark(page, "Piso", "Bom");
   await inspectionSettled(page, user, "a vistoria a descartar sincroniza");
+  releasePull = await holdPull(context);
   await deleteOnServer(user, dropped);
   const fromDropped = puts.length;
   await mark(page, "Paredes", "Ruim");
   await settled(page, user, puts, fromDropped, 410, "o 410 da vistoria a descartar");
-  await page.getByRole("link", { name: "Voltar" }).click();
+  await releasePull();
+  await page.getByRole("link", { name: "Voltar", exact: true }).click();
   await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
   const droppedRow = inspectionRow(page, dropped);
   await droppedRow.getByText("Conflito").waitFor();
@@ -903,6 +991,7 @@ try {
   const changed = await createInspection(page, roteiroOption);
   await mark(page, "Piso", "Bom");
   await inspectionSettled(page, user, "a vistoria que o outro aparelho muda sincroniza");
+  releasePull = await holdPull(context);
   const changedVersion = await changeOnServer(user, changed, (room, item) =>
     room === "Sala" && item.name === "Piso" ? { ...item, condition: "absent" } : item,
   );
@@ -912,6 +1001,7 @@ try {
   const changedRow = inspectionRow(page, changed);
   await changedRow.getByText("Conflito").waitFor();
   assert.equal(deletes.slice(fromChanged)[0].status, 412);
+  await releasePull();
   ok("DELETE com a versão de antes → 412: a linha volta, com \"Conflito\"");
   await changedRow.getByRole("link").click();
   const removal = page.getByRole("dialog", { name: "Excluir mesmo assim?" });
@@ -921,7 +1011,12 @@ try {
     page
       .getByRole("radiogroup", { name: "Condição: Piso", includeHidden: true })
       .getByRole("radio", { name: condition, includeHidden: true });
-  assert.equal(await behind("Ausente").getAttribute("aria-checked"), "true", "atrás do Dialog, o que o servidor tem");
+  // O formulário recebe os valores no efeito depois do primeiro render com o Dialog: espera o chip, não só o Dialog.
+  await until(
+    async () => (await behind("Ausente").getAttribute("aria-checked")) === "true",
+    "atrás do Dialog, o que o servidor tem",
+    5000,
+  );
   assert.ok(await behind("Novo").isDisabled(), "só leitura");
   await shoot(page, "excluir-8-exclusao-alterada");
   await removal.getByRole("button", { name: "Excluir vistoria" }).click();
@@ -938,6 +1033,7 @@ try {
   const keptInspection = await createInspection(page, roteiroOption);
   await mark(page, "Piso", "Bom");
   await inspectionSettled(page, user, "a vistoria mantida sincroniza");
+  releasePull = await holdPull(context);
   const keptVersion = await changeOnServer(user, keptInspection, (room, item) =>
     room === "Sala" && item.name === "Piso" ? { ...item, condition: "absent" } : item,
   );
@@ -946,6 +1042,7 @@ try {
   await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
   const keptRow = inspectionRow(page, keptInspection);
   await keptRow.getByText("Conflito").waitFor();
+  await releasePull();
   await keptRow.getByRole("link").click();
   await page.getByRole("dialog", { name: "Excluir mesmo assim?" }).getByRole("button", { name: "Cancelar" }).click();
   await page.waitForURL((url) => url.pathname === "/inspections/edit");
@@ -958,7 +1055,7 @@ try {
   assert.equal(deletes.length - fromKept, 1, "nenhum DELETE depois de cancelar");
   assert.equal((await serverInspection(user, keptInspection)).status, 200);
   ok(`"Cancelar": a vistoria fica, editável, com o Piso do servidor; a edição seguinte sai com If-Match "${keptVersion}"`);
-  await page.getByRole("link", { name: "Voltar" }).click();
+  await page.getByRole("link", { name: "Voltar", exact: true }).click();
   await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
   // O passo 14 abre a vistoria do imóvel pelo endereço: a recriada e a mantida saem, pela lista.
   for (const leftover of [recreated, keptInspection]) {
@@ -970,6 +1067,8 @@ try {
   step("12f", "Contexto novo do navegador: abrir pelo id o que só está no servidor (leitura por id, #101)");
   // Sem service worker, para o modo avião e o `route` do Playwright alcançarem o fetch da página (ver o passo 13).
   const fresh = await browser.newContext({ viewport: { width: 1440, height: 900 }, serviceWorkers: "block" });
+  // Sem o delta, o aparelho novo só tem o que abre pelo id: são os três GET. Liberado, o pull converge sem fila.
+  const releaseFreshPull = await holdPull(fresh, { byId: false });
   const freshPage = await fresh.newPage();
   const freshPuts = watchPuts(freshPage);
   const gets = [];
@@ -993,7 +1092,14 @@ try {
   assert.equal(freshPuts.length, 0, "abrir pelo id não põe nada na fila");
   assert.equal(await outboxCount(freshPage, user), 0);
   ok(`a tela de campo mostra o que o servidor tem (Piso "${shownPiso}"), e nada vai para a fila`);
-  await freshPage.getByRole("link", { name: "Voltar" }).click();
+  const freshPulled = freshPage.waitForResponse((res) => new URL(res.url()).pathname === "/api/v1/sync/inspections");
+  await releaseFreshPull();
+  await freshPulled;
+  await wait(1500);
+  assert.equal(freshPuts.length, 0, "o pull não põe nada na fila");
+  assert.ok(await checked(freshPage, "Piso", shownPiso.trim()), "e a tela segue com o que o servidor tem");
+  ok("liberado o pull, ele termina sem fila e sem mudar a tela");
+  await freshPage.getByRole("link", { name: "Voltar", exact: true }).click();
   await inspectionRow(freshPage, campo).waitFor();
   ok("de volta na lista, a vistoria está neste aparelho");
 
@@ -1007,6 +1113,7 @@ try {
 
   // Sem rede, num contexto que nunca viu o cliente: o aviso, e a busca de novo quando a rede volta.
   const offlineContext = await browser.newContext({ viewport: { width: 1440, height: 900 }, serviceWorkers: "block" });
+  const releaseOfflinePull = await holdPull(offlineContext);
   const offlinePage = await offlineContext.newPage();
   await offlinePage.route("**/api/v1/clients/**", (r) => r.abort("internetdisconnected"));
   await signIn(offlinePage, user, { next: `/clients/edit?id=${owner.id}` });
@@ -1014,6 +1121,7 @@ try {
   ok("sem rede: o aviso de abrir uma vez com internet");
   await shoot(offlinePage, "id-3-sem-rede");
   await offlinePage.unroute("**/api/v1/clients/**");
+  await releaseOfflinePull();
   await offlineContext.setOffline(true);
   await offlineContext.setOffline(false);
   await until(async () => (await offlinePage.getByLabel("Nome").inputValue().catch(() => "")) === owner.name, "o cliente chega quando a rede volta");
@@ -1084,6 +1192,9 @@ try {
   }
 
   console.log("\nRoteiro concluído.");
+} catch (error) {
+  printTrace();
+  throw error;
 } finally {
   await browser.close();
   server.close();

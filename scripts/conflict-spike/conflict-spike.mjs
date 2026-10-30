@@ -5,7 +5,8 @@
 // e a rede volta: o que não colidiu converge sozinho, o que colidiu passa pelo ConflictResolver (#105), e o reenvio sai
 // com chave nova. Depois, a exclusão (#109) e o mesmo cliente editado nos dois (#106).
 // Antes do delta (M4), um aparelho só recebe o que o outro gravou no próprio envio seguinte, pelo 412: é assim que os
-// dois terminam mostrando o mesmo.
+// dois terminam mostrando o mesmo. Com o pull ligado, os passos que dependem disso o seguram (`holdPull`, #144); a
+// convergência pelo pull é do #135.
 // O celular nunca recarrega (a sessão fica na memória) e sai do /login sem o service worker controlar a página; o
 // desktop abre cada link pelo /login, sem service worker, para o modo avião barrar o fetch (spike 4 cobre o SW).
 // Com SCREENS=1, tira os prints dos estados em `.screens/conflito/`, para `pnpm screens --files .screens/conflito`.
@@ -22,6 +23,7 @@ import {
   createProperty,
   currentRoomIs,
   goTo,
+  holdPull,
   inspectionRow,
   inspectionSettled,
   launch,
@@ -30,6 +32,7 @@ import {
   ok,
   openRoom,
   outboxCount,
+  printTrace,
   root,
   rowOf,
   serve,
@@ -91,7 +94,7 @@ async function openById(page, user, id, address) {
 
 /** Volta da tela de campo para a lista de vistorias. */
 async function backToList(page) {
-  await page.getByRole("link", { name: "Voltar" }).click();
+  await page.getByRole("link", { name: "Voltar", exact: true }).click();
   await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
 }
 
@@ -141,12 +144,15 @@ try {
       bGets.push(`${path.split("/")[3]} ${res.status()}`);
     }
   });
+  // Sem o delta, o desktop só tem o que abre pelo id: são os três GET.
+  const releaseDeskDelta = await holdPull(desk, { byId: false });
   await openById(b, user, vistoria, address);
   assert.deepEqual(bGets, ["inspections 200", "properties 200", "clients 200"]);
   assert.ok(await checked(b, "Piso", "Bom"));
   assert.ok(await checked(b, "Paredes", "Bom"));
   assert.equal(await outboxCount(b, user), 0, "abrir pelo id não põe nada na fila");
   ok("o desktop abre pelo id: três GET, os mesmos chips do celular, nada na fila");
+  await releaseDeskDelta();
 
   step(2, "Os dois offline editam a mesma vistoria, inclusive o mesmo item");
   await goOffline(phone, a);
@@ -173,6 +179,9 @@ try {
   await shoot(b, "dois-1-desktop-offline");
 
   step(3, "A rede volta: o celular chega primeiro; o desktop recebe 412, converge o que não colidiu e resolve o Piso");
+  // Até o passo 5, cada um só recebe o que o outro gravou no próprio envio, pelo 412.
+  const releasePhonePull = await holdPull(phone);
+  const releaseDeskPull = await holdPull(desk);
   const fromA = aPuts.length;
   await phone.setOffline(false);
   await settled(a, user, aPuts, fromA, 200, "a edição do celular é aceita");
@@ -248,6 +257,8 @@ try {
   const final = (await serverInspection(user, vistoria)).body;
   assert.equal(final.version, versionOf(again[1].etag));
   ok("desktop: o mesmo Quarto/Piso → 412 → merge igual ao servidor: adota o current, sem reenvio");
+  await releasePhonePull();
+  await releaseDeskPull();
   const expected = serverView(final);
   assert.deepEqual(await shownOn(a, final), expected, "o celular mostra o que o servidor tem");
   assert.deepEqual(await shownOn(b, final), expected, "o desktop também");
@@ -308,6 +319,8 @@ try {
   await mark(a, "Piso", "Bom");
   await inspectionSettled(a, user, "a vistoria alterada sincroniza");
   await openById(b, user, changed, address);
+  // O desktop exclui com a versão de antes: sem o pull, ele não vê a mudança do celular até o 412.
+  const releaseRemovalPull = await holdPull(desk);
   const fromChange = aPuts.length;
   await mark(a, "Piso", "Ausente");
   await settled(a, user, aPuts, fromChange, 200, "a mudança do celular é aceita");
@@ -318,6 +331,7 @@ try {
   const changedRow = inspectionRow(b, changed);
   await changedRow.getByText("Conflito").waitFor();
   assert.equal(bDeletes.slice(fromRemoval)[0].status, 412);
+  await releaseRemovalPull();
   ok("desktop: DELETE com a versão de antes da mudança do celular → 412, e a linha volta com \"Conflito\"");
   await changedRow.getByRole("link").click();
   const removal = b.getByRole("dialog", { name: "Excluir mesmo assim?" });
@@ -325,7 +339,12 @@ try {
   const behind = b
     .getByRole("radiogroup", { name: "Condição: Piso", includeHidden: true })
     .getByRole("radio", { name: "Ausente", includeHidden: true });
-  assert.equal(await behind.getAttribute("aria-checked"), "true", "atrás do Dialog, o que o celular gravou");
+  // O formulário recebe os valores no efeito depois do primeiro render com o Dialog: espera o chip, não só o Dialog.
+  await until(
+    async () => (await behind.getAttribute("aria-checked")) === "true",
+    "atrás do Dialog, o que o celular gravou",
+    5000,
+  );
   await shoot(b, "dois-6-exclusao-alterada");
   await removal.getByRole("button", { name: "Excluir vistoria" }).click();
   await b.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
@@ -387,6 +406,9 @@ try {
   ok(`"Neste aparelho" no celular → PUT com If-Match "${bClientVersion}" e chave nova → 200; servidor com Telefone e E-mail do celular e Nome do desktop`);
 
   console.log("\nRoteiro concluído.");
+} catch (error) {
+  printTrace();
+  throw error;
 } finally {
   await browser.close();
   server.close();
