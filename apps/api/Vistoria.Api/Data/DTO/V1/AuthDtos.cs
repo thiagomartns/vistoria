@@ -40,3 +40,5 @@ public sealed record SignInDto
 public sealed record AuthUserDto(Guid Id, string Name);
 
 public sealed record AuthDto(string AccessToken, DateTimeOffset ExpiresAt, AuthUserDto User);
+
+public sealed record AccessTokenDto(string AccessToken, DateTimeOffset ExpiresAt);

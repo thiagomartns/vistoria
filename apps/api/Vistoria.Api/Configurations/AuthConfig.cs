@@ -37,6 +37,7 @@ public static class AuthConfig
         services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
         services.AddSingleton<AccessTokenGenerator>();
         services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
         services.AddScoped<IAuthService, AuthService>();
         return services;
     }

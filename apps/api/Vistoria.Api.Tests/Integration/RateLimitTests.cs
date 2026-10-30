@@ -12,6 +12,7 @@ public class RateLimitTests(ApiFactory factory) : IClassFixture<ApiFactory>
 {
     private const string SignIn = "/api/v1/auth/signin";
     private const string SignUp = "/api/v1/auth/signup";
+    private const string Refresh = "/api/v1/auth/refresh";
 
     // Corpo vazio: 400 barato, sem PBKDF2 nem banco. O limite conta antes da validação.
     [Theory]
@@ -60,6 +61,25 @@ public class RateLimitTests(ApiFactory factory) : IClassFixture<ApiFactory>
         (await PostOnce(client, SignIn)).StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
         (await PostOnce(client, SignUp)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await PostOnce(factory.CreateClient(), SignIn)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    // Sem cookie: 401 barato, sem banco. O limite conta antes da autenticação do refresh.
+    [Fact]
+    public async Task ThirtyFirstRefreshInAMinute_Returns429RateLimitedWithRetryAfter_WithoutLimitingSignIn()
+    {
+        var client = factory.CreateClient();
+
+        var firstThirty = await Post(client, Refresh, times: 30);
+        var thirtyFirst = await PostOnce(client, Refresh);
+
+        firstThirty.Should().AllSatisfy(r => r.StatusCode.Should().Be(HttpStatusCode.Unauthorized));
+        thirtyFirst.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        var body = JsonDocument.Parse(await thirtyFirst.Content.ReadAsStringAsync(TestContext.Current.CancellationToken))
+            .RootElement;
+        body.GetProperty("type").GetString().Should().Be(ProblemTypes.RateLimited);
+        int.Parse(thirtyFirst.Headers.GetValues("Retry-After").Single(),
+            System.Globalization.CultureInfo.InvariantCulture).Should().BeInRange(1, 60);
+        (await PostOnce(client, SignIn)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     private static async Task<HttpResponseMessage[]> Post(HttpClient client, string path, int times)

@@ -12,6 +12,9 @@ public class UserRepository(AppDbContext db) : IUserRepository
     public Task<User?> FindByEmailAsync(string normalizedEmail, CancellationToken cancellationToken) =>
         db.Users.AsNoTracking().SingleOrDefaultAsync(u => u.Email == normalizedEmail, cancellationToken);
 
+    public Task<User?> FindByIdAsync(Guid id, CancellationToken cancellationToken) =>
+        db.Users.AsNoTracking().SingleOrDefaultAsync(u => u.Id == id, cancellationToken);
+
     public async Task AddAsync(User user, CancellationToken cancellationToken)
     {
         db.Users.Add(user);

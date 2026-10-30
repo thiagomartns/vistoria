@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { DeleteInspectionData, DeleteInspectionErrors, DeleteInspectionResponses, GetClientData, GetClientErrors, GetClientResponses, GetHealthData, GetHealthResponses, GetInspectionData, GetInspectionErrors, GetInspectionResponses, GetPropertyData, GetPropertyErrors, GetPropertyResponses, GetTemplateData, GetTemplateErrors, GetTemplateResponses, SignInData, SignInErrors, SignInResponses, SignUpData, SignUpErrors, SignUpResponses, SyncClientsData, SyncClientsErrors, SyncClientsResponses, SyncInspectionsData, SyncInspectionsErrors, SyncInspectionsResponses, SyncPropertiesData, SyncPropertiesErrors, SyncPropertiesResponses, SyncTemplatesData, SyncTemplatesErrors, SyncTemplatesResponses, UpsertClientData, UpsertClientErrors, UpsertClientResponses, UpsertInspectionData, UpsertInspectionErrors, UpsertInspectionResponses, UpsertPropertyData, UpsertPropertyErrors, UpsertPropertyResponses, UpsertTemplateData, UpsertTemplateErrors, UpsertTemplateResponses } from './types.gen';
+import type { DeleteInspectionData, DeleteInspectionErrors, DeleteInspectionResponses, GetClientData, GetClientErrors, GetClientResponses, GetHealthData, GetHealthResponses, GetInspectionData, GetInspectionErrors, GetInspectionResponses, GetPropertyData, GetPropertyErrors, GetPropertyResponses, GetTemplateData, GetTemplateErrors, GetTemplateResponses, RefreshTokenData, RefreshTokenErrors, RefreshTokenResponses, SignInData, SignInErrors, SignInResponses, SignUpData, SignUpErrors, SignUpResponses, SyncClientsData, SyncClientsErrors, SyncClientsResponses, SyncInspectionsData, SyncInspectionsErrors, SyncInspectionsResponses, SyncPropertiesData, SyncPropertiesErrors, SyncPropertiesResponses, SyncTemplatesData, SyncTemplatesErrors, SyncTemplatesResponses, UpsertClientData, UpsertClientErrors, UpsertClientResponses, UpsertInspectionData, UpsertInspectionErrors, UpsertInspectionResponses, UpsertPropertyData, UpsertPropertyErrors, UpsertPropertyResponses, UpsertTemplateData, UpsertTemplateErrors, UpsertTemplateResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -35,6 +35,8 @@ export const signIn = <ThrowOnError extends boolean = false>(options: Options<Si
         ...options.headers
     }
 });
+
+export const refreshToken = <ThrowOnError extends boolean = false>(options?: Options<RefreshTokenData, ThrowOnError>): RequestResult<RefreshTokenResponses, RefreshTokenErrors, ThrowOnError> => (options?.client ?? client).post<RefreshTokenResponses, RefreshTokenErrors, ThrowOnError>({ url: '/api/v1/auth/refresh', ...options });
 
 export const getClient = <ThrowOnError extends boolean = false>(options: Options<GetClientData, ThrowOnError>): RequestResult<GetClientResponses, GetClientErrors, ThrowOnError> => (options.client ?? client).get<GetClientResponses, GetClientErrors, ThrowOnError>({ url: '/api/v1/clients/{id}', ...options });
 

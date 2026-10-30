@@ -291,6 +291,50 @@ namespace Vistoria.Api.Migrations
                     b.ToTable("properties", (string)null);
                 });
 
+            modelBuilder.Entity("Vistoria.Api.Model.RefreshToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("FamilyCreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("ReplacedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<byte[]>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("binary(32)")
+                        .IsFixedLength();
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FamilyId");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("refresh_tokens", (string)null);
+                });
+
             modelBuilder.Entity("Vistoria.Api.Model.Room", b =>
                 {
                     b.Property<Guid>("Id")
@@ -444,6 +488,15 @@ namespace Vistoria.Api.Migrations
                         .WithMany()
                         .HasForeignKey("ClientId")
                         .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Vistoria.Api.Model.RefreshToken", b =>
+                {
+                    b.HasOne("Vistoria.Api.Model.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 
