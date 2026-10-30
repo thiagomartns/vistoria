@@ -11,10 +11,12 @@ public class CorsTests(ApiFactory factory) : IClassFixture<ApiFactory>
 {
     private const string SignIn = "/api/v1/auth/signin";
 
-    [Fact]
-    public async Task Development_PreflightFromTheFront_IsAllowedWithCredentials()
+    [Theory]
+    [InlineData(SignIn)]
+    [InlineData("/api/v1/auth/refresh")]
+    public async Task Development_PreflightFromTheFront_IsAllowedWithCredentials(string path)
     {
-        var response = await factory.CreateClient().SendAsync(Preflight(CorsConfig.DevOrigin),
+        var response = await factory.CreateClient().SendAsync(Preflight(CorsConfig.DevOrigin, path),
             TestContext.Current.CancellationToken);
 
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
@@ -77,9 +79,9 @@ public class CorsTests(ApiFactory factory) : IClassFixture<ApiFactory>
             .Should().NotContain(h => h.StartsWith("Access-Control-", StringComparison.OrdinalIgnoreCase));
     }
 
-    private static HttpRequestMessage Preflight(string origin)
+    private static HttpRequestMessage Preflight(string origin, string path = SignIn)
     {
-        var request = new HttpRequestMessage(HttpMethod.Options, SignIn);
+        var request = new HttpRequestMessage(HttpMethod.Options, path);
         request.Headers.Add("Origin", origin);
         request.Headers.Add("Access-Control-Request-Method", "POST");
         request.Headers.Add("Access-Control-Request-Headers", "content-type");

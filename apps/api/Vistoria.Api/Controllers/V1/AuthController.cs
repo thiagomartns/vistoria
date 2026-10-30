@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Vistoria.Api.Configurations;
 using Vistoria.Api.Data.DTO.V1;
+using Vistoria.Api.Infrastructure.Auth;
 using Vistoria.Api.Infrastructure.OpenApi;
 using Vistoria.Api.Services;
 
@@ -22,7 +23,7 @@ public class AuthController(IAuthService auth) : ControllerBase
     [ProducesResponseType<AuthDto>(StatusCodes.Status201Created)]
     [ProblemResponses(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<AuthDto>> SignUp(SignUpDto body, CancellationToken cancellationToken) =>
-        StatusCode(StatusCodes.Status201Created, await auth.SignUpAsync(body, cancellationToken));
+        StatusCode(StatusCodes.Status201Created, WithCookie(await auth.SignUpAsync(body, cancellationToken)));
 
     // 401 é sempre invalid-credentials: senha errada e e-mail inexistente respondem igual.
     [HttpPost("signin")]
@@ -31,5 +32,28 @@ public class AuthController(IAuthService auth) : ControllerBase
     [ProducesResponseType<AuthDto>(StatusCodes.Status200OK)]
     [ProblemResponses(StatusCodes.Status400BadRequest, StatusCodes.Status401Unauthorized)]
     public async Task<ActionResult<AuthDto>> SignIn(SignInDto body, CancellationToken cancellationToken) =>
-        Ok(await auth.SignInAsync(body, cancellationToken));
+        Ok(WithCookie(await auth.SignInAsync(body, cancellationToken)));
+
+    // O refresh token vem só do cookie. Na tolerância a resposta sai sem Set-Cookie: o navegador já tem o sucessor.
+    [HttpPost("refresh")]
+    [EndpointName("refreshToken")]
+    [EnableRateLimiting(RateLimitConfig.RefreshPolicy)]
+    [ProducesResponseType<AccessTokenDto>(StatusCodes.Status200OK)]
+    [ProblemResponses(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<AccessTokenDto>> RefreshToken(CancellationToken cancellationToken)
+    {
+        var result = await auth.RefreshAsync(RefreshTokenCookie.Read(Request), cancellationToken);
+        if (result.RefreshToken is { } successor)
+        {
+            RefreshTokenCookie.Append(Response, successor);
+        }
+
+        return Ok(result.Body);
+    }
+
+    private AuthDto WithCookie(AuthSession session)
+    {
+        RefreshTokenCookie.Append(Response, session.RefreshToken);
+        return session.Body;
+    }
 }

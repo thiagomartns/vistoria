@@ -152,10 +152,11 @@ public class CommittedOpenApiTests
 
     // Status da tabela de Endpoints do backend.md.
     [Theory]
-    [InlineData("/api/v1/auth/signup", "signUp", "201", new[] { "400", "429" })]
-    [InlineData("/api/v1/auth/signin", "signIn", "200", new[] { "400", "401", "429" })]
-    public void AuthOperations_ReturnAuthDto_AndTheirProblems(string path, string operationId, string success,
-        string[] problems)
+    [InlineData("/api/v1/auth/signup", "signUp", "201", "AuthDto", new[] { "400", "429" })]
+    [InlineData("/api/v1/auth/signin", "signIn", "200", "AuthDto", new[] { "400", "401", "429" })]
+    [InlineData("/api/v1/auth/refresh", "refreshToken", "200", "AccessTokenDto", new[] { "401", "429" })]
+    public void AuthOperations_ReturnTheirDto_AndTheirProblems(string path, string operationId, string success,
+        string schema, string[] problems)
     {
         var operation = Document().GetProperty("paths").GetProperty(path).GetProperty("post");
         var responses = operation.GetProperty("responses");
@@ -163,7 +164,7 @@ public class CommittedOpenApiTests
         operation.GetProperty("operationId").GetString().Should().Be(operationId);
         responses.EnumerateObject().Select(r => r.Name).Should().BeEquivalentTo([success, .. problems]);
         responses.GetProperty(success).GetProperty("content").GetProperty("application/json").GetProperty("schema")
-            .GetProperty("$ref").GetString().Should().Be("#/components/schemas/AuthDto");
+            .GetProperty("$ref").GetString().Should().Be($"#/components/schemas/{schema}");
         foreach (var status in problems)
         {
             responses.GetProperty(status).GetProperty("content").GetProperty("application/problem+json")

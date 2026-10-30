@@ -297,11 +297,11 @@ O JWT do curso continua, com quatro mudanças. O refresh token sai do corpo e va
 | Peça | Como fica |
 | --- | --- |
 | Access token | JWT devolvido no corpo; o front guarda só em memória. Prazo em Parâmetros. |
-| Refresh token | 32 bytes aleatórios em cookie `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/api/v1/auth` |
-| Armazenamento | Tabela `refresh_tokens`: hash SHA-256, `UserId`, `FamilyId`, `ExpiresAt`, `RevokedAt`, `ReplacedAt` |
-| Rotação | Cada `refresh` marca o token usado como substituído e emite outro, com o mesmo `FamilyId` |
+| Refresh token | 32 bytes aleatórios, em base64url, no cookie `refresh_token`: `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/api/v1/auth`, com `Expires` no prazo do token |
+| Armazenamento | Tabela `refresh_tokens`: hash SHA-256, `UserId`, `FamilyId`, `FamilyCreatedAt` (o login, de onde conta o teto), `ExpiresAt` (7 dias, sem passar do teto), `RevokedAt`, `ReplacedAt` |
+| Rotação | Cada `refresh` marca o token usado como substituído e emite outro, com o mesmo `FamilyId`. A marca é um `UPDATE` condicional (`ReplacedAt IS NULL`): de dois `refresh` simultâneos com o mesmo cookie, só um emite o sucessor, e o outro cai na tolerância |
 | Tolerância | Token substituído há menos de 30 s: aceita, devolve só um access token novo e **não** envia cookie (o navegador já recebeu o sucessor) |
-| Reuso | Token substituído há mais de 30 s, ou revogado: revoga a família inteira e responde 401 |
+| Reuso | Token substituído há mais de 30 s, ou revogado: revoga a família inteira e responde 401 `unauthorized`. Token vencido ou desconhecido, e cookie ausente: 401 sem revogar nada |
 | Teto | Família com mais de 30 dias desde o login não renova; exige `signin` |
 | Senha | `PasswordHasher<User>` (PBKDF2 com salt). De 8 a 128 caracteres, sem regra de composição nem trim; o teto limita o custo do hash por requisição |
 | E-mail | Único sem diferenciar maiúsculas: gravado com trim e em minúsculas, com índice único. Já usado → 400 `validation` em `errors.email` |

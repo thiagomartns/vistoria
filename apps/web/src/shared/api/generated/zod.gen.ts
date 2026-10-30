@@ -2,6 +2,11 @@
 
 import * as z from 'zod';
 
+export const zAccessTokenDto = z.object({
+    accessToken: z.string(),
+    expiresAt: z.iso.datetime({ offset: true })
+});
+
 export const zAuthUserDto = z.object({
     id: z.uuid(),
     name: z.string()
@@ -271,6 +276,11 @@ export const zSignInBody = zSignInDto;
  * OK
  */
 export const zSignInResponse = zAuthDto;
+
+/**
+ * OK
+ */
+export const zRefreshTokenResponse = zAccessTokenDto;
 
 export const zGetClientPath = z.object({
     id: z.uuid()

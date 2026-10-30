@@ -17,6 +17,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, TimeProvider t
     public DbSet<Room> Rooms => Set<Room>();
     public DbSet<InspectionItem> InspectionItems => Set<InspectionItem>();
     public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     // Cada entidade traz seu IEntityTypeConfiguration em Model/Configurations/; o que é comum a toda SyncEntity (e a
     // todo filho de agregado) vem depois, para nenhum derivado ficar sem.

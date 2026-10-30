@@ -10,6 +10,8 @@ public interface IUserRepository
     /// <param name="normalizedEmail">Já normalizado por <see cref="User.NormalizeEmail"/>.</param>
     Task<User?> FindByEmailAsync(string normalizedEmail, CancellationToken cancellationToken);
 
+    Task<User?> FindByIdAsync(Guid id, CancellationToken cancellationToken);
+
     /// <summary>Grava o usuário. Lança <see cref="DuplicateEmailException"/> se o e-mail já existir.</summary>
     Task AddAsync(User user, CancellationToken cancellationToken);
 

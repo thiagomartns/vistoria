@@ -4,6 +4,11 @@ export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
 };
 
+export type AccessTokenDto = {
+    accessToken: string;
+    expiresAt: string;
+};
+
 export type AuthDto = {
     accessToken: string;
     expiresAt: string;
@@ -307,6 +312,35 @@ export type SignInResponses = {
 };
 
 export type SignInResponse = SignInResponses[keyof SignInResponses];
+
+export type RefreshTokenData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/refresh';
+};
+
+export type RefreshTokenErrors = {
+    /**
+     * Unauthorized
+     */
+    401: ProblemDetails;
+    /**
+     * Too Many Requests
+     */
+    429: ProblemDetails;
+};
+
+export type RefreshTokenError = RefreshTokenErrors[keyof RefreshTokenErrors];
+
+export type RefreshTokenResponses = {
+    /**
+     * OK
+     */
+    200: AccessTokenDto;
+};
+
+export type RefreshTokenResponse = RefreshTokenResponses[keyof RefreshTokenResponses];
 
 export type GetClientData = {
     body?: never;
