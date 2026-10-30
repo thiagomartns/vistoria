@@ -82,6 +82,65 @@ jobs:
       - name: Shell offline
         run: pnpm spike:shell
 
+  # Os roteiros dos spikes contra a API real: o que a outbox e o pull fazem juntos só aparece com o banco, a API e o
+  # static export de verdade (#144). O PULL_CHAOS (o pull a cada 1,5 s) entra quando estiver estável (#145).
+  e2e:
+    name: e2e
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: apps/api/global.json
+
+      - run: pnpm install --frozen-lockfile
+
+      # Geradas aqui e mascaradas: nenhuma senha no workflow (ADR 0025).
+      - name: Senha do banco e chave do JWT desta execução
+        run: node scripts/db-init/ci-env.mjs
+
+      # A senha vai por variável de ambiente (`-e NOME` sem valor), nunca em argumento.
+      - name: SQL Server
+        run: |
+          docker run -d --name vistoria-db -e ACCEPT_EULA=Y -e MSSQL_PID=Developer -e MSSQL_SA_PASSWORD \
+            -p 1433:1433 mcr.microsoft.com/mssql/server:2022-latest
+          timeout 180 bash -c 'until docker logs vistoria-db 2>&1 | grep -q "SQL Server is now ready for client connections"; do sleep 2; done'
+
+      # Em Development, a API aplica as migrações ao subir.
+      - name: API
+        working-directory: apps/api
+        env:
+          ASPNETCORE_ENVIRONMENT: Development
+          ASPNETCORE_URLS: http://localhost:8080
+        run: |
+          dotnet build Vistoria.Api -c Release
+          nohup dotnet run --project Vistoria.Api -c Release --no-build --no-launch-profile > "$RUNNER_TEMP/api.log" 2>&1 &
+          timeout 180 bash -c 'until curl -sf http://localhost:8080/api/v1/health > /dev/null; do sleep 2; done'
+
+      - name: Static export
+        run: pnpm --filter web build
+
+      - name: Roteiro da outbox
+        run: pnpm spike:outbox
+
+      - name: Roteiro do conflito
+        run: pnpm spike:conflict
+
+      - name: Log da API
+        if: failure()
+        run: tail -n 300 "$RUNNER_TEMP/api.log"
+
   security:
     name: security
     runs-on: ubuntu-24.04
