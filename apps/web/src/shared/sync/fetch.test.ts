@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { expireSession } from "../auth/session";
-import type { DraftsCollection } from "./drafts";
+import type { DraftRecord, DraftsCollection } from "./drafts";
 import { type GetCall, fetchMissing, refetchById } from "./fetch";
 import type { LocalCollection } from "./upsert";
 
@@ -24,10 +24,43 @@ const dto: Dto = {
 };
 const shape = ({ createdAt: _createdAt, ...row }: Dto): Row => row;
 
+const persisted = { isPersisted: { promise: Promise.resolve() } };
+
+/** Os rascunhos em memória: `drafted` são recusados (pendência); `clean`, do formulário profundo, sem nada a enviar. */
+function draftsOf(drafted: string[], clean: DraftRecord[] = []) {
+  const rows = new Map<string, DraftRecord>(clean.map((draft) => [draft.id, draft]));
+  for (const key of drafted) {
+    rows.set(key, {
+      id: key,
+      entity: "row",
+      data: { id: key, name: "Recusado" },
+      status: "rejected",
+      errors: {},
+      updatedAt: "2026-10-29T10:00:00.000Z",
+    });
+  }
+  const collection = {
+    has: (key: string) => rows.has(key),
+    get: (key: string) => rows.get(key),
+    delete: (key: string) => {
+      rows.delete(key);
+      return persisted;
+    },
+    update: (key: string, change: (draft: DraftRecord) => void) => {
+      const draft = structuredClone(rows.get(key)!);
+      change(draft);
+      rows.set(key, draft);
+      return persisted;
+    },
+  } as unknown as DraftsCollection;
+  return { collection, rows };
+}
+
 /** A store confirmada e a camada otimista por cima (o que está na fila), como na collection do TanStack DB. */
 function setup({
   queued = [] as Row[],
   drafted = [] as string[],
+  clean = [] as DraftRecord[],
   stored = [] as Row[],
 } = {}) {
   const confirmed = new Map<string, Row>(stored.map((row) => [row.id, row]));
@@ -49,9 +82,8 @@ function setup({
     insert: (row: Row) => optimistic.set(row.id, row),
     update: () => {},
   } as unknown as LocalCollection<Row>;
-  const drafts = new Set(drafted);
-  const draftsCollection = { has: (key: string) => drafts.has(key) } as unknown as DraftsCollection;
-  return { store, drafts: draftsCollection, confirmed, optimistic, acceptMutations };
+  const drafts = draftsOf(drafted, clean);
+  return { store, drafts: drafts.collection, draftRows: drafts.rows, confirmed, optimistic, acceptMutations };
 }
 
 const ok = (): ReturnType<GetCall<Dto>> =>
@@ -162,6 +194,14 @@ describe("fetchMissing", () => {
     expect(expireSession).toHaveBeenCalledOnce();
   });
 
+  it("depois do primeiro pull completo (synced): não existe ou foi excluído, sem GET", async () => {
+    const get = vi.fn<GetCall<Dto>>(ok);
+
+    expect(await fetchMissing({ ...setup(), id, get, shape, synced: () => true })).toBe("not-found");
+
+    expect(get).not.toHaveBeenCalled();
+  });
+
   it("500 internal e resposta fora do contrato: falha, para tentar de novo", async () => {
     expect(await fetchMissing({ ...setup(), id, get: problem("internal", 500), shape })).toBe(
       "failed",
@@ -201,18 +241,16 @@ describe("refetchById", () => {
 
   it("a pendência que volta durante o GET vence: a resposta é descartada, também no 404", async () => {
     const local = setup({ stored: [stored] });
-    const drafts = new Set<string>();
-    const drafted = { ...local, drafts: { has: (key: string) => drafts.has(key) } as never };
     const answer =
       (response: GetCall<Dto>): GetCall<Dto> =>
       async (request) => {
-        drafts.add(id);
+        local.draftRows.set(id, draftsOf([id]).rows.get(id)!);
         return response(request);
       };
 
-    expect(await refetchById({ ...drafted, id, get: answer(ok), shape })).toBe("local");
-    drafts.clear();
-    expect(await refetchById({ ...drafted, id, get: answer(problem("not-found", 404)), shape })).toBe(
+    expect(await refetchById({ ...local, id, get: answer(ok), shape })).toBe("local");
+    local.draftRows.clear();
+    expect(await refetchById({ ...local, id, get: answer(problem("not-found", 404)), shape })).toBe(
       "local",
     );
 
@@ -226,5 +264,51 @@ describe("refetchById", () => {
     expect(await refetchById({ ...local, id, get: problem("not-found", 404), shape })).toBe("not-found");
 
     expect(local.confirmed.size).toBe(0);
+  });
+
+  // ADR 0043: o rascunho do formulário profundo com os valores do registro não é pendência.
+  const cleanDraft: DraftRecord = {
+    id,
+    entity: "row",
+    data: { id, name: "Antigo" },
+    status: "draft",
+    step: 2,
+    errors: {},
+    updatedAt: "2026-10-29T10:00:00.000Z",
+  };
+
+  it("rascunho limpo: é buscado, e o rascunho passa à versão nova com o mesmo passo", async () => {
+    const local = setup({ stored: [stored], clean: [cleanDraft] });
+
+    expect(await refetchById({ ...local, id, get: ok, shape })).toBe("found");
+
+    expect(local.confirmed.get(id)?.name).toBe("Do servidor");
+    expect(local.draftRows.get(id)).toMatchObject({
+      data: { id, name: "Do servidor" },
+      status: "draft",
+      step: 2,
+      rebasedAt: expect.any(String),
+    });
+    expect(local.draftRows.get(id)?.data).not.toHaveProperty("version");
+  });
+
+  it("rascunho draft com valor diferente do registro: é pendência, nada é pedido", async () => {
+    const get = vi.fn<GetCall<Dto>>(ok);
+    const dirty = { ...cleanDraft, data: { id, name: "Marcado aqui" } };
+    const local = setup({ stored: [stored], clean: [dirty] });
+
+    expect(await refetchById({ ...local, id, get, shape })).toBe("local");
+
+    expect(get).not.toHaveBeenCalled();
+    expect(local.draftRows.get(id)).toEqual(dirty);
+  });
+
+  it("rascunho limpo e 404: o registro e o rascunho saem", async () => {
+    const local = setup({ stored: [stored], clean: [cleanDraft] });
+
+    expect(await refetchById({ ...local, id, get: problem("not-found", 404), shape })).toBe("not-found");
+
+    expect(local.confirmed.size).toBe(0);
+    expect(local.draftRows.size).toBe(0);
   });
 });

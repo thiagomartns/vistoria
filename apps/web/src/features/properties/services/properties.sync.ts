@@ -5,7 +5,7 @@ import { type FetchOutcome, fetchMissing } from "@/shared/sync/fetch";
 import { flatConflictOf } from "@/shared/sync/flat-conflict";
 import { newId } from "@/shared/sync/ids";
 import { type Outbox, type OutboxMutationFn, enqueue } from "@/shared/sync/outbox";
-import type { PullEntity } from "@/shared/sync/pull";
+import { type CursorsCollection, type PullEntity, pulledOnce } from "@/shared/sync/pull";
 import { registerConflictView, registerRecordLabel } from "@/shared/sync/sync-view";
 import { resolveConflict, upsertMutation } from "@/shared/sync/upsert";
 
@@ -17,6 +17,8 @@ import type { PropertiesCollection } from "./properties.collection";
 import { addressOf } from "./properties.view";
 
 export const UPSERT_PROPERTY = "upsertProperty";
+/** O laço de imóveis no pull, que dá nome ao cursor e às marcas. */
+export const PROPERTIES_PULL = "properties";
 
 const propertyLabel = (record: Record<string, unknown>) => `Imóvel · ${addressOf(record)}`;
 
@@ -123,10 +125,15 @@ export function propertyRecordOf(dto: PropertyDto): PropertyRecord {
 /**
  * Abre pelo id um imóvel que não está no aparelho (`fetchMissing`): `GET /api/v1/properties/{id}`, e antes de gravá-lo
  * o cliente dele, se também faltar. Uma falha no cliente não segura o imóvel: o cliente é pedido de novo quando a
- * tela dele abrir.
+ * tela dele abrir. Depois do primeiro pull completo de imóveis (`cursors`), o que falta não é pedido.
  */
 export function fetchProperty(
-  store: { properties: PropertiesCollection; clients: ClientsCollection; drafts: DraftsCollection },
+  store: {
+    properties: PropertiesCollection;
+    clients: ClientsCollection;
+    drafts: DraftsCollection;
+    cursors?: CursorsCollection;
+  },
   id: string,
   client?: Client,
 ): Promise<FetchOutcome> {
@@ -137,6 +144,7 @@ export function fetchProperty(
     get: (request) => getProperty({ client, ...request }),
     shape: propertyRecordOf,
     before: (property) => fetchClient(store, property.clientId, client),
+    synced: () => store.cursors !== undefined && pulledOnce(store.cursors, PROPERTIES_PULL),
   });
 }
 
@@ -149,7 +157,7 @@ export function propertiesPull(
   client?: Client,
 ): PullEntity<PropertyRecord, PropertyDto> {
   return {
-    name: "properties",
+    name: PROPERTIES_PULL,
     store: properties,
     page: (request) => syncProperties({ client, ...request }),
     get: (request) => getProperty({ client, ...request }),

@@ -310,6 +310,68 @@ describe("InspectionEditScreen", () => {
     expect(saveInspection).not.toHaveBeenCalled();
   });
 
+  describe("o pull traz a versão de outro aparelho com a tela aberta (ADR 0043)", () => {
+    /** A vistoria como o outro aparelho a gravou: a Bancada passou a Ausente. */
+    const remote = (): InspectionRecord => {
+      const next = structuredClone(vistoria);
+      next.rooms[1]!.items[2]!.condition = "absent";
+      return { ...next, version: "AAAAAAAAB9P=" };
+    };
+
+    it("sem rascunho ainda: o registro muda, e os chips mostram o que o outro aparelho marcou, sem ir para a fila", async () => {
+      const view = open();
+      await userEvent.setup().click(screen.getByRole("button", { name: "Próximo" }));
+
+      local.value = { ...local.value, inspections: [remote()] };
+      view.rerender(
+        <AppShell>
+          <InspectionEditScreen />
+        </AppShell>,
+      );
+
+      await vi.waitFor(() =>
+        expect(chip("Bancada", "Ausente").getAttribute("aria-checked")).toBe("true"),
+      );
+      await vi.waitFor(() =>
+        expect(
+          vi.mocked(saveInspectionDraft).mock.lastCall?.[1].rooms[1]?.items[2]?.condition,
+        ).toBe("absent"),
+      );
+      await new Promise((done) => setTimeout(done, 1700));
+      expect(saveInspection).not.toHaveBeenCalled();
+      expect(screen.queryByText("Não enviado")).toBeNull();
+    });
+
+    it("rascunho limpo regravado: o item do outro aparelho entra, e o que a pessoa acabou de marcar fica", async () => {
+      const user = userEvent.setup();
+      const view = open({ drafts: [draftOf({ step: 1 })] });
+      await vi.waitFor(() => expect(currentStep().textContent).toContain("Cozinha"));
+
+      // A marcação ainda não chegou ao rascunho (debounce de 300 ms) quando o pull o regrava.
+      await user.click(chip("Piso", "Ruim"));
+      const next = remote();
+      local.value = {
+        ...local.value,
+        inspections: [next],
+        drafts: [draftOf({ data: next, step: 1, rebasedAt: "2026-10-29T09:00:00.000Z" })],
+      };
+      view.rerender(
+        <AppShell>
+          <InspectionEditScreen />
+        </AppShell>,
+      );
+
+      await vi.waitFor(() =>
+        expect(chip("Bancada", "Ausente").getAttribute("aria-checked")).toBe("true"),
+      );
+      expect(chip("Piso", "Ruim").getAttribute("aria-checked")).toBe("true");
+      await vi.waitFor(() => expect(saveInspection).toHaveBeenCalledOnce(), { timeout: 3000 });
+      const sent = vi.mocked(saveInspection).mock.calls[0]![1];
+      expect(sent.rooms[1]?.items[0]?.condition).toBe("poor");
+      expect(sent.rooms[1]?.items[2]?.condition).toBe("absent");
+    });
+  });
+
   it("estado 3 (offline, transação na fila): segue editável e uma mudança vai de novo para a fila (ADR 0021)", async () => {
     const user = userEvent.setup();
     open({

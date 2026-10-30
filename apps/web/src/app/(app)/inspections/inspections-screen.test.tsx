@@ -248,4 +248,26 @@ describe("InspectionsScreen", () => {
     const mobile = within(screen.getByRole("list")).getByRole("link");
     expect(mobile.textContent).toContain("Excluindo");
   });
+
+  it("excluída em outro aparelho e sem pendência: o pull a tira do banco local com o rascunho limpo, e a linha sai", () => {
+    const kept = inspection("i2", { startedAt: new Date(2026, 9, 20, 8, 0).toISOString() });
+    const clean: DraftRecord = {
+      id: "i1",
+      entity: "inspection",
+      data: inspection("i1"),
+      status: "draft",
+      step: 0,
+      errors: {},
+      updatedAt: "2026-10-29T10:00:00.000Z",
+    };
+    const view = open({ inspections: [inspection("i1"), kept], drafts: [clean] });
+    const rows = () => within(screen.getByRole("list")).getAllByRole("link");
+    expect(rows()).toHaveLength(2);
+
+    local.value = { ...local.value, inspections: [kept], drafts: [] };
+    view.rerender(<InspectionsScreen />);
+
+    expect(rows()).toHaveLength(1);
+    expect(rows()[0]!.getAttribute("href")).toBe("/inspections/edit?id=i2");
+  });
 });

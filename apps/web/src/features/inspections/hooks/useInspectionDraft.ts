@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { type FieldErrors, type FieldPath, useForm, useFormState, useWatch } from "react-hook-form";
+import {
+  type FieldErrors,
+  type FieldPath,
+  type UseFormReturn,
+  useForm,
+  useFormState,
+  useWatch,
+} from "react-hook-form";
 
 import { useLocalStore } from "@/features/local-store/hooks/useLocalStore";
 import type { FieldSyncState } from "@/shared/components/field-sync-indicator";
@@ -18,6 +25,7 @@ import {
   recordWith,
   roomOfError,
   roomStepSchema,
+  withUnsaved,
 } from "../schemas/inspection.schemas";
 import {
   conflictHref,
@@ -110,6 +118,30 @@ function errorKeys(errors: FieldErrors<InspectionFormValues>): Record<string, st
   return keys;
 }
 
+/**
+ * Recarrega o formulário aberto com `next` (um merge sem colisão ou a versão que o pull trouxe): ela vira a base, e o
+ * que a pessoa marcou e não chegou ao rascunho fica por cima, sujo (`withUnsaved`). `shown` guarda a estrutura que o
+ * formulário mostra, para casar os itens pelo id.
+ */
+function reloadForm(
+  form: UseFormReturn<InspectionFormValues>,
+  shown: { current: InspectionRecord | undefined },
+  next: InspectionRecord,
+) {
+  const previous = shown.current;
+  const values = previous
+    ? withUnsaved(
+        next,
+        previous,
+        form.getValues(),
+        form.formState.defaultValues as InspectionFormValues,
+      )
+    : formValuesOf(next);
+  form.reset(formValuesOf(next));
+  form.reset(values, { keepDefaultValues: true });
+  shown.current = next;
+}
+
 /** O passo em que a tela abre: o ambiente do primeiro erro de um rascunho recusado, ou o que ficou no rascunho. */
 function initialStep(draft: DraftRecord | undefined, rooms: number): number {
   const errorRooms = Object.keys(draft?.status === "rejected" ? draft.errors : {})
@@ -190,6 +222,10 @@ export function useInspectionDraft(id: string | null) {
   const openedWith = useRef<string | null>(null);
   /** O `rebasedAt` do rascunho que o formulário já mostra. */
   const rebased = useRef<string | undefined>(undefined);
+  /** A `version` do registro que o formulário já mostra. */
+  const shownVersion = useRef<string | null | undefined>(undefined);
+  /** O registro (a estrutura de ambientes e itens) que o formulário mostra. */
+  const shownRecord = useRef<InspectionRecord | undefined>(undefined);
   useEffect(() => {
     if (!opened) return;
     const { record: base, draft: saved, source: shown } = opening.current;
@@ -199,18 +235,31 @@ export function useInspectionDraft(id: string | null) {
       form.reset(formValuesOf(saved.data as InspectionRecord), { keepDefaultValues: true });
     openedWith.current = JSON.stringify(form.getValues());
     rebased.current = saved?.rebasedAt;
+    shownVersion.current = base?.version;
+    shownRecord.current = shown;
   }, [opened, form]);
 
-  // Um merge sem colisão regravou o rascunho e já foi para a fila: o formulário passa a mostrar o mesclado, limpo. Sem
-  // isso, o próximo envio levaria os valores de antes por cima do que veio do servidor. Nada digitado se perde: o merge
-  // acontece com o envio no ar, e o formulário fica só leitura (ADR 0021).
+  // O rascunho foi regravado com a tela aberta: um merge sem colisão que já foi para a fila, ou a versão que o pull
+  // trouxe para um rascunho sem nada a enviar (ADR 0043). O formulário passa a mostrar o novo; sem isso, o próximo envio
+  // levaria os valores de antes por cima do que veio do servidor. O que a pessoa marcou e não chegou ao rascunho fica.
   const rebasedAt = draft?.rebasedAt;
   useEffect(() => {
     if (!hydrated || rebased.current === rebasedAt) return;
     rebased.current = rebasedAt;
     const saved = opening.current.draft;
-    if (saved) form.reset(formValuesOf(saved.data as InspectionRecord));
+    if (saved) reloadForm(form, shownRecord, saved.data as InspectionRecord);
   }, [hydrated, rebasedAt, form]);
+
+  // Sem rascunho ainda (a tela abriu há menos que o debounce dele), o pull grava a versão nova só no registro: o
+  // formulário recarrega com ela, senão o rascunho que vem logo depois guardaria os valores de antes por cima. Com
+  // rascunho, quem avisa é o `rebasedAt`, e a `version` que muda pelo próprio envio não recarrega nada.
+  const version = record?.version;
+  useEffect(() => {
+    if (!hydrated || shownVersion.current === version) return;
+    shownVersion.current = version;
+    const { record: next, draft: saved } = opening.current;
+    if (next && !saved) reloadForm(form, shownRecord, next);
+  }, [hydrated, version, form]);
 
   // Os erros de um rascunho recusado vão para os campos na abertura e quando uma recusa chega com a tela aberta; uma
   // vez por recusa, para não voltar a marcar o que a pessoa já corrigiu.

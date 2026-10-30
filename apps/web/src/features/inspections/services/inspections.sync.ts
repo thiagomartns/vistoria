@@ -2,12 +2,14 @@ import {
   type InspectionDto,
   deleteInspection as sendDelete,
   getInspection,
+  syncInspections,
   upsertInspection,
 } from "@/shared/api/generated";
 import type { Client } from "@/shared/api/generated/client";
 import { type DraftsCollection, clearDraft, saveDraftValues } from "@/shared/sync/drafts";
 import { type FetchOutcome, fetchMissing } from "@/shared/sync/fetch";
 import { type Outbox, type OutboxMutationFn, enqueue } from "@/shared/sync/outbox";
+import { type CursorsCollection, type PullEntity, pulledOnce } from "@/shared/sync/pull";
 import { discardDeleted, enqueueRemoval, keepServer, removeMutation } from "@/shared/sync/remove";
 import { registerConflictView, registerRecordLabel } from "@/shared/sync/sync-view";
 import { type MergeStrategy, resolveConflict, upsertMutation } from "@/shared/sync/upsert";
@@ -24,6 +26,8 @@ import { conflictHref, recreatedInspection } from "./inspections.resolve";
 
 export const UPSERT_INSPECTION = "upsertInspection";
 export const DELETE_INSPECTION = "deleteInspection";
+/** O laço de vistorias no pull, que dá nome ao cursor e às marcas. */
+export const INSPECTIONS_PULL = "inspections";
 
 /** "Vistoria · 7 ambientes", no OutboxPanel. */
 function inspectionLabel(record: Record<string, unknown>): string {
@@ -218,7 +222,8 @@ export function keepInspection({ drafts }: Pick<InspectionStore, "drafts">, id: 
  * Abre pelo id uma vistoria que não está no aparelho (frontend.md, "Leitura (pull)"; ADR 0038):
  * `GET /api/v1/inspections/{id}` e o agregado na store confirmada, com a `version`. Antes de gravá-la, o imóvel dela e
  * o cliente do imóvel, se faltarem, para a tela de campo abrir com o endereço. Uma vistoria com pendência (na fila ou
- * em rascunho) nunca é pedida nem sobrescrita.
+ * em rascunho) nunca é pedida nem sobrescrita. Depois do primeiro pull completo de vistorias (`cursors`), a que falta
+ * não existe ou foi excluída, e não é pedida.
  */
 export function fetchInspection(
   store: {
@@ -226,6 +231,7 @@ export function fetchInspection(
     properties: PropertiesCollection;
     clients: ClientsCollection;
     drafts: DraftsCollection;
+    cursors?: CursorsCollection;
   },
   id: string,
   client?: Client,
@@ -237,5 +243,24 @@ export function fetchInspection(
     get: (request) => getInspection({ client, ...request }),
     shape: inspectionRecordOf,
     before: (inspection) => fetchProperty(store, inspection.propertyId, client),
+    synced: () => store.cursors !== undefined && pulledOnce(store.cursors, INSPECTIONS_PULL),
   });
+}
+
+/**
+ * O laço de vistorias do pull (`syncInspections`), depois do de imóveis: o imóvel de uma vistoria nova já chegou. Cada
+ * item é o agregado inteiro (ambientes e itens) e entra na store por cima do que ela tem, menos a vistoria com
+ * pendência (ADR 0041). O rascunho limpo da tela de campo não é pendência e passa à versão nova (ADR 0043).
+ */
+export function inspectionsPull(
+  inspections: InspectionsCollection,
+  client?: Client,
+): PullEntity<InspectionRecord, InspectionDto> {
+  return {
+    name: INSPECTIONS_PULL,
+    store: inspections,
+    page: (request) => syncInspections({ client, ...request }),
+    get: (request) => getInspection({ client, ...request }),
+    shape: inspectionRecordOf,
+  };
 }

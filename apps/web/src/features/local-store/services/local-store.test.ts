@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { closeLocalDb, openLocalDb } from "@/shared/db/local-db";
 import { startOutbox } from "@/shared/sync/outbox";
+import { pullOnce } from "@/shared/sync/pull";
 import { startPull } from "@/shared/sync/pull-triggers";
 
 import { closeLocalStore, openLocalStore } from "./local-store";
@@ -15,25 +16,44 @@ vi.mock("@/shared/db/local-db", () => ({
 }));
 
 vi.mock("@/features/clients/services/clients.collection", () => ({
-  createClientsCollection: () => ({ cleanup: vi.fn<() => Promise<void>>(async () => {}) }),
+  createClientsCollection: () => ({
+    cleanup: vi.fn<() => Promise<void>>(async () => {}),
+    preload: vi.fn<() => Promise<void>>(async () => {}),
+  }),
 }));
 
 vi.mock("@/features/properties/services/properties.collection", () => ({
-  createPropertiesCollection: () => ({ cleanup: vi.fn<() => Promise<void>>(async () => {}) }),
+  createPropertiesCollection: () => ({
+    cleanup: vi.fn<() => Promise<void>>(async () => {}),
+    preload: vi.fn<() => Promise<void>>(async () => {}),
+  }),
 }));
 
 vi.mock("@/features/inspections/services/inspections.collection", () => ({
-  createInspectionsCollection: () => ({ cleanup: vi.fn<() => Promise<void>>(async () => {}) }),
+  createInspectionsCollection: () => ({
+    cleanup: vi.fn<() => Promise<void>>(async () => {}),
+    preload: vi.fn<() => Promise<void>>(async () => {}),
+  }),
 }));
 
 vi.mock("@/shared/sync/drafts", () => ({
-  createDraftsCollection: () => ({ cleanup: vi.fn<() => Promise<void>>(async () => {}) }),
+  createDraftsCollection: () => ({
+    cleanup: vi.fn<() => Promise<void>>(async () => {}),
+    preload: vi.fn<() => Promise<void>>(async () => {}),
+  }),
 }));
 
 vi.mock("@/shared/sync/pull", async (original) => ({
   ...(await original<typeof import("@/shared/sync/pull")>()),
-  createCursorsCollection: () => ({ cleanup: vi.fn<() => Promise<void>>(async () => {}) }),
-  createSkipMarksCollection: () => ({ cleanup: vi.fn<() => Promise<void>>(async () => {}) }),
+  pullOnce: vi.fn<() => Promise<string>>(async () => "done"),
+  createCursorsCollection: () => ({
+    cleanup: vi.fn<() => Promise<void>>(async () => {}),
+    preload: vi.fn<() => Promise<void>>(async () => {}),
+  }),
+  createSkipMarksCollection: () => ({
+    cleanup: vi.fn<() => Promise<void>>(async () => {}),
+    preload: vi.fn<() => Promise<void>>(async () => {}),
+  }),
 }));
 
 vi.mock("@/shared/sync/pull-triggers", () => ({
@@ -64,6 +84,17 @@ describe("openLocalStore", () => {
     expect(openLocalDb).toHaveBeenCalledExactlyOnceWith("ana");
     expect(vi.mocked(startOutbox).mock.calls[0]?.[0]).toMatchObject({ ownerId: "ana" });
     expect(vi.mocked(startPull).mock.calls[0]?.[0]).toMatchObject({ ownerId: "ana" });
+  });
+
+  it("o pull carrega as collections e puxa na ordem de criação: clientes, imóveis e vistorias", async () => {
+    const store = await openLocalStore("ana");
+
+    await vi.mocked(startPull).mock.calls[0]![0].run();
+
+    expect(store.inspections.preload).toHaveBeenCalledOnce();
+    const [, entities] = vi.mocked(pullOnce).mock.calls[0]!;
+    expect(entities.map((entity) => entity.name)).toEqual(["clients", "properties", "inspections"]);
+    expect(entities[2]!.store).toBe(store.inspections);
   });
 
   it("uma outbox só, com as collections e as mutationFns de clients, properties e inspections", async () => {
