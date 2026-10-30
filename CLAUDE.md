@@ -12,10 +12,10 @@ A API é a única fonte de verdade e de segurança. Detalhes em [docs/vision.md]
 | --- | --- |
 | `apps/web/` | Next.js 16, static export ([CLAUDE.md](apps/web/CLAUDE.md)) |
 | `apps/api/` | .NET 10, controllers + testes; `openapi.json` gerado no build ([CLAUDE.md](apps/api/CLAUDE.md)) |
-| `scripts/` | `screens` (prints do static export), `gen-api` (gerador do contrato, com TypeScript 6), `db-init` (senha local e chave do JWT), `dev-api` (pré-check e `dotnet watch`), `outbox-spike` (roteiro dos spikes 1a e 1b e das duas entregas do M2, pelas telas de clientes, imóveis e vistorias, com os helpers em `lib.mjs`), `conflict-spike` (roteiro do spike 3, a entrega do M3) e `shell-spike` (roteiro do spike 4) |
+| `scripts/` | `screens` (prints do static export), `gen-api` (gerador do contrato, com TypeScript 6), `db-init` (senha local e chave do JWT; `ci-env.mjs` gera as do job `e2e`), `dev-api` (pré-check e `dotnet watch`), `outbox-spike` (roteiro dos spikes 1a e 1b e das duas entregas do M2, pelas telas de clientes, imóveis e vistorias, com os helpers em `lib.mjs`), `conflict-spike` (roteiro do spike 3, a entrega do M3) e `shell-spike` (roteiro do spike 4) |
 | `infra/` | `docker-compose.dev.yml` (SQL Server); senha em `infra/.env`, gerada pelo `pnpm db:init` e nunca commitada |
 | `docs/` | Visão, arquitetura e ADRs (`docs/decisions/`) — **o repositório manda** |
-| `.github/` | CI (`ci.yml`: jobs `api`, `web`, `security`, obrigatórios na `main`) e Dependabot semanal |
+| `.github/` | CI (`ci.yml`: jobs `api`, `web`, `e2e`, `security`, obrigatórios na `main`; o `e2e` roda `spike:outbox` e `spike:conflict` contra SQL Server e API de verdade) e Dependabot semanal |
 | `.claude/commands/` | `/issue`, `/adr`, `/gen-api`, `/screen` |
 | `.mcp.json` | Servidor remoto do MCP do Figma (OAuth, sem token) |
 
@@ -32,8 +32,8 @@ A API é a única fonte de verdade e de segurança. Detalhes em [docs/vision.md]
 | `pnpm --filter web build` | Static export em `apps/web/out/`, com o service worker (`sw.js`) |
 | `pnpm test:api` | `dotnet test` na solution da API (integração com Testcontainers: exige Docker) |
 | `pnpm screens <rota…>` | Prints do static export no celular e no desktop; `--session` entra pelo `/login` (rotas do shell); `--publish` grava na branch `screens`; `--files <dir>` publica PNGs prontos (os do `spike:outbox`) |
-| `pnpm spike:outbox` | Roteiro Playwright dos spikes 1a e 1b e das entregas do M2 (cadastro e vistoria offline) contra a API real, no celular e no desktop (exige `db:up`, `dev:api` e o build do web); com `SCREENS=1`, tira os prints dos estados da tela de campo em `.screens/campo/` |
-| `pnpm spike:conflict` | Roteiro Playwright do spike 3 (a entrega do M3): dois navegadores do mesmo usuário, celular e desktop, editam a mesma vistoria e o mesmo cliente offline e convergem, com o `ConflictResolver` e os conflitos da exclusão, contra a API real (exige `db:up`, `dev:api` e o build do web); com `SCREENS=1`, os prints em `.screens/conflito/` |
+| `pnpm spike:outbox` | Roteiro Playwright dos spikes 1a e 1b e das entregas do M2 (cadastro e vistoria offline) contra a API real, no celular e no desktop (exige `db:up`, `dev:api` e o build do web); com `SCREENS=1`, tira os prints dos estados da tela de campo em `.screens/campo/`; com `PULL_CHAOS=1`, o pull roda a cada 1,5 s em vez de 60 s (ainda fora do CI, #145) |
+| `pnpm spike:conflict` | Roteiro Playwright do spike 3 (a entrega do M3): dois navegadores do mesmo usuário, celular e desktop, editam a mesma vistoria e o mesmo cliente offline e convergem, com o `ConflictResolver` e os conflitos da exclusão, contra a API real (exige `db:up`, `dev:api` e o build do web); com `SCREENS=1`, os prints em `.screens/conflito/`; aceita `PULL_CHAOS=1` como o `spike:outbox` |
 | `pnpm spike:shell` | Roteiro Playwright do spike 4: o shell abre em modo avião depois da primeira visita (exige o build do web; roda no CI) |
 
 `pnpm seed` chega no M2. Uma tela do Figma vira código com `/screen <link> <issue>`.

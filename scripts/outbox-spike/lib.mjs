@@ -65,12 +65,97 @@ export async function serve() {
 
 export const wait = (ms) => new Promise((done) => setTimeout(done, ms));
 
+/** O intervalo do pull com `PULL_CHAOS=1`, no lugar dos 60 s do app (`PULL_INTERVAL_MS`). */
+const CHAOS_INTERVAL_MS = 1500;
+
+/**
+ * Com `PULL_CHAOS=1`, todo contexto troca o intervalo de 60 s do pull por 1,5 s: o roteiro inteiro roda com pulls caindo
+ * em qualquer ponto, sem uma linha a mais no app (#144). Os passos que dependem de o aparelho não ter puxado seguram o
+ * pull com `holdPull`.
+ */
 export async function launch() {
+  let browser;
   try {
-    return await chromium.launch({ channel: "chrome" });
+    browser = await chromium.launch({ channel: "chrome" });
   } catch {
-    return chromium.launch();
+    browser = await chromium.launch();
   }
+  const chaos = Boolean(process.env.PULL_CHAOS);
+  if (chaos) console.log(`PULL_CHAOS: o pull roda a cada ${CHAOS_INTERVAL_MS} ms`);
+  const newContext = browser.newContext.bind(browser);
+  browser.newContext = async (options) => {
+    const context = await newContext(options);
+    const name = `contexto ${++contexts}`;
+    context.on("page", (page) => trace(page, name));
+    if (chaos) {
+      await context.addInitScript((interval) => {
+        const setInterval = window.setInterval;
+        window.setInterval = (handler, ms, ...args) => setInterval(handler, ms === 60_000 ? interval : ms, ...args);
+      }, CHAOS_INTERVAL_MS);
+    }
+    return context;
+  };
+  return browser;
+}
+
+// O rastro da API de todas as páginas, para a falha de um roteiro dizer o que a rede fez antes dela (#144).
+const TRACE_SIZE = 80;
+const traced = [];
+let contexts = 0;
+const started = Date.now();
+
+function trace(page, name) {
+  const note = (line) => {
+    traced.push(`${String(Date.now() - started).padStart(7)} ms  ${name}  ${line}`);
+    if (traced.length > TRACE_SIZE) traced.shift();
+  };
+  const pathOf = (url) => new URL(url).pathname.replace(/[0-9a-f]{8}-[0-9a-f-]{27}/g, "{id}");
+  const api = (url) => new URL(url).pathname.startsWith("/api/") && !url.includes("/auth/");
+  page.on("request", (req) => api(req.url()) && note(`→ ${req.method()} ${pathOf(req.url())}`));
+  page.on("response", (res) => api(res.url()) && note(`← ${res.status()} ${res.request().method()} ${pathOf(res.url())}`));
+  page.on("requestfailed", (req) => api(req.url()) && note(`✗ ${req.method()} ${pathOf(req.url())}`));
+}
+
+/** Imprime as últimas requisições da API (o roteiro chama na falha). */
+export function printTrace() {
+  console.log(`\nAs últimas ${traced.length} requisições da API, antes da falha:`);
+  for (const line of traced) console.log(`  ${line}`);
+}
+
+const PULL_ROUTE = /\/api\/v1\/(sync\/|(clients|properties|inspections)\/[^/]+$)/;
+
+/**
+ * Segura o pull do contexto até `release()`: o delta e, com `byId`, o `GET` por id das marcas. É o "este aparelho ainda
+ * não puxou" explícito dos passos em que outro aparelho grava e este age sem ter visto (#144). Os envios passam.
+ */
+export async function holdPull(context, { byId = true } = {}) {
+  let release;
+  const released = new Promise((done) => (release = done));
+  const handler = async (route) => {
+    const request = route.request();
+    const delta = new URL(request.url()).pathname.startsWith("/api/v1/sync/");
+    if (request.method() !== "GET" || (!delta && !byId)) return route.fallback();
+    await released;
+    return route.fallback();
+  };
+  await context.route(PULL_ROUTE, handler);
+  return async () => {
+    release();
+    await wait(50);
+    await context.unroute(PULL_ROUTE, handler);
+  };
+}
+
+/** Dispara um ciclo do pull pelo gatilho da rede que volta e espera o laço das vistorias, o último, responder. */
+export async function pullNow(context, page) {
+  const pulled = page.waitForResponse((res) => new URL(res.url()).pathname === "/api/v1/sync/inspections", {
+    timeout: 30_000,
+  });
+  await context.setOffline(true);
+  await wait(200);
+  await context.setOffline(false);
+  await pulled;
+  await wait(500);
 }
 
 export async function callApi(path, init = {}) {
@@ -414,5 +499,11 @@ export const succeeded = (put) => put.status === 200 || put.status === 201;
 export const problem = (type, status, title, extra = {}) =>
   JSON.stringify({ type: `urn:vistoria:problem:${type}`, title, status, detail: title, traceId: "roteiro", ...extra });
 
-export const step = (n, text) => console.log(`\n${n}. ${text}`);
-export const ok = (text) => console.log(`   ✓ ${text}`);
+export const step = (n, text) => {
+  traced.push(`${String(Date.now() - started).padStart(7)} ms  ==== passo ${n}`);
+  console.log(`\n${n}. ${text}`);
+};
+export const ok = (text) => {
+  traced.push(`${String(Date.now() - started).padStart(7)} ms  ✓ ${text.slice(0, 70)}`);
+  console.log(`   ✓ ${text}`);
+};
