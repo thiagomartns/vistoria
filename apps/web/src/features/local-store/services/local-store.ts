@@ -8,6 +8,7 @@ import {
   createSkipMarksCollection,
   cursorStoreOf,
   pullOnce,
+  queuedIds,
   skipMarksOf,
 } from "@/shared/sync/pull";
 import { type PullTriggers, startPull } from "@/shared/sync/pull-triggers";
@@ -81,7 +82,12 @@ async function open(ownerId: string): Promise<LocalStore> {
   trackOutbox(outbox);
   const cursors = createCursorsCollection(db);
   const skipped = createSkipMarksCollection(db);
-  const state = { drafts, cursors: cursorStoreOf(cursors), marks: skipMarksOf(skipped) };
+  const state = {
+    drafts,
+    cursors: cursorStoreOf(cursors),
+    marks: skipMarksOf(skipped),
+    queued: async () => queuedIds(await outbox.peekOutbox()),
+  };
   const entities = [clientsPull(clients), propertiesPull(properties), inspectionsPull(inspections)];
   const pull = startPull({
     ownerId,

@@ -21,6 +21,9 @@ import type { LocalCollection, SyncRecord } from "./upsert";
 // O cursor vencido ou ilegível (`cursor-expired`, `invalid-cursor`) pede o resync completo da entidade: puxa do zero
 // gravando por cima do que o aparelho tem e só no fim tira o que não veio, menos o que tem pendência, que ganha a marca
 // (ADR 0043). Se cair no meio, o próximo ciclo recomeça do zero: a collection nunca fica vazia no caminho.
+// A resposta tem o servidor da hora em que ele a leu. Um registro que a store confirmada mudou depois disso (o envio
+// daqui confirmou com a página em voo) é tratado como pendência e ganha a marca: aplicar a página voltaria a versão
+// (ADR 0044). A varredura do resync compara com a store do começo dele.
 
 /** Uma página do delta (`SyncPageDto` do backend.md, "Leitura por delta"). */
 export interface SyncPage<D> {
@@ -70,7 +73,27 @@ export interface PullState {
   drafts: DraftsCollection;
   cursors: CursorStore;
   marks: SkipMarks;
+  /**
+   * Os ids com transação na outbox, inclusive a que está em voo (`peekOutbox`). Na collection IndexedDB, a camada
+   * otimista solta o `$hasPendingWrites` com o envio em voo; a fila é a palavra final (ADR 0044).
+   */
+  queued: () => Promise<ReadonlySet<string>>;
 }
+
+/** Os ids dos registros das transações na outbox. */
+export const queuedIds = (
+  transactions: readonly { mutations: readonly { modified?: unknown; original?: unknown }[] }[],
+): Set<string> =>
+  new Set(
+    transactions.flatMap((transaction) =>
+      transaction.mutations.flatMap((mutation) =>
+        [mutation.modified, mutation.original].flatMap((row) => {
+          const id = (row as { id?: unknown } | undefined)?.id;
+          return typeof id === "string" ? [id] : [];
+        }),
+      ),
+    ),
+  );
 
 /**
  * - `done`: todos os laços chegaram ao fim (`hasMore` falso).
@@ -105,13 +128,14 @@ export async function pullOnce(
  */
 async function resolveMarks(state: PullState, entity: PullEntity): Promise<PullOutcome> {
   for (const id of state.marks.list(entity.name)) {
-    if (hasPending(entity.store, state.drafts, id)) continue;
+    if (hasPending(entity.store, state.drafts, id) || (await state.queued()).has(id)) continue;
     const outcome = await refetchById({
       store: entity.store,
       drafts: state.drafts,
       id,
       get: entity.get,
       shape: entity.shape,
+      queued: state.queued,
     });
     if (outcome === "found" || outcome === "not-found") await state.marks.remove(entity.name, id);
     if (outcome === "offline") return "offline";
@@ -127,12 +151,16 @@ async function resolveMarks(state: PullState, entity: PullEntity): Promise<PullO
 async function pullEntity(state: PullState, entity: PullEntity): Promise<PullOutcome> {
   const { cursors } = state;
   let seen: Set<string> | undefined;
+  /** A store confirmada no começo do resync, para a varredura. */
+  let atResync: Versions | undefined;
   if (cursors.resyncing(entity.name)) {
     await cursors.resync(entity.name, true);
     seen = new Set();
+    atResync = await versionsOf(entity.store);
   }
   for (;;) {
     const cursor = cursors.get(entity.name);
+    const before = await versionsOf(entity.store);
     const result = await entity.page({ query: cursor ? { cursor } : {} });
     if (!result.data) {
       const failure = failureOf(entity, result);
@@ -143,12 +171,13 @@ async function pullEntity(state: PullState, entity: PullEntity): Promise<PullOut
       }
       await cursors.resync(entity.name, true);
       seen = new Set();
+      atResync = await versionsOf(entity.store);
       continue;
     }
-    await applyPage(state, entity, result.data, seen);
+    await applyPage(state, entity, result.data, before, seen);
     if (result.data.hasMore) continue;
-    if (seen) {
-      await sweep(state, entity, seen);
+    if (seen && atResync) {
+      await sweep(state, entity, seen, atResync);
       await cursors.resync(entity.name, false);
     }
     return "done";
@@ -172,23 +201,36 @@ function failureOf(
 type Mutation = { type: "insert" | "update" | "delete"; key: string; modified: SyncRecord };
 /** A gravação de um rascunho que mudou com a página. */
 type Persisting = { isPersisted: { promise: Promise<unknown> } } | undefined;
+/** A `version` de cada registro da store confirmada. */
+type Versions = Map<string, string | null>;
+
+const versionsOf = async (store: PullEntity["store"]): Promise<Versions> =>
+  new Map((await store.utils.exportData()).map((record) => [record.id, record.version]));
 
 /**
  * Aplica uma página: os `items` vão para a store confirmada e os `deletedIds` saem dela, menos os de registro com
  * pendência, que ganham a marca. Um item com a `version` que a store já tem é o eco da própria escrita: não regrava o
  * registro. O rascunho limpo de um registro gravado passa à versão nova (`rebaseClean`) e o de um excluído sai com ele
  * (ADR 0043). A pendência é a da hora de aplicar, não a de quando a requisição saiu: entre a conferência e a gravação
- * não há `await`, então uma escrita feita com a página em voo vence. O cursor só é gravado depois.
+ * não há `await`, então uma escrita feita com a página em voo vence. Também contam como pendência a transação na
+ * outbox (`queued`) e o registro que a store confirmada mudou depois de `before`, lida antes de a requisição sair
+ * (ADR 0044). O cursor só é gravado depois.
  */
 async function applyPage(
   state: PullState,
   entity: PullEntity,
   page: SyncPage<unknown>,
+  before: Versions,
   seen?: Set<string>,
 ): Promise<void> {
   const { store } = entity;
   const { drafts } = state;
   const confirmed = new Map((await store.utils.exportData()).map((record) => [record.id, record]));
+  const queued = await state.queued();
+  const held = (id: string) =>
+    hasPending(store, drafts, id) ||
+    queued.has(id) ||
+    confirmed.get(id)?.version !== before.get(id);
   const skipped: string[] = [];
   const mutations: Mutation[] = [];
   const rewritten: Persisting[] = [];
@@ -196,7 +238,7 @@ async function applyPage(
     const record = entity.shape(dto);
     const known = confirmed.get(record.id);
     seen?.add(record.id);
-    if (hasPending(store, drafts, record.id)) skipped.push(record.id);
+    if (held(record.id)) skipped.push(record.id);
     else if (known?.version !== record.version) {
       mutations.push({ type: known ? "update" : "insert", key: record.id, modified: record });
       rewritten.push(rebaseClean(drafts, record));
@@ -204,7 +246,7 @@ async function applyPage(
   }
   for (const id of page.deletedIds) {
     const known = confirmed.get(id);
-    if (hasPending(store, drafts, id)) skipped.push(id);
+    if (held(id)) skipped.push(id);
     else if (known) {
       mutations.push({ type: "delete", key: id, modified: known });
       rewritten.push(dropClean(drafts, id));
@@ -218,17 +260,31 @@ async function applyPage(
 /**
  * O fim do resync: o confirmado que não veio do zero foi excluído no servidor (o primeiro sync só traz registros
  * vivos). Sem pendência, sai do aparelho com o rascunho limpo; com pendência, fica e ganha a marca, e a fila segue
- * com a base que tinha. A conferência e a gravação ficam no mesmo tick, como na página.
+ * com a base que tinha (a transação na outbox conta, como na página). O que a store confirmada ganhou ou mudou depois
+ * de `atResync` (um envio daqui confirmado com o resync em voo) pode não ter vindo só por isso: fica e ganha a marca. A
+ * conferência e a gravação ficam no mesmo tick, como na página.
  */
-async function sweep(state: PullState, entity: PullEntity, seen: Set<string>): Promise<void> {
+async function sweep(
+  state: PullState,
+  entity: PullEntity,
+  seen: Set<string>,
+  atResync: Versions,
+): Promise<void> {
   const { store } = entity;
   const { drafts } = state;
   const skipped: string[] = [];
   const mutations: Mutation[] = [];
   const dropped: Persisting[] = [];
-  for (const known of await store.utils.exportData()) {
+  const confirmed = await store.utils.exportData();
+  const queued = await state.queued();
+  for (const known of confirmed) {
     if (seen.has(known.id)) continue;
-    if (hasPending(store, drafts, known.id)) skipped.push(known.id);
+    if (
+      hasPending(store, drafts, known.id) ||
+      queued.has(known.id) ||
+      atResync.get(known.id) !== known.version
+    )
+      skipped.push(known.id);
     else {
       mutations.push({ type: "delete", key: known.id, modified: known });
       dropped.push(dropClean(drafts, known.id));

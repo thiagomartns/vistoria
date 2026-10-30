@@ -99,6 +99,10 @@ type MissingArgs<T extends SyncRecord, D> = FetchArgs<T, D> & {
   synced?: () => boolean;
 };
 
+type FetchOptions<T extends SyncRecord, D> = Pick<MissingArgs<T, D>, "before" | "synced"> & {
+  queued?: () => Promise<ReadonlySet<string>>;
+};
+
 /**
  * Busca o registro `id` no servidor se ele não está no aparelho e grava na store confirmada. `before` roda antes da
  * gravação, com o registro já lido: é onde a vistoria busca o imóvel e o imóvel, o cliente, para a tela nunca abrir o
@@ -116,25 +120,35 @@ export function fetchMissing<T extends SyncRecord, D>({
 /**
  * Busca de novo o registro `id`, que o aparelho pode já ter: a marca de um registro que o pull pulou (ADR 0041). Ao
  * contrário do `fetchMissing`, estar no aparelho não basta para não buscar; só a pendência (`hasPending`) segura o
- * `GET`, e uma pendência que volta durante ele descarta a resposta (`local`).
+ * `GET`, e uma pendência que volta durante ele descarta a resposta (`local`). `queued` são os ids com transação na
+ * outbox: com o envio em voo, a camada otimista pode não marcar a pendência, e a fila conta (ADR 0044).
  */
-export function refetchById<T extends SyncRecord, D>(args: FetchArgs<T, D>): Promise<FetchOutcome> {
-  return fetchInto(args, hasPending);
+export function refetchById<T extends SyncRecord, D>({
+  queued,
+  ...args
+}: FetchArgs<T, D> & { queued?: () => Promise<ReadonlySet<string>> }): Promise<FetchOutcome> {
+  return fetchInto(args, hasPending, { queued });
 }
 
 async function fetchInto<T extends SyncRecord, D>(
   { store, drafts, id, get, shape }: FetchArgs<T, D>,
   keep: (store: LocalCollection<T>, drafts: DraftsCollection, id: string) => boolean,
-  { before, synced }: Pick<MissingArgs<T, D>, "before" | "synced"> = {},
+  { before, synced, queued }: FetchOptions<T, D> = {},
 ): Promise<FetchOutcome> {
   if (keep(store, drafts, id)) return "local";
   if (synced?.()) return "not-found";
   if (globalThis.navigator?.onLine === false) return "offline";
+  // A resposta tem o servidor da hora em que ele a leu: se o registro mudou aqui durante o `GET` (um envio daqui
+  // confirmou), ela é descartada, como a pendência que voltou (ADR 0044).
+  const seen = store.get(id)?.version;
+  // A fila é lida antes da conferência, que fica no mesmo tick da gravação.
+  const moved = (inQueue?: ReadonlySet<string>) =>
+    keep(store, drafts, id) || inQueue?.has(id) === true || store.get(id)?.version !== seen;
   const result = await get({ path: { id } });
   if (result.data !== undefined) {
     const record = shape(result.data);
     await before?.(record);
-    if (keep(store, drafts, id)) return "local";
+    if (moved(await queued?.())) return "local";
     await adoptPulled(store, drafts, record);
     return "found";
   }
@@ -142,7 +156,7 @@ async function fetchInto<T extends SyncRecord, D>(
   if (failure.kind === "network") return "offline";
   switch (handleProblem(failure)) {
     case "remove-local":
-      if (keep(store, drafts, id)) return "local";
+      if (moved(await queued?.())) return "local";
       await dropPulled(store, drafts, id);
       return "not-found";
     case "renew-session":

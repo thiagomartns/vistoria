@@ -5,6 +5,7 @@ import type { PropertyRecord } from "@/features/properties/models/property";
 
 import { expireSession } from "../auth/session";
 import type { DraftRecord } from "./drafts";
+import { hasPending } from "./fetch";
 import type { CursorStore } from "./pull";
 import { closeDevices, device, fakeApi, stopLater } from "./pull.harness";
 import { startPull } from "./pull-triggers";
@@ -406,5 +407,183 @@ describe("pull: resync", () => {
     ]);
     expect([...phone.clients.confirmed.keys()]).toEqual([1, 2, 3, 4].map((n) => clientOf(n).id));
     expect(phone.state.cursors.resyncing("clients")).toBe(false);
+  });
+});
+
+describe("pull: a fila segura o pull mesmo sem $hasPendingWrites (#144)", () => {
+  // Na collection IndexedDB, a camada otimista solta o `$hasPendingWrites` com o envio em voo; a outbox ainda tem a
+  // transação. O `get` sem a marca simula isso sobre o harness.
+  const withoutPendingFlag = (phone: Awaited<ReturnType<typeof device>>) => {
+    const get = phone.clients.collection.get.bind(phone.clients.collection);
+    vi.spyOn(phone.clients.collection, "get").mockImplementation((id: string) => {
+      const row = get(id);
+      return row && { ...row, $hasPendingWrites: false };
+    });
+  };
+
+  it("envio em voo: o GET da marca não sai, e a página não regrava o registro", async () => {
+    const api = fakeApi();
+    api.seed("clients", clientV1);
+    api.write("clients", { ...clientV1, name: "Alfa Imóveis" });
+    const phone = await device(api, { clients: [clientV1] });
+    await phone.marks.add("clients", [ID]);
+    const release = api.hold(`PUT /api/v1/clients/${ID}`);
+    phone.saveClient({ ...clientV1, phone: "(71) 4444-0000" });
+    await vi.waitFor(() => expect(api.requests).toContain(`PUT /api/v1/clients/${ID}`));
+    withoutPendingFlag(phone);
+
+    expect(await phone.pull()).toBe("done");
+
+    expect(api.requests).not.toContain(`GET /api/v1/clients/${ID}`);
+    expect(phone.clients.confirmed.get(ID)).toEqual(clientV1);
+    expect(phone.marks.list("clients")).toEqual([ID]);
+    release();
+  });
+});
+
+describe("pull: resposta lida antes de uma confirmação daqui (#144)", () => {
+  const phoneHere = "(71) 4444-0000";
+  /** O envio confirmou e a camada otimista já soltou o registro: sem pendência, só a resposta atrasada o protege. */
+  const confirmedHere = async (phone: Awaited<ReturnType<typeof device>>, id: string) => {
+    await phone.drained();
+    await vi.waitFor(() =>
+      expect(hasPending(phone.clients.collection, phone.drafts, id)).toBe(false),
+    );
+  };
+
+  it("página do delta: chega depois do envio confirmado e não volta a versão; o registro ganha a marca", async () => {
+    const api = fakeApi();
+    api.seed("clients", clientV1);
+    const phone = await device(api, { clients: [clientV1] });
+    const release = api.holdAfter("GET /api/v1/sync/clients");
+    const pulling = phone.pull();
+    await vi.waitFor(() => expect(api.requests).toContain("GET /api/v1/sync/clients"));
+
+    phone.saveClient({ ...clientV1, phone: phoneHere });
+    await confirmedHere(phone, ID);
+    const confirmed = { ...clientV1, phone: phoneHere, version: "V2" };
+    expect(phone.clients.confirmed.get(ID)).toEqual(confirmed);
+    release();
+    await pulling;
+
+    expect(phone.clients.confirmed.get(ID)).toEqual(confirmed);
+    expect(phone.marks.list("clients")).toEqual([ID]);
+    // O ciclo seguinte resolve a marca pelo GET, que já tem a V2.
+    await phone.pull();
+    expect(phone.clients.confirmed.get(ID)).toEqual(confirmed);
+    expect(phone.marks.list("clients")).toEqual([]);
+  });
+
+  it("GET da marca: chega depois do envio confirmado e é descartado; a marca fica", async () => {
+    const api = fakeApi();
+    api.seed("clients", clientV1);
+    const phone = await device(api, { clients: [clientV1] });
+    await phone.marks.add("clients", [ID]);
+    const release = api.holdAfter(`GET /api/v1/clients/${ID}`);
+    const pulling = phone.pull();
+    await vi.waitFor(() => expect(api.requests).toContain(`GET /api/v1/clients/${ID}`));
+
+    phone.saveClient({ ...clientV1, phone: phoneHere });
+    await confirmedHere(phone, ID);
+    release();
+    await pulling;
+
+    expect(phone.clients.confirmed.get(ID)).toEqual({ ...clientV1, phone: phoneHere, version: "V2" });
+    expect(phone.marks.list("clients")).toEqual([ID]);
+  });
+
+  it("varredura do resync: o criado aqui e confirmado com o resync em voo não sai do aparelho", async () => {
+    const api = fakeApi();
+    api.seed("clients", clientV1);
+    const phone = await device(api, { clients: [clientV1] });
+    await phone.state.cursors.set("clients", "1");
+    api.failNext("/api/v1/sync/clients?cursor=1", () => api.problem("cursor-expired", 410));
+    const release = api.holdAfter("GET /api/v1/sync/clients");
+    const pulling = phone.pull();
+    await vi.waitFor(() => expect(api.requests).toContain("GET /api/v1/sync/clients"));
+
+    const added = clientOf(3);
+    phone.saveClient(added);
+    await confirmedHere(phone, added.id);
+    release();
+    expect(await pulling).toBe("done");
+
+    expect(phone.clients.confirmed.get(added.id)).toEqual({ ...added, version: "V2" });
+    expect(phone.marks.list("clients")).toEqual([added.id]);
+  });
+});
+
+/**
+ * A invariante do pull (#144): o que a pessoa salvou nunca some, e os aparelhos convergem. O roteiro de um cliente tem
+ * seis posições; o pull lê o servidor numa delas (`read`) e a resposta chega numa posição igual ou posterior
+ * (`deliver`), em todos os pares. Em toda posição, o registro do aparelho tem o que já foi salvo aqui; no fim, o
+ * servidor e o aparelho têm o Telefone e o E-mail daqui e o Nome do outro aparelho.
+ */
+describe("pull: a invariante, com o pull em cada posição do roteiro (#144)", () => {
+  const here = { phone: "(71) 4444-0000", email: "ana@alfa.com" };
+  const elsewhere = "Alfa Imóveis";
+  const positions = 6;
+  const pairs = Array.from({ length: positions }, (_, read) =>
+    Array.from({ length: positions - read }, (_skip, offset) => [read, read + offset] as const),
+  ).flat();
+
+  it.each(pairs)("lido na posição %i, entregue na %i", async (read, deliver) => {
+    const api = fakeApi();
+    api.seed("clients", clientV1);
+    const phone = await device(api, { clients: [clientV1] });
+    const saved: Partial<ClientRecord> = {};
+    let pulling: Promise<unknown> | undefined;
+    let release: (() => void) | undefined;
+    // O que o formulário mostra: os campos do registro, sem as propriedades virtuais da camada otimista.
+    const shown = (): ClientRecord => {
+      const row = phone.clients.collection.get(ID)!;
+      return Object.fromEntries(
+        Object.keys(clientV1).map((key) => [key, row[key as keyof ClientRecord]]),
+      ) as ClientRecord;
+    };
+
+    const steps: (() => Promise<void> | void)[] = [
+      () => {
+        phone.saveClient({ ...shown(), phone: here.phone });
+        saved.phone = here.phone;
+      },
+      () => phone.drained(),
+      () => {
+        const current = api.current("clients", ID)!;
+        api.write("clients", { ...current, name: elsewhere });
+      },
+      () => {
+        phone.saveClient({ ...shown(), email: here.email });
+        saved.email = here.email;
+      },
+      () => phone.drained(),
+      () => {},
+    ];
+    for (let at = 0; at < positions; at += 1) {
+      if (at === read) {
+        release = api.holdAfter("GET /api/v1/sync/clients");
+        const before = api.requests.length;
+        pulling = phone.pull();
+        await vi.waitFor(() => {
+          if (!api.requests.slice(before).some((r) => r.startsWith("GET /api/v1/sync/clients")))
+            throw new Error("a página de clientes ainda não foi lida");
+        });
+      }
+      if (at === deliver) {
+        release!();
+        await pulling;
+      }
+      await steps[at]!();
+      expect(phone.clients.collection.get(ID)).toMatchObject(saved);
+    }
+
+    await phone.drained();
+    await phone.pull();
+    await phone.pull();
+    const { version: _version, ...base } = clientV1;
+    expect(api.current("clients", ID)).toMatchObject({ ...base, name: elsewhere, ...here });
+    expect(phone.clients.confirmed.get(ID)).toEqual(api.current("clients", ID));
+    expect(phone.drafts.size).toBe(0);
+    expect(phone.marks.list("clients")).toEqual([]);
   });
 });
