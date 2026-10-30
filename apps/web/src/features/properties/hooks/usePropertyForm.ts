@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
-import { type FieldErrors, useForm, useFormState } from "react-hook-form";
+import { type FieldErrors, useForm } from "react-hook-form";
 
 import { useLocalStore } from "@/features/local-store/hooks/useLocalStore";
 import type { DraftRecord } from "@/shared/sync/drafts";
@@ -64,6 +64,10 @@ const valuesOf = (row: PropertyRow): PropertyFormValues => ({
   notes: row.notes ?? "",
 });
 
+/** O formulário tem algo diferente de `saved`, campo a campo. */
+const differs = (values: PropertyFormValues, saved: PropertyFormValues) =>
+  (Object.keys(saved) as (keyof PropertyFormValues)[]).some((key) => values[key] !== saved[key]);
+
 const isField = (key: string): key is (typeof PROPERTY_FIELDS)[number] =>
   (PROPERTY_FIELDS as readonly string[]).includes(key);
 
@@ -123,13 +127,15 @@ export function usePropertyForm(id: string | null) {
     resetOptions: { keepDirtyValues: true, keepErrors: true },
     errors: draft ? fieldErrorsOf(draft) : undefined,
   });
-  const { isDirty } = useFormState({ control: form.control });
 
   // Em conflito, salvar guarda o formulário só no rascunho (saveProperty) e leva ao ConflictResolver, que parte dele.
   const conflictHref = id && flatConflictOf(draft) ? propertyConflictHref(id) : null;
 
   const onSubmit = form.handleSubmit((values) => {
-    if (store && (isDirty || draft)) {
+    // Sujo é o que difere do registro de agora, não o `isDirty`: o reset do `values` (o pull trouxe uma versão nova)
+    // zera o `isDirty` e deixa o que a pessoa digitou na tela, que sumiria sem ir para a fila (#144).
+    const changed = !row || differs(form.getValues(), valuesOf(row));
+    if (store && (changed || draft)) {
       saveProperty(store, { id: id ?? undefined, ...values });
     }
     router.push(conflictHref ?? PROPERTIES_HREF);

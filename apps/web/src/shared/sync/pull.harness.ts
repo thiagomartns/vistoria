@@ -28,7 +28,14 @@ import { propertiesPull } from "@/features/properties/services/properties.sync";
 
 import type { DraftRecord, DraftsCollection } from "./drafts";
 import { type Outbox, startOutbox } from "./outbox";
-import { type CursorStore, type PullEntity, cursorStoreOf, pullOnce, skipMarksOf } from "./pull";
+import {
+  type CursorStore,
+  type PullEntity,
+  cursorStoreOf,
+  pullOnce,
+  queuedIds,
+  skipMarksOf,
+} from "./pull";
 import { resetSyncStatus } from "./sync-status";
 import type { SyncRecord } from "./upsert";
 
@@ -69,7 +76,8 @@ export const DELETED_AT = "2026-10-29T11:00:00+00:00";
 
 /**
  * O servidor falso. A versão é `V<n>`, com `n` de um relógio do banco inteiro, como o rowversion; o cursor é o `n` da
- * última linha da página. `hold` segura as respostas de um caminho até a liberação.
+ * última linha da página. `hold` segura as requisições de um caminho antes de o servidor ler; `holdAfter`, depois de ele
+ * ler, com a resposta já pronta e entregue só na liberação.
  */
 export function fakeApi({ pageSize = 500 } = {}) {
   let clock = 0;
@@ -80,6 +88,7 @@ export function fakeApi({ pageSize = 500 } = {}) {
   };
   const requests: string[] = [];
   const holds: { prefix: string; until: Promise<void> }[] = [];
+  const afterHolds: { prefix: string; until: Promise<void> }[] = [];
   const failures: { prefix: string; respond: () => Response }[] = [];
 
   const problem = (type: string, status: number, extra: Record<string, unknown> = {}) =>
@@ -110,12 +119,19 @@ export function fakeApi({ pageSize = 500 } = {}) {
   const handle = async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
     const path = url.pathname + url.search;
-    requests.push(`${request.method} ${path}`);
-    for (const hold of holds.filter((candidate) => path.startsWith(candidate.prefix)))
-      await hold.until;
+    const line = `${request.method} ${path}`;
+    requests.push(line);
+    const matches = (prefix: string) => path.startsWith(prefix) || line.startsWith(prefix);
+    for (const hold of holds.filter((candidate) => matches(candidate.prefix))) await hold.until;
     const failure = failures.findIndex((candidate) => path.startsWith(candidate.prefix));
     if (failure >= 0) return failures.splice(failure, 1)[0]!.respond();
+    const response = await answer(request, url);
+    for (const hold of afterHolds.filter((candidate) => matches(candidate.prefix)))
+      await hold.until;
+    return response;
+  };
 
+  const answer = async (request: Request, url: URL): Promise<Response> => {
     const [, , , first, second] = url.pathname.split("/");
     if (first === "sync") {
       const entity = second as Entity;
@@ -170,10 +186,19 @@ export function fakeApi({ pageSize = 500 } = {}) {
       const { seq: _seq, deleted: _deleted, ...record } = row;
       return record;
     },
-    /** Segura as requisições que começam com `prefix` até o `release`. */
+    /** Segura as requisições que começam com `prefix` (o caminho, ou o método e o caminho) até o `release`. */
     hold(prefix: string) {
       let release!: () => void;
       holds.push({ prefix, until: new Promise<void>((done) => (release = done)) });
+      return () => release();
+    },
+    /**
+     * Segura a resposta das requisições que começam com `prefix` (como no `hold`) depois de o servidor as ler: a resposta
+     * tem o estado da hora da leitura e chega só no `release`.
+     */
+    holdAfter(prefix: string) {
+      let release!: () => void;
+      afterHolds.push({ prefix, until: new Promise<void>((done) => (release = done)) });
       return () => release();
     },
     /** A próxima requisição que começa com `prefix` responde `respond()`. */
@@ -297,7 +322,12 @@ export async function device(
   await outbox.waitForInit();
   await vi.waitFor(() => expect(outbox.isOfflineEnabled).toBe(true));
   const marks = skipMarksOf(skipped as never);
-  const state = { drafts, cursors: cursors ?? cursorStoreOf(cursorRows as never), marks };
+  const state = {
+    drafts,
+    cursors: cursors ?? cursorStoreOf(cursorRows as never),
+    marks,
+    queued: async () => queuedIds(await outbox.peekOutbox()),
+  };
   const entities: PullEntity[] = [
     clientsPull(clientsCollection, api.client),
     propertiesPull(propertyStore.collection as unknown as PropertiesCollection, api.client),

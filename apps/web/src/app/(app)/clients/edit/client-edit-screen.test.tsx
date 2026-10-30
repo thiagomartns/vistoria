@@ -166,6 +166,36 @@ describe("ClientEditScreen", () => {
     await vi.waitFor(() => expect(field("Nome").value).toBe("Maria S. Souza"));
     expect(heading().textContent).toBe("Maria S. Souza");
     expect(field("Telefone").value).toBe("(11) 95555-6666");
+
+    // O reset do pull não pode apagar a mudança: salvar ainda enfileira o Telefone daqui, sobre o Nome do servidor (#144).
+    await user.click(screen.getByRole("button", { name: "Salvar" }));
+    await vi.waitFor(() => expect(saveClient).toHaveBeenCalledOnce());
+    expect(vi.mocked(saveClient).mock.calls[0]?.[1]).toMatchObject({
+      id: "c2",
+      name: "Maria S. Souza",
+      phone: "(11) 95555-6666",
+    });
+  });
+
+  it("o pull traz o que a pessoa já tinha digitado: salvar não enfileira nada, só volta", async () => {
+    const user = userEvent.setup();
+    const { rerender } = open("c2", { clients: [maria] });
+    await user.clear(field("Telefone"));
+    await user.type(field("Telefone"), "(11) 95555-6666");
+
+    local.value = {
+      ...local.value,
+      clients: [{ ...maria, version: "AAAAAAAAB9Q=", phone: "(11) 95555-6666" }],
+    };
+    rerender(
+      <AppShell>
+        <ClientEditScreen />
+      </AppShell>,
+    );
+    await user.click(screen.getByRole("button", { name: "Salvar" }));
+
+    await vi.waitFor(() => expect(navigation.push).toHaveBeenCalledWith("/clients"));
+    expect(saveClient).not.toHaveBeenCalled();
   });
 
   it("edição pendente: 'Salvo no aparelho' no cabeçalho", () => {

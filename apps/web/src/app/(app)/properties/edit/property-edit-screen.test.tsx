@@ -226,6 +226,33 @@ describe("PropertyEditScreen", () => {
     expect(saveProperty).not.toHaveBeenCalled();
   });
 
+  it("o pull muda o registro com a tela aberta: salvar ainda enfileira o que a pessoa editou (#144)", async () => {
+    const user = userEvent.setup();
+    const { rerender } = open("p1", { properties: [flores] });
+    await user.clear(field("Complemento"));
+    await user.type(field("Complemento"), "ap 41");
+
+    local.value = {
+      ...local.value,
+      properties: [{ ...flores, version: "AAAAAAAAB9Q=", notes: "Portaria 12h." }],
+    };
+    rerender(
+      <AppShell>
+        <PropertyEditScreen />
+      </AppShell>,
+    );
+    await vi.waitFor(() => expect(field("Observações").value).toBe("Portaria 12h."));
+    expect(field("Complemento").value).toBe("ap 41");
+    await user.click(screen.getByRole("button", { name: "Salvar" }));
+
+    await vi.waitFor(() => expect(saveProperty).toHaveBeenCalledOnce());
+    expect(vi.mocked(saveProperty).mock.calls[0]?.[1]).toMatchObject({
+      id: "p1",
+      complement: "ap 41",
+      notes: "Portaria 12h.",
+    });
+  });
+
   it("edição com mudança enfileira o registro com o id", async () => {
     const user = userEvent.setup();
     open("p1", { properties: [flores] });
