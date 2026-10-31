@@ -35,6 +35,8 @@
 // Desde o #132 a sessão se renova pelo cookie: recarregar sem rede ainda perde o token, mas a volta da rede renova antes
 // da fila sair (passo 2, sem passar pelo /login). Os passos que provam a sessão expirada (6 e 13) apagam o cookie antes
 // de voltar a rede, e o refresh recusado (401) leva ao SessionExpired, com a fila retida.
+// Desde o #133 o passo 13 passa pelo aviso de outro usuário (Cancelar faz o signOut da Bia e mantém a fila da Ana), e o
+// passo 15 prova a limpeza no IndexedDB de verdade: Sair com pendência pelo Dialog e "Apagar e entrar" de outro usuário.
 
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
@@ -45,6 +47,7 @@ import {
   changeOnServer,
   checked,
   chipsOf,
+  chooseSignOut,
   create,
   createInspection,
   createProperty,
@@ -52,6 +55,7 @@ import {
   deleteOnServer,
   editNotes,
   goTo,
+  heldDrafts,
   holdPull,
   inspectionRow,
   inspectionSettled,
@@ -60,6 +64,7 @@ import {
   mark,
   ok,
   openRoom,
+  otherUserWarning,
   outboxCount,
   printTrace,
   outboxKeys,
@@ -74,6 +79,7 @@ import {
   serverProperty,
   settled,
   shooter,
+  shownPending,
   signIn,
   signUp,
   step,
@@ -85,6 +91,7 @@ import {
   watchDeletes,
   watchPuts,
   watchRefreshes,
+  wiped,
 } from "./lib.mjs";
 
 // Prints dos estados da tela de campo, com SCREENS=1: o mesmo estado no celular e no desktop, trocando o viewport.
@@ -1176,22 +1183,32 @@ try {
   await wait(2000);
   assert.equal(puts.length, fromPending, "sem token, a pendência não sai");
   ok("sessão expirada: a pendência fica na fila");
+  // Desde o #133, a Bia entrando com a pendência da Ana vê o aviso de outro usuário; Cancelar faz o signOut da Bia,
+  // e nada da Ana muda nem sai com a conta dela.
   const fromOther = puts.length;
-  await signIn(page, other, { expired: true });
-  await page.getByRole("heading", { name: "Nenhum cliente ainda" }).waitFor();
-  await until(async () => (await outboxCount(page, other)) === 0, "a outbox da Bia, vazia");
+  await signIn(page, other, { expired: true, stays: true });
+  const warning = otherUserWarning(page);
+  await warning.waitFor();
+  // A pendência nova e os rascunhos da Ana recusados ou em conflito nos passos de antes contam (ADR 0046).
+  const warned = await shownPending(warning, `de ${user.name}`);
+  assert.equal(warned, 1 + (await heldDrafts(page, user)), "a fila e os rascunhos recusados ou em conflito");
+  assert.equal(await page.getByLabel("E-mail").isDisabled(), true, "o formulário espera a decisão");
+  ok(`o aviso de outro usuário: ${warned} alterações de ${user.name} (a fila e os rascunhos parados), com o formulário parado`);
+  const signedOut = page.waitForResponse((res) => res.url().endsWith("/api/v1/auth/signout"));
+  await warning.getByRole("button", { name: "Cancelar" }).click();
+  assert.equal((await signedOut).status(), 204);
+  await warning.waitFor({ state: "detached" });
   await wait(5000);
   assert.equal(puts.length - fromOther, 0, "nenhum PUT da fila da Ana com a sessão da Bia");
+  assert.equal(await outboxCount(page, user), 1, "a pendência da Ana continua na fila");
   assert.equal((await serverClient(user, pending)).status, 404);
-  ok("a Bia vê o banco dela, vazio; em 5 s nenhum PUT, e o servidor não recebeu a pendência");
-  // O cookie agora é o da Bia: apagado, o reload não renova a sessão dela, e o /login pede a entrada de novo.
-  await context.clearCookies();
-  await page.reload();
+  ok("Cancelar: signOut da Bia, a pendência da Ana fica na fila, e em 5 s nenhum PUT");
+  // O signOut apagou o cookie da Bia: o /login segue pedindo a entrada da Ana.
   await signIn(page, user, { expired: true });
   await until(async () => (await outboxCount(page, user)) === 0, "a fila da Ana sai", 90_000);
   assert.equal((await serverClient(user, pending)).body.name, "Pendência da Ana");
   assert.equal((await serverClient(other, pending)).status, 404, "a pendência é da Ana, não da Bia");
-  ok("a Ana entra de novo e a pendência dela chega ao servidor, na conta dela");
+  ok("a Ana entra de novo, sem aviso, e a pendência dela chega ao servidor, na conta dela");
 
   if (shotsDir) {
     step(14, "Print do estado 2: um ambiente sem itens (o roteiro fixo não tem; entra pelo rascunho, só para o print)");
@@ -1225,6 +1242,56 @@ try {
     await page.getByText("Nenhum item neste ambiente").waitFor();
     await shoot(page, "campo-2-vazio");
   }
+
+  step(15, "Sair com pendência: o Dialog avisa, e confirmar apaga o banco e a outbox; Apagar e entrar apaga os do anterior");
+  // Offline e recarregada, a sessão expira e a pendência fica na fila: é o que se perde ao sair (#133).
+  await context.setOffline(true);
+  await page.reload();
+  await page.getByRole("heading", { level: 1, name: "Clientes" }).waitFor();
+  const doomed = await create(page, "Pendência que sai junto");
+  await until(async () => (await outboxCount(page, user)) === 1, "uma pendência da Ana");
+  await chooseSignOut(page);
+  const leaving = page.getByRole("dialog", { name: "Sair e apagar as alterações deste aparelho?" });
+  await leaving.waitFor();
+  const leavingText = await leaving.textContent();
+  const toLose = await shownPending(leaving, "que");
+  assert.equal(toLose, 1 + (await heldDrafts(page, user)), "a fila e os rascunhos recusados ou em conflito");
+  assert.match(leavingText, /Sem rede, elas? não têm? como ser enviadas? agora/);
+  await leaving.getByRole("button", { name: "Cancelar" }).click();
+  await leaving.waitFor({ state: "detached" });
+  assert.equal(await outboxCount(page, user), 1, "Cancelar não apaga nada");
+  ok(`o Dialog diz ${toLose} alterações e a frase sem rede; Cancelar mantém a fila`);
+  await chooseSignOut(page);
+  await leaving.getByRole("button", { name: "Sair e apagar" }).click();
+  await page.waitForURL(/\/login$/);
+  await page.getByRole("heading", { level: 1, name: "Entrar" }).waitFor();
+  await wiped(page, user);
+  assert.equal(await page.evaluate(() => localStorage.getItem("vistoria.owner")), null);
+  await context.setOffline(false);
+  await wait(2000);
+  assert.equal((await serverClient(user, doomed)).status, 404, "a pendência apagada nunca sai");
+  ok("Sair e apagar: /login, os bancos vistoria-<id> e vistoria-outbox-<id> sumiram e a pendência nunca chegou");
+
+  // A Ana entra de novo (o aparelho está vazio: sem aviso), deixa uma pendência e a sessão expira; a Bia confirma.
+  await signIn(page, user);
+  await context.setOffline(true);
+  await page.reload();
+  await page.getByRole("heading", { level: 1, name: "Clientes" }).waitFor();
+  const replaced = await create(page, "Pendência apagada pela Bia");
+  await until(async () => (await outboxCount(page, user)) === 1, "uma pendência da Ana");
+  await context.clearCookies();
+  await context.setOffline(false);
+  await page.waitForURL(/\/login\?next=%2Fclients$/);
+  await signIn(page, other, { expired: true, stays: true });
+  await otherUserWarning(page).getByRole("button", { name: "Apagar e entrar" }).click();
+  await page.getByRole("heading", { name: "Nenhum cliente ainda" }).waitFor();
+  ok("Apagar e entrar: a Bia entra no banco dela, vazio");
+  // A conexão da outbox da Ana segura o delete até a página recarregar; a sessão da Bia volta pelo cookie.
+  await page.reload();
+  await page.getByRole("heading", { name: "Nenhum cliente ainda" }).waitFor();
+  await wiped(page, user);
+  assert.equal((await serverClient(user, replaced)).status, 404, "a pendência da Ana foi apagada, não enviada");
+  ok("os bancos da Ana sumiram do aparelho, e a pendência dela nunca chegou ao servidor");
 
   console.log("\nRoteiro concluído.");
 } catch (error) {

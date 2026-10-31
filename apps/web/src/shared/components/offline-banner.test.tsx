@@ -16,13 +16,13 @@ describe("OfflineBanner", () => {
     expect(banner.className).toContain("bg-warning-subtle");
   });
 
-  it("bloqueio: cobre o conteúdo, diz que nada se perdeu e tenta de novo", async () => {
+  it("bloqueio: cobre o conteúdo, diz que nada se perdeu e tenta de novo (frame 8 da #128)", async () => {
     const onRetry = vi.fn<() => void>();
     render(<OfflineBanner type="bloqueio" pending={12} onRetry={onRetry} />);
 
-    expect(screen.getByRole("heading", { name: "Conexão necessária" })).toBeDefined();
+    expect(screen.getByRole("heading", { name: "Reconecte para continuar" })).toBeDefined();
     expect(screen.getByRole("alert").textContent).toContain(
-      "Seus dados estão salvos neste dispositivo (12 alterações pendentes).",
+      "Faz mais de 72 horas que este aparelho não confirma sua sessão. Nada foi apagado: as 12 alterações pendentes continuam salvas aqui.",
     );
     await userEvent.setup().click(screen.getByRole("button", { name: "Tentar novamente" }));
     expect(onRetry).toHaveBeenCalledOnce();
@@ -31,6 +31,18 @@ describe("OfflineBanner", () => {
   it("bloqueio com uma pendência: singular", () => {
     render(<OfflineBanner type="bloqueio" pending={1} onRetry={() => {}} />);
 
-    expect(screen.getByRole("alert").textContent).toContain("(1 alteração pendente)");
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Nada foi apagado: a alteração pendente continua salva aqui.",
+    );
+  });
+
+  it("bloqueio sem pendências: só diz que nada foi apagado", () => {
+    render(<OfflineBanner type="bloqueio" pending={0} onRetry={() => {}} />);
+
+    expect(
+      screen.getByText(
+        "Faz mais de 72 horas que este aparelho não confirma sua sessão. Nada foi apagado.",
+      ),
+    ).toBeDefined();
   });
 });

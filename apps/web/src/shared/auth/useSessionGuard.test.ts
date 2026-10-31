@@ -11,6 +11,7 @@ const session = (status: SessionSnapshot["status"], ready = true): SessionSnapsh
   ready,
   status,
   user: status === "signed-out" ? null : user,
+  renewedAt: null,
 });
 
 describe("shellRedirect", () => {

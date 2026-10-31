@@ -130,6 +130,12 @@ export function trackOutbox(target: Outbox): void {
   void readOutbox();
 }
 
+/** Esquece a outbox acompanhada e o que ela tinha: o usuário saiu e o banco dele foi apagado. */
+export function untrackOutbox(): void {
+  outbox = undefined;
+  update({ entries: [], running: 0, lastSyncedAt: null, outboxRead: false });
+}
+
 /** Marca um envio confirmado pelo servidor ("Último sync"). Chamado pela mutationFn depois do 2xx. */
 export function recordSyncSuccess(at: Date = new Date()): void {
   update({ lastSyncedAt: at });

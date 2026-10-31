@@ -4,8 +4,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { accessToken } from "@/shared/api/client";
 import { refreshToken } from "@/shared/api/generated";
+import { pendingOf } from "@/features/local-store/services/local-store";
+import { signOutOnDevice } from "@/features/local-store/services/device-session";
+import { OFFLINE_WINDOW_MS } from "@/shared/auth/offline-window";
 import { resetSession } from "@/shared/auth/session";
-import { resetSyncStatus } from "@/shared/sync/sync-status";
+import { clock } from "@/shared/clock";
+import { reloadAt } from "@/shared/navigation";
+import type { Outbox } from "@/shared/sync/outbox";
+import { resetSyncStatus, trackOutbox } from "@/shared/sync/sync-status";
 import type { OutboxItemView } from "@/shared/sync/sync-view";
 
 import { AppShell } from "./app-shell";
@@ -33,13 +39,48 @@ vi.mock("@/features/local-store/hooks/useLocalOutbox", () => ({
   useLocalOutbox: () => outbox.conflicts,
 }));
 
+// O banco local e o "Sair" de verdade estão nos testes do device-session e do local-store; aqui, o que o shell decide.
+vi.mock("@/features/local-store/services/local-store", () => ({
+  pendingOf: vi.fn<(ownerId: string) => Promise<number>>(async () => 0),
+  wipeLocalStore: vi.fn<(ownerId: string) => Promise<void>>(async () => {}),
+}));
+vi.mock("@/features/local-store/services/device-session", () => ({
+  signOutOnDevice: vi.fn<() => Promise<void>>(async () => {}),
+}));
+vi.mock("@/shared/navigation", () => ({ reloadAt: vi.fn<(href: string) => void>() }));
+
 const owner = { id: "0199a0b2-7c1e-7f3a-9b2d-1c2d3e4f5a6b", name: "Ana Souza" };
 
-/** Como depois de um reload: o dono no localStorage e, se `token`, uma sessão ativa. */
-function seedSession({ token }: { token: boolean }) {
+/** O relógio dos testes: a última renovação aceita foi há pouco, dentro da janela offline. */
+const RENEWED_AT = new Date("2026-10-28T12:00:00Z");
+const realNow = clock.now;
+
+/**
+ * Como depois de um reload: o dono no localStorage, a data da última renovação aceita e, se `token`, uma sessão
+ * ativa. O relógio fica `elapsed` depois dessa renovação (1 min por padrão).
+ */
+function seedSession({ token, elapsed = 60 * 1000 }: { token: boolean; elapsed?: number }) {
   localStorage.setItem("vistoria.owner", JSON.stringify(owner));
+  localStorage.setItem("vistoria.renewed-at", RENEWED_AT.toISOString());
+  clock.now = () => new Date(RENEWED_AT.getTime() + elapsed);
   resetSession();
   if (token) accessToken.set("token");
+}
+
+/** Uma outbox com `count` transações, para o SyncStatus e o bloqueio dizerem quantas há. */
+function seedOutbox(count: number) {
+  const entries = Array.from({ length: count }, (_, i) => ({
+    id: `tx-${i}`,
+    mutationFnName: "upsertClient",
+    mutations: [{ modified: { id: `c${i}`, name: `Cliente ${i}` } }],
+    createdAt: new Date(RENEWED_AT),
+    retryCount: 0,
+    nextAttemptAt: 0,
+  }));
+  trackOutbox({
+    peekOutbox: async () => entries,
+    getRunningCount: () => 0,
+  } as unknown as Outbox);
 }
 
 /** Um JWT só com o `sub`: a sessão confere de quem é o token que o refresh trouxe. */
@@ -67,6 +108,10 @@ function setNetwork(online: boolean) {
 }
 
 afterEach(() => {
+  clock.now = realNow;
+  vi.mocked(pendingOf).mockReset().mockResolvedValue(0);
+  vi.mocked(signOutOnDevice).mockClear();
+  vi.mocked(reloadAt).mockClear();
   resetSyncStatus();
   resetSession();
   localStorage.clear();
@@ -271,6 +316,153 @@ describe("AppShell", () => {
 
       expect(accessToken.get()).toBe(tokenOf(owner.id));
       expect(navigation.replace).not.toHaveBeenCalled();
+    });
+  });
+  describe("janela offline de 72 h", () => {
+    const BLOCK = "Reconecte para continuar";
+
+    it("72 h + 1 min depois do último refresh aceito: bloqueia, sem apagar nada", async () => {
+      seedSession({ token: false, elapsed: OFFLINE_WINDOW_MS + 60 * 1000 });
+      seedOutbox(12);
+      setNetwork(false);
+      render(<AppShell>dados locais</AppShell>);
+      await act(async () => {});
+
+      expect(screen.getByRole("heading", { name: BLOCK })).toBeDefined();
+      expect(screen.getByRole("alert").textContent).toContain(
+        "Nada foi apagado: as 12 alterações pendentes continuam salvas aqui.",
+      );
+      expect(screen.getByRole("main").textContent).not.toContain("dados locais");
+      expect(signOutOnDevice).not.toHaveBeenCalled();
+      expect(localStorage.getItem("vistoria.owner")).not.toBeNull();
+      expect(navigation.replace).not.toHaveBeenCalled();
+    });
+
+    it("72 h exatas ainda não bloqueiam", () => {
+      seedSession({ token: false, elapsed: OFFLINE_WINDOW_MS });
+      setNetwork(false);
+      render(<AppShell>dados locais</AppShell>);
+
+      expect(screen.queryByRole("heading", { name: BLOCK })).toBeNull();
+      expect(screen.getByRole("main").textContent).toContain("dados locais");
+    });
+
+    it("com o app aberto, o bloqueio chega quando o prazo vence", () => {
+      vi.useFakeTimers();
+      try {
+        seedSession({ token: true, elapsed: OFFLINE_WINDOW_MS - 30 * 1000 });
+        render(<AppShell>dados locais</AppShell>);
+        expect(screen.queryByRole("heading", { name: BLOCK })).toBeNull();
+
+        clock.now = () => new Date(RENEWED_AT.getTime() + OFFLINE_WINDOW_MS + 30 * 1000);
+        act(() => {
+          vi.advanceTimersByTime(60 * 1000);
+        });
+
+        expect(screen.getByRole("heading", { name: BLOCK })).toBeDefined();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("Tentar novamente com a rede de volta: o refresh aceito tira o bloqueio", async () => {
+      vi.mocked(refreshToken).mockResolvedValue(refreshed());
+      seedSession({ token: false, elapsed: OFFLINE_WINDOW_MS + 60 * 1000 });
+      setNetwork(false);
+      render(<AppShell>dados locais</AppShell>);
+      expect(screen.getByRole("heading", { name: BLOCK })).toBeDefined();
+
+      setNetwork(true);
+      clock.now = realNow;
+      await userEvent.setup().click(screen.getByRole("button", { name: "Tentar novamente" }));
+      await act(async () => {});
+
+      expect(refreshToken).toHaveBeenCalledOnce();
+      expect(screen.queryByRole("heading", { name: BLOCK })).toBeNull();
+      expect(screen.getByRole("main").textContent).toContain("dados locais");
+    });
+
+    it("Tentar novamente sem rede: continua bloqueado", async () => {
+      vi.mocked(refreshToken).mockRejectedValue(new TypeError("Failed to fetch"));
+      seedSession({ token: false, elapsed: OFFLINE_WINDOW_MS + 60 * 1000 });
+      setNetwork(false);
+      render(<AppShell>dados locais</AppShell>);
+
+      await userEvent.setup().click(screen.getByRole("button", { name: "Tentar novamente" }));
+      await act(async () => {});
+
+      expect(screen.getByRole("heading", { name: BLOCK })).toBeDefined();
+    });
+  });
+
+  describe("Sair", () => {
+    async function signOut() {
+      const user = userEvent.setup();
+      await user.click(
+        screen.getAllByRole("button", { name: "Menu do usuário" })[0] as HTMLElement,
+      );
+      await user.click(screen.getByRole("menuitem", { name: "Sair" }));
+      await act(async () => {});
+      return user;
+    }
+
+    it("sem pendências: sai e limpa direto, sem Dialog, e recarrega no /login", async () => {
+      seedSession({ token: true });
+      render(<AppShell>conteúdo</AppShell>);
+
+      await signOut();
+
+      expect(pendingOf).toHaveBeenCalledExactlyOnceWith(owner.id);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(signOutOnDevice).toHaveBeenCalledOnce();
+      expect(reloadAt).toHaveBeenCalledExactlyOnceWith("/login");
+    });
+
+    it("com pendências: o Dialog diz quantas, e só limpa depois de confirmar", async () => {
+      vi.mocked(pendingOf).mockResolvedValue(3);
+      seedSession({ token: true });
+      render(<AppShell>conteúdo</AppShell>);
+
+      const user = await signOut();
+
+      const dialog = screen.getByRole("dialog", {
+        name: "Sair e apagar as alterações deste aparelho?",
+      });
+      expect(dialog.textContent).toContain("Há 3 alterações que ainda não foram enviadas.");
+      expect(dialog.textContent).not.toContain("Sem rede");
+      expect(signOutOnDevice).not.toHaveBeenCalled();
+
+      await user.click(within(dialog).getByRole("button", { name: "Sair e apagar" }));
+      await act(async () => {});
+
+      expect(signOutOnDevice).toHaveBeenCalledOnce();
+      expect(reloadAt).toHaveBeenCalledExactlyOnceWith("/login");
+    });
+
+    it("com pendências, Cancelar fecha e não limpa nada", async () => {
+      vi.mocked(pendingOf).mockResolvedValue(3);
+      seedSession({ token: true });
+      render(<AppShell>conteúdo</AppShell>);
+
+      const user = await signOut();
+      await user.click(screen.getByRole("button", { name: "Cancelar" }));
+
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(signOutOnDevice).not.toHaveBeenCalled();
+      expect(reloadAt).not.toHaveBeenCalled();
+    });
+
+    it("com pendências e offline: o Dialog tem a frase a mais", async () => {
+      vi.mocked(pendingOf).mockResolvedValue(3);
+      seedSession({ token: true });
+      setNetwork(false);
+      render(<AppShell>conteúdo</AppShell>);
+
+      await signOut();
+
+      expect(screen.getByRole("dialog").textContent).toContain(
+        "Sem rede, elas não têm como ser enviadas agora: conecte-se e espere o envio para não perder nada.",
+      );
     });
   });
 });

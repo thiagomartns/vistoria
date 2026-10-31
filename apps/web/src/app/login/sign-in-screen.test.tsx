@@ -3,8 +3,9 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { accessToken } from "@/shared/api/client";
-import { signIn } from "@/shared/api/generated";
-import { resetSession } from "@/shared/auth/session";
+import { pendingOf, wipeLocalStore } from "@/features/local-store/services/local-store";
+import { signIn, signOut } from "@/shared/api/generated";
+import { canSendAs, resetSession } from "@/shared/auth/session";
 import type { Outbox } from "@/shared/sync/outbox";
 import { resetSyncStatus, trackOutbox } from "@/shared/sync/sync-status";
 
@@ -19,6 +20,13 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/shared/api/generated", async (original) => ({
   ...(await original<typeof import("@/shared/api/generated")>()),
   signIn: vi.fn<() => unknown>(),
+  signOut: vi.fn<() => unknown>(async () => ({ response: new Response(null, { status: 204 }) })),
+}));
+
+// O banco local de verdade precisa do IndexedDB: aqui importa contar as pendências do anterior e apagar (ou não).
+vi.mock("@/features/local-store/services/local-store", () => ({
+  pendingOf: vi.fn<(ownerId: string) => Promise<number>>(async () => 0),
+  wipeLocalStore: vi.fn<(ownerId: string) => Promise<void>>(async () => {}),
 }));
 
 // A outbox real precisa do IndexedDB; aqui a tela só a abre.
@@ -51,6 +59,9 @@ afterEach(() => {
   localStorage.clear();
   vi.restoreAllMocks();
   vi.mocked(signIn).mockReset();
+  vi.mocked(signOut).mockClear();
+  vi.mocked(pendingOf).mockReset().mockResolvedValue(0);
+  vi.mocked(wipeLocalStore).mockClear();
   navigation.replace.mockReset();
 });
 
@@ -181,5 +192,94 @@ describe("/login", () => {
     render(<SignInScreen />);
 
     expect(navigation.replace).toHaveBeenCalledWith("/inspections");
+  });
+  describe("outro usuário (frame 2 da #128)", () => {
+    const bia = { id: "0199a0b2-7c1e-7f3a-9b2d-ffffffffffff", name: "Bia Lima" };
+    const signedInAs = (who: typeof owner) =>
+      ({
+        data: { accessToken: "token-novo", expiresAt: "2026-10-31T15:00:00Z", user: who },
+      }) as never;
+
+    /** Ana é a dona, com a sessão expirada; Bia entra. */
+    function previousOwnerWith(pending: number) {
+      localStorage.setItem("vistoria.owner", JSON.stringify(owner));
+      resetSession();
+      vi.mocked(pendingOf).mockResolvedValue(pending);
+      vi.mocked(signIn).mockResolvedValue(signedInAs(bia));
+    }
+
+    it("com pendências da anterior: o aviso diz quantas, os campos param, e nada vira sessão", async () => {
+      previousOwnerWith(4);
+      render(<SignInScreen />);
+
+      await fillAndSubmit("bia@exemplo.com");
+
+      const notice = await screen.findByText("As alterações da outra conta serão apagadas");
+      expect(notice.closest("[role=alert]")?.textContent).toContain(
+        "Há 4 alterações de Ana Souza que ainda não foram enviadas.",
+      );
+      // O fieldset desabilita os campos (`:disabled`), sem mexer no atributo de cada um.
+      expect(screen.getByLabelText("E-mail").matches(":disabled")).toBe(true);
+      expect(screen.getByLabelText("Senha").matches(":disabled")).toBe(true);
+      expect(screen.getByRole("button", { name: "Entrar" }).matches(":disabled")).toBe(true);
+      expect(accessToken.get()).toBeNull();
+      expect(wipeLocalStore).not.toHaveBeenCalled();
+      expect(navigation.replace).not.toHaveBeenCalled();
+    });
+
+    it("Apagar e entrar: apaga o banco da anterior e entra", async () => {
+      previousOwnerWith(4);
+      render(<SignInScreen />);
+      await fillAndSubmit("bia@exemplo.com");
+
+      await userEvent.setup().click(await screen.findByRole("button", { name: "Apagar e entrar" }));
+
+      await waitFor(() => expect(navigation.replace).toHaveBeenCalledWith("/inspections"));
+      expect(wipeLocalStore).toHaveBeenCalledExactlyOnceWith(owner.id);
+      expect(accessToken.get()).toBe("token-novo");
+      expect(JSON.parse(localStorage.getItem("vistoria.owner")!)).toEqual(bia);
+    });
+
+    it("Cancelar: signOut da conta nova, o formulário volta e nada muda", async () => {
+      previousOwnerWith(4);
+      render(<SignInScreen />);
+      await fillAndSubmit("bia@exemplo.com");
+
+      await userEvent.setup().click(await screen.findByRole("button", { name: "Cancelar" }));
+
+      await waitFor(() =>
+        expect(screen.queryByText("As alterações da outra conta serão apagadas")).toBeNull(),
+      );
+      expect(signOut).toHaveBeenCalledOnce();
+      expect(wipeLocalStore).not.toHaveBeenCalled();
+      expect(accessToken.get()).toBeNull();
+      expect(JSON.parse(localStorage.getItem("vistoria.owner")!)).toEqual(owner);
+      expect(screen.getByLabelText("E-mail").matches(":disabled")).toBe(false);
+      expect(navigation.replace).not.toHaveBeenCalled();
+    });
+
+    it("sem pendências da anterior: entra direto, apagando o banco dela", async () => {
+      previousOwnerWith(0);
+      render(<SignInScreen />);
+
+      await fillAndSubmit("bia@exemplo.com");
+
+      await waitFor(() => expect(navigation.replace).toHaveBeenCalledWith("/inspections"));
+      expect(screen.queryByText("As alterações da outra conta serão apagadas")).toBeNull();
+      expect(wipeLocalStore).toHaveBeenCalledExactlyOnceWith(owner.id);
+    });
+
+    it("a mesma dona entrando de novo: sem aviso, sem apagar, e a fila retoma", async () => {
+      previousOwnerWith(4);
+      vi.mocked(signIn).mockResolvedValue(signedInAs(owner));
+      render(<SignInScreen />);
+
+      await fillAndSubmit();
+
+      await waitFor(() => expect(navigation.replace).toHaveBeenCalledWith("/inspections"));
+      expect(pendingOf).not.toHaveBeenCalled();
+      expect(wipeLocalStore).not.toHaveBeenCalled();
+      expect(canSendAs(owner.id)).toBe(true);
+    });
   });
 });

@@ -319,8 +319,11 @@ export async function askToDelete(page, scope) {
 /** A linha da Table (desktop) da vistoria `id`: o endereço se repete entre vistorias do mesmo imóvel. */
 export const inspectionRow = (page, id) => page.getByRole("row").filter({ has: page.locator(`a[href$="id=${id}"]`) });
 
-/** Entra pelo /login e volta para `next` (a lista de clientes, onde espera o título, ou outra tela, que o chamador espera). */
-export async function signIn(page, user, { expired, next = route } = {}) {
+/**
+ * Entra pelo /login e volta para `next` (a lista de clientes, onde espera o título, ou outra tela, que o chamador espera).
+ * Com `stays`, não espera sair do /login: o aviso de outro usuário pede uma decisão antes (#133).
+ */
+export async function signIn(page, user, { expired, next = route, stays = false } = {}) {
   await page.goto(`${base}/login?next=${encodeURIComponent(next)}`);
   if (expired) await page.getByText("Sua sessão expirou").waitFor();
   const notice = expired ? await page.getByRole("status").first().textContent() : null;
@@ -336,8 +339,54 @@ export async function signIn(page, user, { expired, next = route } = {}) {
     console.log(`   · signin 429 rate-limited: espera o Retry-After de ${seconds} s`);
     await wait(seconds * 1000);
   }
-  if (next === route) await page.getByRole("heading", { level: 1, name: "Clientes" }).waitFor();
+  if (next === route && !stays) await page.getByRole("heading", { level: 1, name: "Clientes" }).waitFor();
   return notice;
+}
+
+/** O aviso de outro usuário no /login (SessionExpired, frame 2 da #128). */
+export const otherUserWarning = (page) =>
+  page.getByRole("alert").filter({ hasText: "As alterações da outra conta serão apagadas" });
+
+/** O número do aviso ("Há 3 alterações de Ana…", "Há 1 alteração que…"), lido de `scope` antes de `after`. */
+export async function shownPending(scope, after) {
+  const text = await scope.textContent();
+  const match = text.match(new RegExp(`Há (\\d+) alteraç(?:ão|ões) ${after}`));
+  assert.ok(match, `o aviso diz quantas alterações se perdem: ${text}`);
+  return Number(match[1]);
+}
+
+/** Os rascunhos de `user` que o servidor recusou ou que estão em conflito: já saíram da fila, mas se perdem ao apagar. */
+export const heldDrafts = (page, user) =>
+  page.evaluate(async (name) => {
+    const request = (r) =>
+      new Promise((done, fail) => {
+        r.onsuccess = () => done(r.result);
+        r.onerror = () => fail(r.error);
+      });
+    const db = await request(indexedDB.open(name));
+    try {
+      const drafts = await request(db.transaction("drafts").objectStore("drafts").getAll());
+      return drafts.filter((draft) => draft.status === "rejected" || draft.status === "conflict").length;
+    } finally {
+      db.close();
+    }
+  }, `vistoria-${user.id}`);
+
+/** Os bancos IndexedDB do navegador, sem abrir nenhum (abrir recriaria um banco apagado). */
+export const databaseNames = (page) =>
+  page.evaluate(async () => (await indexedDB.databases()).map((db) => db.name));
+
+/** Espera os dois bancos de `user` (o local e o da outbox) sumirem do navegador. */
+export const wiped = (page, user) =>
+  until(async () => {
+    const names = await databaseNames(page);
+    return !names.includes(`vistoria-${user.id}`) && !names.includes(`vistoria-outbox-${user.id}`);
+  }, `os bancos de ${user.name} apagados`);
+
+/** Abre o menu do usuário (o avatar no celular, a sidebar no desktop) e escolhe Sair. */
+export async function chooseSignOut(page) {
+  await page.getByRole("button", { name: "Menu do usuário" }).locator("visible=true").first().click();
+  await page.getByRole("menuitem", { name: "Sair" }).click();
 }
 
 /** Abaixo de `md` a Table vira lista de ListRow. */

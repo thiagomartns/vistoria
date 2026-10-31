@@ -1,7 +1,8 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { pendingOf, wipeLocalStore } from "@/features/local-store/services/local-store";
 import { signUp } from "@/shared/api/generated";
 import { resetSession, sessionStore } from "@/shared/auth/session";
 
@@ -18,6 +19,11 @@ vi.mock("@/shared/api/generated", async (original) => ({
   signUp: vi.fn<() => unknown>(),
 }));
 
+vi.mock("@/features/local-store/services/local-store", () => ({
+  pendingOf: vi.fn<(ownerId: string) => Promise<number>>(async () => 0),
+  wipeLocalStore: vi.fn<(ownerId: string) => Promise<void>>(async () => {}),
+}));
+
 const owner = { id: "0199a0b2-7c1e-7f3a-9b2d-1c2d3e4f5a6b", name: "Ana Souza" };
 
 async function fillAndSubmit() {
@@ -32,6 +38,8 @@ afterEach(() => {
   resetSession();
   localStorage.clear();
   vi.mocked(signUp).mockReset();
+  vi.mocked(pendingOf).mockReset().mockResolvedValue(0);
+  vi.mocked(wipeLocalStore).mockClear();
   navigation.replace.mockReset();
 });
 
@@ -92,5 +100,30 @@ describe("/signup", () => {
 
     await vi.waitFor(() => expect(navigation.replace).toHaveBeenCalledWith("/inspections"));
     expect(sessionStore.getSnapshot()).toMatchObject({ status: "active", user: owner });
+  });
+  it("a conta nova com pendências do dono anterior: o mesmo aviso do /login, e confirmar apaga o banco dele", async () => {
+    const previous = { id: "0199a0b2-7c1e-7f3a-9b2d-ffffffffffff", name: "Bia Lima" };
+    localStorage.setItem("vistoria.owner", JSON.stringify(previous));
+    resetSession();
+    vi.mocked(pendingOf).mockResolvedValue(2);
+    vi.mocked(signUp).mockResolvedValue({
+      data: { accessToken: "token", expiresAt: "2026-10-31T15:00:00Z", user: owner },
+    } as never);
+    render(<SignUpScreen />);
+
+    await fillAndSubmit();
+
+    const notice = await screen.findByText("As alterações da outra conta serão apagadas");
+    expect(notice.closest("[role=alert]")?.textContent).toContain(
+      "Há 2 alterações de Bia Lima que ainda não foram enviadas.",
+    );
+    expect(navigation.replace).not.toHaveBeenCalled();
+    expect(sessionStore.getSnapshot().user).toEqual(previous);
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "Apagar e entrar" }));
+
+    await waitFor(() => expect(navigation.replace).toHaveBeenCalledWith("/inspections"));
+    expect(wipeLocalStore).toHaveBeenCalledExactlyOnceWith(previous.id);
+    expect(sessionStore.getSnapshot().user).toEqual(owner);
   });
 });

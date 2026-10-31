@@ -1,5 +1,12 @@
 import { type RenewOutcome, accessToken, readFailure } from "../api/client";
-import { type AuthDto, type AuthUserDto, refreshToken, signIn, signUp } from "../api/generated";
+import {
+  type AuthDto,
+  type AuthUserDto,
+  refreshToken,
+  signIn,
+  signOut,
+  signUp,
+} from "../api/generated";
 import { zAuthUserDto } from "../api/generated/zod.gen";
 import { type ApiFailure, handleProblem } from "../api/problems";
 import { type Announcement, type RefreshLock, createRefreshLock } from "./refreshLock";
@@ -26,12 +33,19 @@ export interface SessionSnapshot {
   ready: boolean;
   status: SessionStatus;
   user: SessionUser | null;
+  /** A última renovação aceita neste aparelho (refresh ou login): de onde conta a janela offline. */
+  renewedAt: Date | null;
 }
 
 const OWNER_KEY = "vistoria.owner";
 const RENEWED_AT_KEY = "vistoria.renewed-at";
 
-const SERVER_SNAPSHOT: SessionSnapshot = { ready: false, status: "signed-out", user: null };
+const SERVER_SNAPSHOT: SessionSnapshot = {
+  ready: false,
+  status: "signed-out",
+  user: null,
+  renewedAt: null,
+};
 
 let snapshot: SessionSnapshot | undefined;
 const listeners = new Set<() => void>();
@@ -66,11 +80,12 @@ function writeOwner(user: SessionUser | null) {
   }
 }
 
-function writeRenewedAt(at: Date) {
+function writeRenewedAt(at: Date | null) {
   try {
-    localStorage.setItem(RENEWED_AT_KEY, at.toISOString());
+    if (at) localStorage.setItem(RENEWED_AT_KEY, at.toISOString());
+    else localStorage.removeItem(RENEWED_AT_KEY);
   } catch {
-    // Sem localStorage, a janela offline (#133) não tem de onde contar.
+    // Sem localStorage, a janela offline não tem de onde contar (e vale como vencida).
   }
 }
 
@@ -106,13 +121,13 @@ function current(): SessionSnapshot {
   if (typeof window === "undefined") return SERVER_SNAPSHOT;
   if (!snapshot) {
     const user = readOwner();
-    snapshot = { ready: true, status: statusOf(user), user };
+    snapshot = { ready: true, status: statusOf(user), user, renewedAt: lastRenewedAt() };
   }
   return snapshot;
 }
 
 function update(user: SessionUser | null) {
-  snapshot = { ready: true, status: statusOf(user), user };
+  snapshot = { ready: true, status: statusOf(user), user, renewedAt: lastRenewedAt() };
   for (const listener of listeners) listener();
 }
 
@@ -277,7 +292,16 @@ export function canSendAs(ownerId: string): boolean {
   return status === "active" && user?.id === ownerId;
 }
 
-function begin({ accessToken: token, user }: AuthDto) {
+/** O dono do aparelho (quem entrou por último e não saiu), com ou sem token. */
+export function currentOwner(): SessionUser | null {
+  return current().user;
+}
+
+/**
+ * Começa a sessão com o que a API devolveu no login ou no cadastro: o token, o dono e a data da renovação. Quem chama
+ * já decidiu o que fazer com o banco local de um dono anterior (outro usuário, ADR 0046).
+ */
+export function beginSession({ accessToken: token, user }: AuthDto) {
   accessToken.set(token);
   writeOwner(user);
   writeRenewedAt(new Date());
@@ -286,26 +310,52 @@ function begin({ accessToken: token, user }: AuthDto) {
   update(user);
 }
 
-/** Entra com e-mail e senha; devolve a falha, ou `null` com a sessão já ativa. */
+/** O que a API respondeu ao login ou ao cadastro, sem virar sessão ainda. */
+export type Authentication = { ok: true; auth: AuthDto } | { ok: false; failure: ApiFailure };
+
+/** Confere e-mail e senha na API. O token só vira sessão com `beginSession`. */
+export async function authenticateWithPassword(
+  email: string,
+  password: string,
+): Promise<Authentication> {
+  const result = await signIn({ body: { email, password } });
+  return result.data
+    ? { ok: true, auth: result.data }
+    : { ok: false, failure: readFailure(result) };
+}
+
+/** Cria a conta na API (sem verificação de e-mail na V1). O token só vira sessão com `beginSession`. */
+export async function authenticateNewAccount(
+  name: string,
+  email: string,
+  password: string,
+): Promise<Authentication> {
+  const result = await signUp({ body: { name, email, password } });
+  return result.data
+    ? { ok: true, auth: result.data }
+    : { ok: false, failure: readFailure(result) };
+}
+
+/** Entra com e-mail e senha, sem olhar o banco local; devolve a falha, ou `null` com a sessão já ativa. */
 export async function signInWithPassword(
   email: string,
   password: string,
 ): Promise<ApiFailure | null> {
-  const result = await signIn({ body: { email, password } });
-  if (!result.data) return readFailure(result);
-  begin(result.data);
+  const result = await authenticateWithPassword(email, password);
+  if (!result.ok) return result.failure;
+  beginSession(result.auth);
   return null;
 }
 
-/** Cria a conta e já entra (sem verificação de e-mail na V1); devolve a falha, ou `null` com a sessão ativa. */
+/** Cria a conta e já entra, sem olhar o banco local; devolve a falha, ou `null` com a sessão ativa. */
 export async function signUpWithPassword(
   name: string,
   email: string,
   password: string,
 ): Promise<ApiFailure | null> {
-  const result = await signUp({ body: { name, email, password } });
-  if (!result.data) return readFailure(result);
-  begin(result.data);
+  const result = await authenticateNewAccount(name, email, password);
+  if (!result.ok) return result.failure;
+  beginSession(result.auth);
   return null;
 }
 
@@ -320,13 +370,30 @@ export function expireSession(): void {
 }
 
 /**
- * Sai da sessão neste aparelho. Sem `signOut` na API até a #133, só esquece o token e o dono; o banco local do
- * usuário e a outbox ficam (apagar com aviso também é da #133) e voltam quando ele entrar de novo.
+ * Esquece a sessão neste aparelho: o token, o dono e a data da renovação. Não toca no banco local nem na API: sair de
+ * verdade é `signOutOnDevice` (local-store), que também apaga os dados e chama `signOutOnServer`.
  */
 export function signOutSession(): void {
   accessToken.set(null);
   writeOwner(null);
+  writeRenewedAt(null);
+  renewOnReconnect = false;
   update(null);
+}
+
+/** Quanto o `signOut` espera a API antes de desistir: sem resposta, a limpeza local já aconteceu ou acontece. */
+export const SIGN_OUT_TIMEOUT_MS = 5000;
+
+/**
+ * `signOut` na API: revoga a família do refresh token e apaga o cookie. Sem rede, ou com qualquer erro, não faz nada:
+ * o erro de rede nunca impede a limpeza local, e o cookie que sobrar não vale para outro dono (ADR 0045).
+ */
+export async function signOutOnServer(): Promise<void> {
+  try {
+    await signOut({ signal: AbortSignal.timeout(SIGN_OUT_TIMEOUT_MS) });
+  } catch {
+    // Sem resposta: a família expira sozinha no prazo do refresh token.
+  }
 }
 
 accessToken.renew = renewSession;

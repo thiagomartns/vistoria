@@ -7,10 +7,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@sanjou/ui/dropdown-menu";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, LogOut } from "lucide-react";
 
 // Usuário do shell: rodapé da sidebar no desktop, avatar no header do celular; os dois abrem o mesmo menu
-// (nome e Sair). Sem sessão, "?" e "Entrar".
+// (nome, separador e Sair com o ícone LogOut, frame 3 da #128). Sem sessão, "?" e "Entrar".
 
 /** "Thiago Martins" → "TM"; "Ana" → "A". */
 export function initialsOf(name: string): string {
@@ -36,7 +36,8 @@ export function UserMenu({ user, layout, onSignOut, onSignIn }: UserMenuProps) {
   const focus = "outline-none focus-visible:outline-2 focus-visible:outline-ring";
 
   return (
-    <DropdownMenu>
+    // Sem modal: o Sair pode abrir um Dialog, e o menu fecha antes sem disputar o foco e o pointer-events do body.
+    <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
         {layout === "sidebar" ? (
           <button
@@ -65,7 +66,10 @@ export function UserMenu({ user, layout, onSignOut, onSignIn }: UserMenuProps) {
           <>
             <DropdownMenuLabel>{user.name}</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={onSignOut}>Sair</DropdownMenuItem>
+            <DropdownMenuItem onSelect={onSignOut}>
+              <LogOut aria-hidden="true" />
+              Sair
+            </DropdownMenuItem>
           </>
         ) : (
           <DropdownMenuItem onSelect={onSignIn}>Entrar</DropdownMenuItem>
