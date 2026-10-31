@@ -67,9 +67,12 @@ function renewingOnUnauthorized(
 ): (request: Request) => Promise<Response> {
   return async (request) => {
     if (isAuthPath(request.url)) return send(request);
-    const replay = request.clone();
+    // O corpo (JSON) é lido uma vez e vai como texto nas duas requisições: um `clone()` o viraria stream na rede.
+    const body = request.body ? await request.text() : undefined;
+    const copy = () => new Request(request, body === undefined ? {} : { body });
+    const replay = copy();
     const sentWith = request.headers.get("Authorization");
-    const response = await send(request);
+    const response = await send(copy());
     if (!(await isUnauthorized(response))) return response;
     const before = token.get();
     if (!before || `Bearer ${before}` === sentWith) {
