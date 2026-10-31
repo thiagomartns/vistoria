@@ -1,4 +1,4 @@
-import { canSendAs, sessionStore } from "../auth/session";
+import { canSendAs, renewAfterReconnect, sessionStore } from "../auth/session";
 import type { DraftsCollection } from "./drafts";
 import { type SyncSnapshot, syncStatusStore } from "./sync-status";
 
@@ -69,6 +69,8 @@ export function startPull({
       previous.outboxRead &&
       previous.entries.length > 0;
     previous = next;
+    // Na volta da rede, a renovação sai antes: o ciclo encontra a sessão `renewing` e espera o gatilho da sessão.
+    if (networkBack) renewAfterReconnect();
     if (networkBack || outboxDrained) trigger();
   });
 

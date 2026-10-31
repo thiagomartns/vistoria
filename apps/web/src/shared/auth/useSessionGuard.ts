@@ -6,8 +6,9 @@ import { afterSignIn } from "./useAuthForm";
 import { useSession } from "./useSession";
 
 /**
- * Para onde o shell manda, ou `null` para ficar. Sem dono, `/login`. Sessão expirada fica enquanto não há rede (os
- * dados locais aparecem e a outbox espera); com rede, `/login` pede para entrar de novo (SessionExpired).
+ * Para onde o shell manda, ou `null` para ficar. Sem dono, `/login`. Renovando (ao abrir ou ao voltar a rede), fica:
+ * o refresh decide. Sessão expirada fica enquanto não há rede (os dados locais aparecem e a outbox espera); com rede,
+ * `/login` pede para entrar de novo (SessionExpired).
  */
 export function shellRedirect(session: SessionSnapshot, online: boolean): string | null {
   if (!session.ready) return null;

@@ -23,6 +23,7 @@ describe("shellRedirect", () => {
       "/login",
     ],
     ["sessão ativa", session("active"), true, null],
+    ["renovando (abriu com rede): o refresh decide", session("renewing"), true, null],
     ["sessão expirada, offline: fica com os dados locais", session("expired"), false, null],
     ["sessão expirada, rede de volta: SessionExpired", session("expired"), true, "/login"],
     ["antes de ler o localStorage, nada", session("signed-out", false), true, null],
