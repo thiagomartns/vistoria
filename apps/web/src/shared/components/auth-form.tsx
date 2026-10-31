@@ -19,6 +19,8 @@ export type AuthFormProps<T extends FieldValues> = {
   error: string | null;
   /** Aviso acima do título: SessionExpired, ou "Conexão necessária" sem rede. */
   notice?: ReactNode;
+  /** Campos e botão desabilitados enquanto o aviso pede uma decisão (outro usuário, frame 2 da #128). */
+  disabled?: boolean;
 };
 
 type AuthFormLayoutProps<T extends FieldValues> = AuthFormProps<T> & {
@@ -35,6 +37,7 @@ export function AuthForm<T extends FieldValues>({
   onSubmit,
   error,
   notice,
+  disabled = false,
   title,
   description,
   submitLabel,
@@ -60,10 +63,12 @@ export function AuthForm<T extends FieldValues>({
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           ) : null}
-          <div className="flex flex-col gap-4">{children}</div>
-          <Button type="submit" className="w-full" disabled={isSubmitting}>
-            {isSubmitting ? submittingLabel : submitLabel}
-          </Button>
+          <fieldset disabled={disabled} className="contents">
+            <div className="flex flex-col gap-4">{children}</div>
+            <Button type="submit" className="w-full" disabled={isSubmitting || disabled}>
+              {isSubmitting ? submittingLabel : submitLabel}
+            </Button>
+          </fieldset>
         </form>
       </Form>
       <p className="text-center text-sm text-muted-foreground">

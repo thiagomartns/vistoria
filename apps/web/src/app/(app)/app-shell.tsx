@@ -7,11 +7,14 @@ import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useState } from "react";
 
 import { useLocalOutbox } from "@/features/local-store/hooks/useLocalOutbox";
+import { useSignOut } from "@/features/local-store/hooks/useSignOut";
+import { useOfflineWindow } from "@/shared/auth/useOfflineWindow";
 import { useSession } from "@/shared/auth/useSession";
 import { useSessionGuard } from "@/shared/auth/useSessionGuard";
 import { BottomNav, Sidebar } from "@/shared/components/nav";
 import { OfflineBanner } from "@/shared/components/offline-banner";
 import { OutboxPanel } from "@/shared/components/outbox-panel";
+import { SignOutDialog } from "@/shared/components/sign-out-dialog";
 import { SyncBadge } from "@/shared/components/sync-badge";
 import { SyncStatus } from "@/shared/components/sync-status";
 import { UserMenu } from "@/shared/components/user-menu";
@@ -23,7 +26,9 @@ import { type ShellHeader, ShellHeaderContext } from "./shell-header";
 // Shell do app (Figma "Shell (#7)", 14:1006): sidebar no desktop, barra inferior no celular, SyncStatus no header
 // e OfflineBanner no topo do conteúdo. Uma tela de registro troca o título do header pelo <PageHeader />; no modo foco
 // (tela de campo), o celular fica sem a barra inferior e sem o avatar. Sem sessão vai para /login; com a sessão expirada, fica offline com os dados
-// locais e vai para /login quando a rede volta. O bloqueio da janela offline de 72 h é do M4.
+// locais e vai para /login quando a rede volta. Vencida a janela offline de 72 h, o conteúdo vira o bloqueio
+// "Reconecte para continuar", sem apagar nada, até um refresh aceito (frame 8 da #128). "Sair" passa pelo useSignOut:
+// sem pendências limpa direto; com pendências, o SignOutDialog pede confirmação (frames 4 e 5).
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -32,6 +37,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const sync = useSyncStatus(conflicts);
   const [panelOpen, setPanelOpen] = useState(false);
   const [header, setHeader] = useState<ShellHeader | null>(null);
+  const offlineWindow = useOfflineWindow();
+  const signOut = useSignOut();
   useSessionGuard(sync.offline);
 
   const current = navItemFor(pathname);
@@ -40,10 +47,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       user={session.user}
       layout={layout}
       onSignIn={() => router.push("/login")}
-      onSignOut={() => {
-        session.signOut();
-        router.push("/login");
-      }}
+      onSignOut={() => void signOut.request()}
     />
   );
   const status = (size: "completo" | "compacto") => (
@@ -101,12 +105,22 @@ export function AppShell({ children }: { children: ReactNode }) {
         <main
           className={`flex min-h-0 flex-1 flex-col overflow-y-auto md:gap-4 md:p-6 ${header?.focus ? "" : "gap-3 p-4"}`}
         >
-          {sync.offline ? (
-            <div className={header?.focus ? "px-4 pt-4 md:p-0" : "contents"}>
-              <OfflineBanner type="aviso" />
-            </div>
-          ) : null}
-          <ShellHeaderContext value={setHeader}>{children}</ShellHeaderContext>
+          {offlineWindow.expired ? (
+            <OfflineBanner
+              type="bloqueio"
+              pending={sync.pending ?? 0}
+              onRetry={() => void session.renew()}
+            />
+          ) : (
+            <>
+              {sync.offline ? (
+                <div className={header?.focus ? "px-4 pt-4 md:p-0" : "contents"}>
+                  <OfflineBanner type="aviso" />
+                </div>
+              ) : null}
+              <ShellHeaderContext value={setHeader}>{children}</ShellHeaderContext>
+            </>
+          )}
         </main>
         {header?.focus ? null : (
           <div className="md:hidden">
@@ -114,6 +128,16 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         )}
       </div>
+      <SignOutDialog
+        open={signOut.pending !== null}
+        onOpenChange={(open) => {
+          if (!open) signOut.cancel();
+        }}
+        pending={signOut.pending ?? 0}
+        offline={sync.offline}
+        busy={signOut.busy}
+        onConfirm={signOut.confirm}
+      />
       <OutboxPanel
         open={panelOpen}
         onOpenChange={setPanelOpen}

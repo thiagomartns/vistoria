@@ -1,4 +1,5 @@
 import { closeLocalDb, openLocalDb } from "@/shared/db/local-db";
+import { deleteDeviceDatabases } from "@/shared/db/wipe";
 import { type DraftsCollection, createDraftsCollection } from "@/shared/sync/drafts";
 import { type Outbox, startOutbox } from "@/shared/sync/outbox";
 import {
@@ -12,7 +13,7 @@ import {
   skipMarksOf,
 } from "@/shared/sync/pull";
 import { type PullTriggers, startPull } from "@/shared/sync/pull-triggers";
-import { trackOutbox } from "@/shared/sync/sync-status";
+import { trackOutbox, untrackOutbox } from "@/shared/sync/sync-status";
 
 import {
   type ClientsCollection,
@@ -132,9 +133,39 @@ export function openLocalStore(ownerId: string): Promise<LocalStore> {
   return opening;
 }
 
-/** Fecha o que estiver aberto. Só para testes. */
+/** Fecha o que estiver aberto: a outbox para, o pull para e o banco fecha. */
 export async function closeLocalStore(): Promise<void> {
   const previous = current;
   current = undefined;
   if (previous) await close(previous.ownerId, previous.opening);
+}
+
+/**
+ * Quantas alterações de `ownerId` se perdem se o banco dele for apagado: as transações da outbox e os rascunhos que o
+ * servidor recusou ou que estão em conflito (já saíram da fila, mas guardam o que a pessoa fez). É o número do aviso
+ * de outro usuário e do "Sair" (ADR 0046).
+ */
+export async function pendingOf(ownerId: string): Promise<number> {
+  const store = await openLocalStore(ownerId);
+  await store.drafts.preload();
+  const queued = (await store.outbox.peekOutbox()).length;
+  const held = store.drafts.toArray.filter(
+    (draft) => draft.status === "rejected" || draft.status === "conflict",
+  ).length;
+  return queued + held;
+}
+
+/**
+ * Apaga tudo o que `ownerId` deixou no aparelho (ADR 0046). Com o banco dele aberto, esvazia a outbox antes de
+ * fechar: o adaptador da outbox nunca fecha a própria conexão, então o `deleteDatabase` dela pode esperar a página
+ * recarregar, mas a fila já não tem nada. Depois fecha tudo, apaga os bancos e esquece o que o SyncStatus mostrava.
+ */
+export async function wipeLocalStore(ownerId: string): Promise<void> {
+  if (current?.ownerId === ownerId) {
+    const store = await current.opening.catch(() => undefined);
+    await store?.outbox.clearOutbox();
+    await closeLocalStore();
+  }
+  untrackOutbox();
+  await deleteDeviceDatabases(ownerId);
 }

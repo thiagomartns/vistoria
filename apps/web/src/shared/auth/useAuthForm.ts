@@ -23,7 +23,11 @@ interface AuthFormOptions<T extends FieldValues> {
   schema: z.ZodType<T, T>;
   errors: { error: z.core.$ZodErrorMap };
   defaultValues: DefaultValues<T>;
-  submit: (values: T) => Promise<ApiFailure | null>;
+  /**
+   * Envia: `null` entrou (vai para o app), a falha fica no formulário, e `"hold"` fica na tela sem erro (o aviso de
+   * outro usuário espera a decisão; quem decide chama `leave`).
+   */
+  submit: (values: T) => Promise<ApiFailure | null | "hold">;
   /** Mensagem para a falha sem reação própria. */
   fallback: string;
 }
@@ -40,11 +44,14 @@ export function useAuthForm<T extends FieldValues>({
   const form = useForm<T>({ resolver: zodResolver(schema, errors), defaultValues });
   const [error, setError] = useState<string | null>(null);
 
+  const leave = () => router.replace(afterSignIn(window.location.search));
+
   const onSubmit = form.handleSubmit(async (values) => {
     setError(null);
     const failure = await submit(values);
+    if (failure === "hold") return;
     if (!failure) {
-      router.replace(afterSignIn(window.location.search));
+      leave();
       return;
     }
     const view = readAuthFailure(failure, Object.keys(defaultValues), fallback);
@@ -54,5 +61,5 @@ export function useAuthForm<T extends FieldValues>({
     setError(view.form);
   });
 
-  return { form, error, onSubmit };
+  return { form, error, onSubmit, leave };
 }

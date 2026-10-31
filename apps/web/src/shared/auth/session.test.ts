@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { accessToken } from "../api/client";
-import { refreshToken, signIn, signUp } from "../api/generated";
+import { refreshToken, signIn, signOut, signUp } from "../api/generated";
 import {
   canSendAs,
   expireSession,
@@ -11,12 +11,14 @@ import {
   resetSession,
   sessionStore,
   signInWithPassword,
+  signOutOnServer,
   signOutSession,
   signUpWithPassword,
 } from "./session";
 
 vi.mock("../api/generated", async (original) => ({
   ...(await original<typeof import("../api/generated")>()),
+  signOut: vi.fn<() => unknown>(),
   signIn: vi.fn<() => unknown>(),
   signUp: vi.fn<() => unknown>(),
   refreshToken: vi.fn<() => unknown>(),
@@ -67,11 +69,17 @@ afterEach(() => {
   vi.mocked(signIn).mockReset();
   vi.mocked(signUp).mockReset();
   vi.mocked(refreshToken).mockReset();
+  vi.mocked(signOut).mockReset();
 });
 
 describe("sessão", () => {
   it("sem ninguém no aparelho: signed-out, já lida do localStorage", () => {
-    expect(sessionStore.getSnapshot()).toEqual({ ready: true, status: "signed-out", user: null });
+    expect(sessionStore.getSnapshot()).toMatchObject({
+      ready: true,
+      status: "signed-out",
+      user: null,
+      renewedAt: null,
+    });
     expect(sessionStore.getServerSnapshot()).toMatchObject({ ready: false });
   });
 
@@ -83,7 +91,7 @@ describe("sessão", () => {
     expect(await signInWithPassword("t@exemplo.com", "senha-longa")).toBeNull();
 
     expect(accessToken.get()).toBe("token");
-    expect(sessionStore.getSnapshot()).toEqual({ ready: true, status: "active", user });
+    expect(sessionStore.getSnapshot()).toMatchObject({ ready: true, status: "active", user });
     expect(JSON.parse(localStorage.getItem("vistoria.owner") ?? "")).toEqual(user);
     expect(localStorage.getItem("vistoria.owner")).not.toContain("token");
     expect(listener).toHaveBeenCalled();
@@ -116,7 +124,7 @@ describe("sessão", () => {
 
     resetSession();
 
-    expect(sessionStore.getSnapshot()).toEqual({ ready: true, status: "renewing", user });
+    expect(sessionStore.getSnapshot()).toMatchObject({ ready: true, status: "renewing", user });
     expect(canSendAs(user.id)).toBe(false);
   });
 
@@ -125,7 +133,7 @@ describe("sessão", () => {
     reloaded();
     subscribe();
 
-    expect(sessionStore.getSnapshot()).toEqual({ ready: true, status: "expired", user });
+    expect(sessionStore.getSnapshot()).toMatchObject({ ready: true, status: "expired", user });
     expect(refreshToken).not.toHaveBeenCalled();
   });
 
@@ -137,6 +145,39 @@ describe("sessão", () => {
     await signInWithPassword("t@exemplo.com", "senha-longa");
 
     expect(lastRenewedAt()).toEqual(new Date("2026-10-31T12:00:00Z"));
+  });
+
+  it("o snapshot traz a última renovação aceita, e um refresh aceito a troca (o shell libera o bloqueio)", async () => {
+    localStorage.setItem("vistoria.renewed-at", "2026-10-27T12:00:00.000Z");
+    reloaded();
+    setNetwork(false);
+    subscribe();
+    expect(sessionStore.getSnapshot().renewedAt).toEqual(new Date("2026-10-27T12:00:00Z"));
+
+    vi.mocked(refreshToken).mockResolvedValue(refreshed());
+    setNetwork(true);
+    await renewSession();
+
+    expect(sessionStore.getSnapshot().renewedAt!.getTime()).toBeGreaterThan(
+      new Date("2026-10-27T12:00:00Z").getTime(),
+    );
+  });
+
+  it("sair também esquece a data da renovação", async () => {
+    vi.mocked(signIn).mockResolvedValue(auth());
+    await signInWithPassword("t@exemplo.com", "senha-longa");
+
+    signOutSession();
+
+    expect(localStorage.getItem("vistoria.renewed-at")).toBeNull();
+    expect(lastRenewedAt()).toBeNull();
+  });
+
+  it("signOut na API sem rede não lança: a limpeza local não depende dele", async () => {
+    vi.mocked(signOut).mockRejectedValue(new TypeError("Failed to fetch"));
+
+    await expect(signOutOnServer()).resolves.toBeUndefined();
+    expect(signOut).toHaveBeenCalledOnce();
   });
 
   it("dono ilegível no localStorage conta como ninguém", () => {
@@ -152,7 +193,7 @@ describe("sessão", () => {
     expireSession();
 
     expect(accessToken.get()).toBeNull();
-    expect(sessionStore.getSnapshot()).toEqual({ ready: true, status: "expired", user });
+    expect(sessionStore.getSnapshot()).toMatchObject({ ready: true, status: "expired", user });
   });
 
   it("sair esquece o token e o dono", async () => {
@@ -162,7 +203,12 @@ describe("sessão", () => {
     signOutSession();
 
     expect(accessToken.get()).toBeNull();
-    expect(sessionStore.getSnapshot()).toEqual({ ready: true, status: "signed-out", user: null });
+    expect(sessionStore.getSnapshot()).toMatchObject({
+      ready: true,
+      status: "signed-out",
+      user: null,
+      renewedAt: null,
+    });
     expect(localStorage.getItem("vistoria.owner")).toBeNull();
   });
 
@@ -285,7 +331,12 @@ describe("renovação", () => {
     await vi.waitFor(() => expect(refreshToken).toHaveBeenCalled());
     await new Promise((done) => setTimeout(done, 0));
     expect(accessToken.get()).toBeNull();
-    expect(sessionStore.getSnapshot()).toEqual({ ready: true, status: "signed-out", user: null });
+    expect(sessionStore.getSnapshot()).toMatchObject({
+      ready: true,
+      status: "signed-out",
+      user: null,
+      renewedAt: null,
+    });
   });
 
   it("a rede caiu e voltou: renova; sem ter caído, renewAfterReconnect não faz nada", async () => {

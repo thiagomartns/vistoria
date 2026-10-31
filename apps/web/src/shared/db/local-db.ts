@@ -1,8 +1,8 @@
 import { type IndexedDBInstance, createIndexedDB } from "@tanstack/db";
 
 // Banco local do aparelho, um por usuário (`vistoria-<user.id>`, frontend.md "Dados no aparelho"), com uma store por
-// collection: as das entidades, os rascunhos e, do pull, os cursores e as marcas dos registros pulados. Versão de schema
-// e wipe são do M4; até lá, uma store nova só sobe a versão (o IndexedDB cria as que faltam no upgrade).
+// collection: as das entidades, os rascunhos e, do pull, os cursores e as marcas dos registros pulados. Uma store nova só
+// sobe a versão (o IndexedDB cria as que faltam no upgrade). Apagar o banco ao sair ou trocar de usuário é `wipe.ts`.
 
 export const LOCAL_STORES = [
   "clients",

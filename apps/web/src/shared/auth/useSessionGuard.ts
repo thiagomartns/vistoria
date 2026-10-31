@@ -10,7 +10,10 @@ import { useSession } from "./useSession";
  * o refresh decide. Sessão expirada fica enquanto não há rede (os dados locais aparecem e a outbox espera); com rede,
  * `/login` pede para entrar de novo (SessionExpired).
  */
-export function shellRedirect(session: SessionSnapshot, online: boolean): string | null {
+export function shellRedirect(
+  session: Pick<SessionSnapshot, "ready" | "status" | "user">,
+  online: boolean,
+): string | null {
   if (!session.ready) return null;
   if (session.status === "signed-out") return "/login";
   if (session.status === "expired" && online) return "/login";

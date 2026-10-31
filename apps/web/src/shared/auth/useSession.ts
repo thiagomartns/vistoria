@@ -1,13 +1,13 @@
 import { useSyncExternalStore } from "react";
 
-import { sessionStore, signOutSession } from "./session";
+import { renewSession, sessionStore } from "./session";
 
-/** A sessão deste aparelho (estado, dono) e o "Sair". */
+/** A sessão deste aparelho (estado, dono, última renovação) e o "Tentar novamente" da renovação. */
 export function useSession() {
   const session = useSyncExternalStore(
     sessionStore.subscribe,
     sessionStore.getSnapshot,
     sessionStore.getServerSnapshot,
   );
-  return { ...session, signOut: signOutSession };
+  return { ...session, renew: renewSession };
 }

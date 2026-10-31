@@ -1,14 +1,27 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { closeLocalDb, openLocalDb } from "@/shared/db/local-db";
+import { deleteDeviceDatabases } from "@/shared/db/wipe";
 import { startOutbox } from "@/shared/sync/outbox";
 import { pullOnce } from "@/shared/sync/pull";
 import { startPull } from "@/shared/sync/pull-triggers";
 
-import { closeLocalStore, openLocalStore } from "./local-store";
+import { closeLocalStore, openLocalStore, pendingOf, wipeLocalStore } from "./local-store";
 
 // Um banco, uma outbox e um pull por usuário, a mesma outbox para clients, properties e inspections: trocar de dono fecha
 // os do anterior, e a fila dele não sai com o outro.
+
+/** O que a outbox e os rascunhos do próximo store aberto têm. */
+const device = vi.hoisted(() => ({
+  queued: [] as { id: string; mutations: object[]; createdAt: Date }[],
+  drafts: [] as { status: string }[],
+}));
+
+const entry = (id: string) => ({ id, mutations: [], createdAt: new Date() });
+
+vi.mock("@/shared/db/wipe", () => ({
+  deleteDeviceDatabases: vi.fn<(ownerId: string) => Promise<void>>(async () => {}),
+}));
 
 vi.mock("@/shared/db/local-db", () => ({
   openLocalDb: vi.fn<(ownerId: string) => Promise<object>>(async (ownerId) => ({ name: ownerId })),
@@ -40,6 +53,9 @@ vi.mock("@/shared/sync/drafts", () => ({
   createDraftsCollection: () => ({
     cleanup: vi.fn<() => Promise<void>>(async () => {}),
     preload: vi.fn<() => Promise<void>>(async () => {}),
+    get toArray() {
+      return device.drafts;
+    },
   }),
 }));
 
@@ -57,7 +73,10 @@ vi.mock("@/shared/sync/pull", async (original) => ({
 }));
 
 vi.mock("@/shared/sync/pull-triggers", () => ({
-  startPull: vi.fn<() => object>(() => ({ trigger: vi.fn<() => void>(), dispose: vi.fn<() => void>() })),
+  startPull: vi.fn<() => object>(() => ({
+    trigger: vi.fn<() => void>(),
+    dispose: vi.fn<() => void>(),
+  })),
 }));
 
 vi.mock("@/shared/sync/outbox", async (original) => ({
@@ -65,7 +84,10 @@ vi.mock("@/shared/sync/outbox", async (original) => ({
   startOutbox: vi.fn<() => object>(() => ({
     waitForInit: async () => {},
     dispose: vi.fn<() => void>(),
-    peekOutbox: async () => [],
+    peekOutbox: async () => device.queued,
+    clearOutbox: vi.fn<() => Promise<void>>(async () => {
+      device.queued = [];
+    }),
     getRunningCount: () => 0,
   })),
 }));
@@ -73,6 +95,8 @@ vi.mock("@/shared/sync/outbox", async (original) => ({
 afterEach(async () => {
   await closeLocalStore();
   vi.clearAllMocks();
+  device.queued = [];
+  device.drafts = [];
 });
 
 describe("openLocalStore", () => {
@@ -136,5 +160,60 @@ describe("openLocalStore", () => {
       "ana",
       "bia",
     ]);
+  });
+});
+
+describe("pendingOf", () => {
+  it("conta a fila da outbox e os rascunhos recusados ou em conflito, não o rascunho em andamento", async () => {
+    device.queued = [entry("tx-1"), entry("tx-2")];
+    device.drafts = [{ status: "conflict" }, { status: "rejected" }, { status: "draft" }];
+
+    expect(await pendingOf("ana")).toBe(4);
+  });
+
+  it("sem nada, zero", async () => {
+    expect(await pendingOf("ana")).toBe(0);
+  });
+});
+
+describe("wipeLocalStore", () => {
+  it("com o banco aberto: esvazia a outbox antes de fechar tudo e só então apaga os bancos", async () => {
+    device.queued = [entry("tx-1")];
+    const ana = await openLocalStore("ana");
+    const order: string[] = [];
+    vi.mocked(ana.outbox.clearOutbox).mockImplementation(async () => {
+      order.push("clearOutbox");
+    });
+    vi.mocked(ana.outbox.dispose).mockImplementation(() => order.push("dispose"));
+    vi.mocked(closeLocalDb).mockImplementation(async () => {
+      order.push("closeLocalDb");
+    });
+    vi.mocked(deleteDeviceDatabases).mockImplementation(async () => {
+      order.push("deleteDeviceDatabases");
+    });
+
+    await wipeLocalStore("ana");
+
+    expect(order).toEqual(["clearOutbox", "dispose", "closeLocalDb", "deleteDeviceDatabases"]);
+    expect(ana.pull.dispose).toHaveBeenCalledOnce();
+    expect(deleteDeviceDatabases).toHaveBeenCalledExactlyOnceWith("ana");
+  });
+
+  it("depois de apagar, abrir de novo é um banco novo", async () => {
+    const ana = await openLocalStore("ana");
+
+    await wipeLocalStore("ana");
+
+    expect(await openLocalStore("ana")).not.toBe(ana);
+  });
+
+  it("com o banco de outro aberto: não fecha o dele, só apaga os bancos do anterior", async () => {
+    const bia = await openLocalStore("bia");
+
+    await wipeLocalStore("ana");
+
+    expect(bia.outbox.dispose).not.toHaveBeenCalled();
+    expect(deleteDeviceDatabases).toHaveBeenCalledExactlyOnceWith("ana");
+    expect(await openLocalStore("bia")).toBe(bia);
   });
 });
