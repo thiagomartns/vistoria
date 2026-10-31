@@ -57,12 +57,25 @@ public static class RefreshTokenCookie
     public static string? Read(HttpRequest request) => request.Cookies[Name];
 
     public static void Append(HttpResponse response, IssuedRefreshToken token) =>
-        response.Cookies.Append(Name, token.Value, new CookieOptions
-        {
-            HttpOnly = true,
-            Secure = true,
-            SameSite = SameSiteMode.Strict,
-            Path = Path,
-            Expires = token.ExpiresAt,
-        });
+        response.Cookies.Append(Name, token.Value, Options(token.ExpiresAt));
+
+    /// <summary>
+    /// Apaga o cookie no navegador: valor vazio, mesmo <c>Path</c> e <c>Max-Age=0</c>. O <c>Cookies.Delete</c> do
+    /// ASP.NET só manda <c>Expires</c> em 1970, sem o <c>Max-Age</c>.
+    /// </summary>
+    public static void Delete(HttpResponse response)
+    {
+        var options = Options(DateTimeOffset.UnixEpoch);
+        options.MaxAge = TimeSpan.Zero;
+        response.Cookies.Append(Name, "", options);
+    }
+
+    private static CookieOptions Options(DateTimeOffset expires) => new()
+    {
+        HttpOnly = true,
+        Secure = true,
+        SameSite = SameSiteMode.Strict,
+        Path = Path,
+        Expires = expires,
+    };
 }

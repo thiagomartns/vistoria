@@ -175,6 +175,17 @@ public class CommittedOpenApiTests
         responses.GetProperty("429").GetProperty("headers").TryGetProperty("Retry-After", out _).Should().BeTrue();
     }
 
+    // O signout nunca falha: sem rate limit, sem 429 e sem corpo.
+    [Fact]
+    public void SignOut_Returns204WithoutBody_AndNoProblems()
+    {
+        var operation = Document().GetProperty("paths").GetProperty("/api/v1/auth/signout").GetProperty("post");
+
+        operation.GetProperty("operationId").GetString().Should().Be("signOut");
+        operation.GetProperty("responses").EnumerateObject().Select(r => r.Name).Should().Equal("204");
+        operation.GetProperty("responses").GetProperty("204").TryGetProperty("content", out _).Should().BeFalse();
+    }
+
     private static JsonElement Document() =>
         JsonDocument.Parse(File.ReadAllText(Path.Combine(RepoRoot.Path, "apps", "api", "openapi.json"))).RootElement;
 }

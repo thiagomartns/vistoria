@@ -342,6 +342,22 @@ export type RefreshTokenResponses = {
 
 export type RefreshTokenResponse = RefreshTokenResponses[keyof RefreshTokenResponses];
 
+export type SignOutData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/signout';
+};
+
+export type SignOutResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type SignOutResponse = SignOutResponses[keyof SignOutResponses];
+
 export type GetClientData = {
     body?: never;
     path: {

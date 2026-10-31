@@ -115,6 +115,18 @@ public class AuthService(
         throw new UnauthorizedException();
     }
 
+    public async Task SignOutAsync(string? refreshToken, CancellationToken cancellationToken)
+    {
+        if (RefreshTokens.TryHash(refreshToken) is not { } hash
+            || await refreshTokens.FindByHashAsync(hash, cancellationToken) is not { } token)
+        {
+            return;
+        }
+
+        // A família inteira: um token mais antigo dela que tenha vazado também deixa de valer.
+        await refreshTokens.RevokeFamilyAsync(token.FamilyId, time.GetUtcNow(), cancellationToken);
+    }
+
     private static bool Expired(RefreshToken token, DateTimeOffset now) =>
         now >= token.ExpiresAt || now >= token.FamilyCreatedAt + RefreshTokens.FamilyLifetime;
 
