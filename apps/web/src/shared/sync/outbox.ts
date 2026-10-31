@@ -11,7 +11,7 @@ import {
 
 import { readFailure } from "../api/client";
 import { type ApiFailure, type ReactionGroup, handleProblem } from "../api/problems";
-import { canSendAs, expireSession, sessionStore } from "../auth/session";
+import { canSendAs, expireSession, renewAfterReconnect, sessionStore } from "../auth/session";
 import { newId } from "./ids";
 
 // A outbox do aparelho sobre o @tanstack/offline-transactions (spike 1a, ADR 0030): cada escrita vira uma
@@ -36,8 +36,9 @@ export type OutboxMutationFn<T extends object> = (
 ) => Promise<unknown>;
 
 /**
- * Grupos que voltam para a fila com backoff e a mesma chave. `renew-session` também: a sessão expira (sem refresh
- * até o M4), a fila para e a transação sai depois do próximo login; descartar perderia o registro.
+ * Grupos que voltam para a fila com backoff e a mesma chave. `renew-session` também: o client já tentou renovar e
+ * reenviar (ADR 0045), então a sessão expirou; a fila para e a transação sai depois do próximo login do mesmo usuário.
+ * Descartar perderia o registro.
  */
 const RETRY_GROUPS: ReadonlySet<ReactionGroup> = new Set(["retry", "renew-session"]);
 
@@ -122,8 +123,9 @@ export function outboxHeaders(
 
 /**
  * "Online" para a outbox de `ownerId`: rede **e** sessão ativa desse mesmo usuário. Sem token, a fila fica parada
- * (sessão expirada); com o token de outro usuário também, para a fila de um nunca sair com a conta do outro.
- * Avisa o executor quando a rede volta e quando o dono entra, e ele zera o backoff e envia.
+ * (sessão expirada ou renovando); com o token de outro usuário também, para a fila de um nunca sair com a conta do outro.
+ * Avisa o executor quando a rede volta e quando o dono entra ou renova, e ele zera o backoff e envia. Na volta da rede,
+ * a renovação sai antes do aviso: o executor encontra a sessão `renewing` e só envia depois do refresh.
  */
 export function ownerOnlineDetector(
   ownerId: string,
@@ -135,7 +137,10 @@ export function ownerOnlineDetector(
     for (const listener of listeners) listener();
   };
   let wasOnline = isOnline();
-  const stopNetwork = network.subscribe(notify);
+  const stopNetwork = network.subscribe(() => {
+    renewAfterReconnect();
+    notify();
+  });
   const stopSession = sessionStore.subscribe(() => {
     const online = isOnline();
     if (online && !wasOnline) notify();

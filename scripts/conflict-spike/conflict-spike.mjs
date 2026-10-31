@@ -85,9 +85,16 @@ async function shownOn(page, inspection) {
 const itemOf = (inspection, room, item) =>
   inspection.rooms.find((r) => r.name === room).items.find((i) => i.name === item);
 
-/** Entra no desktop direto na tela de campo da vistoria `id`, pelo `next` do /login (a leitura por id). */
+/**
+ * Abre no desktop a tela de campo da vistoria `id` (a leitura por id): a primeira vez entra pelo `next` do /login; já
+ * com a sessão, abre o endereço, e o reload renova a sessão pelo cookie (#132).
+ */
 async function openById(page, user, id, address) {
-  await signIn(page, user, { next: `/inspections/edit?id=${id}` });
+  if (new URL(page.url()).protocol === "about:") {
+    await signIn(page, user, { next: `/inspections/edit?id=${id}` });
+  } else {
+    await page.goto(new URL(`/inspections/edit?id=${id}`, page.url()).href);
+  }
   await page.getByRole("heading", { level: 1, name: address }).waitFor();
   await currentRoomIs(page, "Sala");
 }

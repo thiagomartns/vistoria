@@ -49,3 +49,4 @@ uma decisão nova o substitui e diz qual substituiu. Novo ADR: `/adr <título>` 
 | [0042](0042-pull-grava-a-pagina-antes-do-cursor-e-reaplica-sem-efeito.md) | Pull grava a página antes do cursor e reaplica sem efeito | Proposto | 2026-10-29 |
 | [0043](0043-rascunho-limpo-nao-segura-o-pull-e-o-resync-varre-no-fim.md) | Rascunho limpo não segura o pull, e o resync varre no fim | Proposto | 2026-10-29 |
 | [0044](0044-o-pull-nao-aplica-resposta-mais-velha-que-o-aparelho-e-a-fila-conta-como-pendencia.md) | O pull não aplica resposta mais velha que o aparelho, e a fila conta como pendência | Proposto | 2026-10-30 |
+| [0045](0045-o-unauthorized-se-renova-no-client-que-reenvia-a-mesma-requisicao-refresh-sem-resposta-nao-expira-a-sessao-token-renovado-de-outro-usuario-nao-vale.md) | O unauthorized se renova no client, que reenvia a mesma requisição; refresh sem resposta não expira a sessão; token renovado de outro usuário não vale | Proposto | 2026-10-31 |

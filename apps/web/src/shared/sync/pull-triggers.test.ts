@@ -7,10 +7,15 @@ import { resetSyncStatus, trackOutbox } from "./sync-status";
 // Os gatilhos do pull (frontend.md, "Leitura (pull)") com timers falsos: cada um dispara um ciclo, só com a sessão do
 // dono, e um gatilho durante um ciclo não abre outro em paralelo.
 
-const session = vi.hoisted(() => ({ active: true, listeners: new Set<() => void>() }));
+const session = vi.hoisted(() => ({
+  active: true,
+  listeners: new Set<() => void>(),
+  renewAfterReconnect: () => {},
+}));
 
 vi.mock("../auth/session", () => ({
   canSendAs: (ownerId: string) => session.active && ownerId === "ana",
+  renewAfterReconnect: () => session.renewAfterReconnect(),
   sessionStore: {
     subscribe: (listener: () => void) => {
       session.listeners.add(listener);
@@ -61,6 +66,7 @@ let stops: (() => void)[] = [];
 beforeEach(() => {
   vi.useFakeTimers();
   session.active = true;
+  session.renewAfterReconnect = () => {};
   visibility = "visible";
   vi.spyOn(document, "visibilityState", "get").mockImplementation(() => visibility);
 });
@@ -119,6 +125,22 @@ describe("startPull", () => {
     window.dispatchEvent(new Event("offline"));
     window.dispatchEvent(new Event("online"));
 
+    expect(run).toHaveBeenCalledTimes(2);
+  });
+
+  it("a rede voltar renova antes: o ciclo espera a sessão voltar ativa", async () => {
+    const { run, finishAll } = gatedRun();
+    start(run);
+    await finishAll();
+    // A renovação deixa a sessão `renewing` na hora, antes do gatilho da rede.
+    session.renewAfterReconnect = () => setSession(false);
+
+    window.dispatchEvent(new Event("offline"));
+    window.dispatchEvent(new Event("online"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(run).toHaveBeenCalledTimes(1);
+
+    setSession(true);
     expect(run).toHaveBeenCalledTimes(2);
   });
 

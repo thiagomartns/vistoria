@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { accessToken } from "@/shared/api/client";
+import { refreshToken } from "@/shared/api/generated";
 import { resetSession } from "@/shared/auth/session";
 import { resetSyncStatus } from "@/shared/sync/sync-status";
 import type { OutboxItemView } from "@/shared/sync/sync-view";
@@ -14,6 +15,11 @@ const navigation = vi.hoisted(() => ({
   pathname: "/clients/edit",
   push: vi.fn<(href: string) => void>(),
   replace: vi.fn<(href: string) => void>(),
+}));
+
+vi.mock("@/shared/api/generated", async (original) => ({
+  ...(await original<typeof import("@/shared/api/generated")>()),
+  refreshToken: vi.fn<() => unknown>(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -36,6 +42,26 @@ function seedSession({ token }: { token: boolean }) {
   if (token) accessToken.set("token");
 }
 
+/** Um JWT só com o `sub`: a sessão confere de quem é o token que o refresh trouxe. */
+const tokenOf = (sub: string) => `h.${btoa(JSON.stringify({ sub })).replace(/=+$/, "")}.s`;
+
+const refreshed = () =>
+  ({
+    data: { accessToken: tokenOf(owner.id), expiresAt: "2026-10-31T15:00:00Z" },
+  }) as never;
+
+const refreshRefused = () =>
+  ({
+    error: {
+      type: "urn:vistoria:problem:unauthorized",
+      title: "Não autenticado",
+      status: 401,
+      detail: "Refresh token recusado.",
+      traceId: "00-trace",
+    },
+    response: new Response(null, { status: 401 }),
+  }) as never;
+
 function setNetwork(online: boolean) {
   vi.spyOn(navigator, "onLine", "get").mockReturnValue(online);
 }
@@ -45,6 +71,7 @@ afterEach(() => {
   resetSession();
   localStorage.clear();
   vi.restoreAllMocks();
+  vi.mocked(refreshToken).mockReset();
   navigation.push.mockReset();
   navigation.replace.mockReset();
   outbox.conflicts = [];
@@ -190,17 +217,60 @@ describe("AppShell", () => {
       expect(screen.getByRole("main").textContent).toContain("dados locais");
     });
 
-    it("a rede volta com a sessão expirada: vai para /login", () => {
+    it("recarregou com rede e cookie válido: renova e fica, sem /login", async () => {
+      vi.mocked(refreshToken).mockResolvedValue(refreshed());
+      seedSession({ token: false });
+      setNetwork(true);
+      render(<AppShell>dados locais</AppShell>);
+
+      await act(async () => {});
+
+      expect(refreshToken).toHaveBeenCalledTimes(1);
+      expect(accessToken.get()).toBe(tokenOf(owner.id));
+      expect(navigation.replace).not.toHaveBeenCalled();
+    });
+
+    it("recarregou com rede e o refresh recusado: vai para /login", async () => {
+      vi.mocked(refreshToken).mockResolvedValue(refreshRefused());
+      seedSession({ token: false });
+      setNetwork(true);
+      render(<AppShell>dados locais</AppShell>);
+
+      expect(navigation.replace).not.toHaveBeenCalled();
+      await act(async () => {});
+
+      expect(navigation.replace).toHaveBeenCalledWith(expect.stringMatching(/^\/login\?next=/));
+    });
+
+    it("a rede volta com a sessão expirada: renova; recusado, vai para /login", async () => {
+      vi.mocked(refreshToken).mockResolvedValue(refreshRefused());
+      seedSession({ token: false });
+      setNetwork(false);
+      render(<AppShell>dados locais</AppShell>);
+      expect(refreshToken).not.toHaveBeenCalled();
+
+      setNetwork(true);
+      await act(async () => {
+        window.dispatchEvent(new Event("online"));
+      });
+
+      expect(refreshToken).toHaveBeenCalledTimes(1);
+      expect(navigation.replace).toHaveBeenCalledWith(expect.stringMatching(/^\/login\?next=/));
+    });
+
+    it("a rede volta com a sessão expirada e o cookie válido: renova e fica", async () => {
+      vi.mocked(refreshToken).mockResolvedValue(refreshed());
       seedSession({ token: false });
       setNetwork(false);
       render(<AppShell>dados locais</AppShell>);
 
       setNetwork(true);
-      act(() => {
+      await act(async () => {
         window.dispatchEvent(new Event("online"));
       });
 
-      expect(navigation.replace).toHaveBeenCalledWith(expect.stringMatching(/^\/login\?next=/));
+      expect(accessToken.get()).toBe(tokenOf(owner.id));
+      expect(navigation.replace).not.toHaveBeenCalled();
     });
   });
 });

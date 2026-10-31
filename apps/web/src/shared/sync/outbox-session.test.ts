@@ -2,7 +2,7 @@ import type { OnlineDetector } from "@tanstack/offline-transactions";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { accessToken } from "../api/client";
-import { signIn } from "../api/generated";
+import { refreshToken, signIn } from "../api/generated";
 import { resetSession, sessionStore, signInWithPassword } from "../auth/session";
 import { RetryableSyncError, ownerOnlineDetector, syncFailure } from "./outbox";
 
@@ -11,7 +11,11 @@ import { RetryableSyncError, ownerOnlineDetector, syncFailure } from "./outbox";
 vi.mock("../api/generated", async (original) => ({
   ...(await original<typeof import("../api/generated")>()),
   signIn: vi.fn<() => unknown>(),
+  refreshToken: vi.fn<() => unknown>(),
 }));
+
+/** Um JWT só com o `sub`: a sessão confere de quem é o token que o refresh trouxe. */
+const tokenOf = (sub: string) => `h.${btoa(JSON.stringify({ sub })).replace(/=+$/, "")}.s`;
 
 const ana = { id: "0199a0b2-7c1e-7f3a-9b2d-1c2d3e4f5a6b", name: "Ana" };
 const bia = { id: "0199a0b2-7c1e-7f3a-9b2d-ffffffffffff", name: "Bia" };
@@ -45,6 +49,7 @@ function fakeNetwork(online = true): FakeNetwork {
 afterEach(() => {
   resetSession();
   localStorage.clear();
+  vi.mocked(refreshToken).mockReset();
 });
 
 describe("ownerOnlineDetector", () => {
@@ -92,8 +97,53 @@ describe("ownerOnlineDetector", () => {
   });
 });
 
+describe("volta da rede", () => {
+  it("o refresh sai antes de o executor ver a fila online", async () => {
+    await enter(ana);
+    const network = fakeNetwork();
+    const detector = ownerOnlineDetector(ana.id, network);
+    const seen: boolean[] = [];
+    detector.subscribe(() => seen.push(detector.isOnline()));
+    let release = () => {};
+    vi.mocked(refreshToken).mockImplementation(
+      () =>
+        new Promise((done) => {
+          release = () =>
+            done({
+              data: { accessToken: tokenOf(ana.id), expiresAt: "2026-10-31T15:00:00Z" },
+            });
+        }) as never,
+    );
+
+    window.dispatchEvent(new Event("offline"));
+    network.notifyOnline();
+
+    expect(refreshToken).toHaveBeenCalledOnce();
+    expect(detector.isOnline()).toBe(false);
+    expect(seen).toEqual([false]);
+
+    release();
+    await vi.waitFor(() => expect(seen.at(-1)).toBe(true));
+    expect(accessToken.get()).toBe(tokenOf(ana.id));
+  });
+
+  it("sem a rede ter caído (a página voltou a ficar visível), não renova", async () => {
+    await enter(ana);
+    const network = fakeNetwork();
+    const detector = ownerOnlineDetector(ana.id, network);
+    const callback = vi.fn<() => void>();
+    detector.subscribe(callback);
+
+    network.notifyOnline();
+
+    expect(refreshToken).not.toHaveBeenCalled();
+    expect(callback).toHaveBeenCalledOnce();
+    expect(detector.isOnline()).toBe(true);
+  });
+});
+
 describe("syncFailure com unauthorized", () => {
-  it("expira a sessão (sem refresh até o M4) e a transação fica na fila", async () => {
+  it("o client já tentou renovar: expira a sessão e a transação fica na fila", async () => {
     await enter(ana);
     vi.spyOn(console, "warn").mockImplementation(() => {});
 
