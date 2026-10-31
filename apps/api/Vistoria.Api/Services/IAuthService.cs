@@ -28,4 +28,10 @@ public interface IAuthService
     /// família e lança a mesma exceção.
     /// </summary>
     Task<RefreshResult> RefreshAsync(string? refreshToken, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Revoga a família do refresh token do cookie, em qualquer estado do token. Cookie ausente ou desconhecido não é
+    /// erro: não há sessão para encerrar.
+    /// </summary>
+    Task SignOutAsync(string? refreshToken, CancellationToken cancellationToken);
 }

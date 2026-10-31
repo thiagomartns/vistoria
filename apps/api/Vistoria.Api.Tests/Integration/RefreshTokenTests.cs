@@ -1,23 +1,18 @@
 using System.Buffers.Text;
 using System.Net;
 using System.Net.Http.Json;
-using System.Security.Cryptography;
 using System.Text.Json;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.Net.Http.Headers;
 using Vistoria.Api.Infrastructure.Errors;
 using Vistoria.Api.Model;
-using Vistoria.Api.Model.Context;
 using Vistoria.Api.Tests.Support;
 
 namespace Vistoria.Api.Tests.Integration;
 
-// O cookie é Secure e o TestServer fala http: o CookieContainer não o devolveria. Por isso o cliente não guarda
-// cookie, e cada teste manda o refresh_token à mão, o que também deixa explícito qual cookie cada chamada usa.
+// O cliente não guarda cookie: cada teste manda o refresh_token à mão (RefreshCookies).
 public class RefreshTokenTests(ApiFactory factory) : IClassFixture<ApiFactory>
 {
     private const string Refresh = "/api/v1/auth/refresh";
@@ -176,20 +171,11 @@ public class RefreshTokenTests(ApiFactory factory) : IClassFixture<ApiFactory>
         _client.PostAsJsonAsync("/api/v1/auth/signup", new { name = "Ana", email, password = Password },
             TestContext.Current.CancellationToken);
 
-    private Task<HttpResponseMessage> PostRefresh(string? cookie)
-    {
-        var request = new HttpRequestMessage(HttpMethod.Post, Refresh);
-        if (cookie is not null)
-        {
-            request.Headers.Add(HeaderNames.Cookie, $"refresh_token={cookie}");
-        }
-
-        return _client.SendAsync(request, TestContext.Current.CancellationToken);
-    }
+    private Task<HttpResponseMessage> PostRefresh(string? cookie) =>
+        _client.SendAsync(RefreshCookies.Post(Refresh, cookie), TestContext.Current.CancellationToken);
 
     private static SetCookieHeaderValue SingleRefreshCookie(HttpResponseMessage response) =>
-        SetCookieHeaderValue.ParseList(response.Headers.GetValues(HeaderNames.SetCookie).ToList())
-            .Should().ContainSingle(c => c.Name == "refresh_token").Subject;
+        RefreshCookies.FromResponse(response);
 
     private static async Task<Guid> UserId(HttpResponseMessage signUp) =>
         (await ReadBody(signUp)).GetProperty("user").GetProperty("id").GetGuid();
@@ -204,21 +190,7 @@ public class RefreshTokenTests(ApiFactory factory) : IClassFixture<ApiFactory>
         (await ReadBody(response)).GetProperty("type").GetString().Should().Be(ProblemTypes.Unauthorized);
     }
 
-    private async Task<RefreshToken?> StoredToken(string cookie)
-    {
-        var hash = SHA256.HashData(Base64Url.DecodeFromChars(cookie));
-        await using var scope = factory.Services.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        return await db.RefreshTokens.AsNoTracking()
-            .SingleOrDefaultAsync(t => t.TokenHash == hash, TestContext.Current.CancellationToken);
-    }
+    private Task<RefreshToken?> StoredToken(string cookie) => RefreshCookies.StoredToken(factory, cookie);
 
-    private async Task<List<RefreshToken>> FamilyRows(string cookie)
-    {
-        var familyId = (await StoredToken(cookie))!.FamilyId;
-        await using var scope = factory.Services.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        return await db.RefreshTokens.AsNoTracking().Where(t => t.FamilyId == familyId)
-            .ToListAsync(TestContext.Current.CancellationToken);
-    }
+    private Task<List<RefreshToken>> FamilyRows(string cookie) => RefreshCookies.FamilyRows(factory, cookie);
 }

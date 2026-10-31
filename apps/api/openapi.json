@@ -202,6 +202,19 @@
         }
       }
     },
+    "/api/v1/auth/signout": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "signOut",
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      }
+    },
     "/api/v1/clients/{id}": {
       "get": {
         "tags": [

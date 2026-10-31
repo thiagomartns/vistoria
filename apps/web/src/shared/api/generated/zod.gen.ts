@@ -282,6 +282,11 @@ export const zSignInResponse = zAuthDto;
  */
 export const zRefreshTokenResponse = zAccessTokenDto;
 
+/**
+ * No Content
+ */
+export const zSignOutResponse = z.void();
+
 export const zGetClientPath = z.object({
     id: z.uuid()
 });

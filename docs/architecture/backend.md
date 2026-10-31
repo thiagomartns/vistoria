@@ -392,6 +392,7 @@ O setup do curso (`WebApplicationFactory` + Testcontainers com SQL Server real) 
 | Auth | Refresh reutilizado em menos de 30 s | 200 sem `Set-Cookie` |
 | Auth | Refresh reutilizado depois de 30 s | 401 e família revogada |
 | Auth | Família com mais de 30 dias | 401 |
+| Auth | `signout` com cookie válido, ausente ou desconhecido | 204 com o cookie apagado (`Max-Age=0`); com cookie válido, a família revogada e o `refresh` com qualquer cookie dela → 401 |
 
 ## Roteiro de estudo
 
