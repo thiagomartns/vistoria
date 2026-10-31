@@ -291,6 +291,24 @@ export function watchDeletes(page) {
   return deletes;
 }
 
+/** Todo `POST /auth/refresh` que a página dispara, com quando saiu, quando respondeu e o status. */
+export function watchRefreshes(page) {
+  const refreshes = [];
+  page.on("request", (req) => {
+    if (req.method() !== "POST" || !req.url().endsWith("/api/v1/auth/refresh")) return;
+    const entry = { at: Date.now(), doneAt: null, status: null };
+    refreshes.push(entry);
+    req.response().then(
+      (res) => {
+        entry.doneAt = Date.now();
+        entry.status = res?.status() ?? "sem resposta";
+      },
+      () => (entry.status = "falhou"),
+    );
+  });
+  return refreshes;
+}
+
 /** Abre o "···" (Mais ações) de `scope` e escolhe "Excluir vistoria": o Dialog de confirmação abre. */
 export async function askToDelete(page, scope) {
   await scope.getByRole("button", { name: "Mais ações" }).click();

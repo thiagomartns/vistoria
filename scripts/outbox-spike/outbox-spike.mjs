@@ -32,6 +32,9 @@
 // Desde o #144 o pull entra no roteiro de forma explícita: os passos em que outro aparelho grava e este age sem ter
 // visto seguram o pull (`holdPull`); o 10c e o 12g forçam o pull no meio de uma escrita (`pullNow`), com o formulário
 // aberto e com a página lida antes do envio daqui confirmar. Com PULL_CHAOS=1, o pull roda a cada 1,5 s no roteiro todo.
+// Desde o #132 a sessão se renova pelo cookie: recarregar sem rede ainda perde o token, mas a volta da rede renova antes
+// da fila sair (passo 2, sem passar pelo /login). Os passos que provam a sessão expirada (6 e 13) apagam o cookie antes
+// de voltar a rede, e o refresh recusado (401) leva ao SessionExpired, com a fila retida.
 
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
@@ -81,6 +84,7 @@ import {
   wait,
   watchDeletes,
   watchPuts,
+  watchRefreshes,
 } from "./lib.mjs";
 
 // Prints dos estados da tela de campo, com SCREENS=1: o mesmo estado no celular e no desktop, trocando o viewport.
@@ -99,6 +103,7 @@ try {
   });
   const mobile = await phone.newPage();
   const mobilePuts = watchPuts(mobile);
+  const mobileRefreshes = watchRefreshes(mobile);
   const caio = await signUp("Caio do celular");
 
   step(1, "Celular: entrar, cadastrar cliente e imóvel offline, recarregar");
@@ -155,11 +160,16 @@ try {
   assert.equal((await serverInspection(caio, vistoria)).status, 404, "a vistoria não pode estar no servidor ainda");
   ok(`${allMobileKeys.length - 2} transações da vistoria na fila, depois do cliente e do imóvel; o servidor não a conhece`);
 
-  step(2, "Celular: voltar a rede e entrar de novo; os três chegam ao SQL Server uma vez só");
+  step(2, "Celular: voltar a rede; o refresh sai antes da fila, sem /login; os três chegam ao SQL Server uma vez só");
+  const reconnectedAt = Date.now();
   await phone.setOffline(false);
-  await mobile.waitForURL(/\/login\?next=/);
-  await signIn(mobile, caio, { expired: true });
   await until(async () => (await outboxCount(mobile, caio)) === 0, "outbox do celular vazia", 90_000);
+  assert.ok(!new URL(mobile.url()).pathname.startsWith("/login"), "com o cookie válido, a volta da rede não pede login");
+  const renewal = mobileRefreshes.find((refresh) => refresh.at >= reconnectedAt);
+  assert.equal(renewal?.status, 200, "a volta da rede renova a sessão pelo cookie");
+  const firstPut = mobilePuts.find((put) => put.at >= reconnectedAt);
+  assert.ok(renewal.doneAt <= firstPut.at, "o refresh responde antes de a primeira transação sair");
+  ok("a rede volta: o refresh (200) responde antes do primeiro PUT, e a fila sai sem passar pelo /login");
   for (const key of mobileKeys) {
     const accepted = mobilePuts.filter((put) => put.key === key && succeeded(put));
     assert.equal(accepted.length, 1, `a chave ${key} tem de ser aceita uma vez só`);
@@ -201,6 +211,18 @@ try {
   assert.equal(mobileClient.body.version, versionOf(clientPut.etag));
   assert.equal(mobileProperty.body.version, versionOf(propertyPut.etag));
   ok(`um 201 por chave, e o servidor na version do 201 (cliente ${mobileClient.body.version}, imóvel ${mobileProperty.body.version})`);
+  // A página ficou na tela de campo. Abrir /clients pelo endereço recarrega com rede: a sessão renova pelo cookie.
+  const refreshesBeforeReload = mobileRefreshes.length;
+  await mobile.goto(new URL(route, mobile.url()).href);
+  await mobile.getByRole("heading", { level: 1, name: "Clientes" }).waitFor();
+  await until(
+    async () => mobileRefreshes.slice(refreshesBeforeReload).some((refresh) => refresh.status !== null),
+    "o refresh do reload responde",
+  );
+  assert.deepEqual(mobileRefreshes.slice(refreshesBeforeReload).map((refresh) => refresh.status), [200]);
+  await wait(500);
+  assert.ok(!new URL(mobile.url()).pathname.startsWith("/login"), "recarregar com rede e cookie não pede login");
+  ok("recarregado com rede: um refresh (200) e a sessão volta ativa, sem /login");
   await until(
     async () => (await rowOf(mobile, "Imobiliária Celular").getByText("Salvo no aparelho").count()) === 0,
     "badge do cliente some",
@@ -226,6 +248,7 @@ try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
   const puts = watchPuts(page);
+  const refreshes = watchRefreshes(page);
   const deletes = watchDeletes(page);
   const user = await signUp("Ana do roteiro");
   const other = await signUp("Bia do roteiro");
@@ -264,13 +287,21 @@ try {
   assert.deepEqual(await outboxKeys(page, user), keys);
   ok("os registros e as 3 transações continuam, com as mesmas chaves; a sessão expirou");
 
-  step(6, "Voltar a rede: a fila espera o login; SessionExpired; entrar envia");
+  step(6, "Voltar a rede com o cookie apagado: o refresh é recusado; a fila espera o login; SessionExpired; entrar envia");
   const before = puts.length;
+  const refreshesBefore = refreshes.length;
+  await context.clearCookies();
   await context.setOffline(false);
   await page.waitForURL(/\/login\?next=%2Fclients$/);
   await wait(3000);
   assert.equal(puts.length, before, "sem token, a fila não pode sair");
-  ok("com rede e sem token: o shell manda para o /login e nenhum PUT sai");
+  assert.deepEqual(
+    refreshes.slice(refreshesBefore).map((refresh) => refresh.status),
+    [401],
+    "a volta da rede tenta renovar uma vez, e o refresh sem cookie é recusado",
+  );
+  assert.equal(await outboxCount(page, user), 3, "o refresh recusado não apaga nada");
+  ok("refresh 401: o shell manda para o /login, nenhum PUT sai e as 3 pendências ficam");
   const notice = await signIn(page, user, { expired: true });
   assert.match(notice ?? "", /enviar as 3 alterações salvas neste aparelho/);
   ok(`/login mostrou: "${notice}"`);
@@ -1103,9 +1134,9 @@ try {
   await inspectionRow(freshPage, campo).waitFor();
   ok("de volta na lista, a vistoria está neste aparelho");
 
-  // 404: um id que o servidor não tem.
+  // 404: um id que o servidor não tem. Uma aba nova do mesmo navegador já entra pelo cookie (#132), sem /login.
   const missingPage = await fresh.newPage();
-  await signIn(missingPage, user, { next: `/clients/edit?id=${uuidv7()}` });
+  await missingPage.goto(new URL(`/clients/edit?id=${uuidv7()}`, freshPage.url()).href);
   await missingPage.getByText("Este cliente não existe ou foi excluído.").waitFor();
   ok("id que o servidor não tem: \"Este cliente não existe ou foi excluído.\"");
   await shoot(missingPage, "id-2-nao-encontrado");
@@ -1138,6 +1169,8 @@ try {
   const fromPending = puts.length;
   const pending = await create(page, "Pendência da Ana");
   await until(async () => (await outboxCount(page, user)) === 1, "uma pendência da Ana");
+  // Sem o cookie da Ana, a volta da rede não renova: a sessão expira, como o passo quer.
+  await context.clearCookies();
   await context.setOffline(false);
   await page.waitForURL(/\/login\?next=%2Fclients$/);
   await wait(2000);
@@ -1151,6 +1184,8 @@ try {
   assert.equal(puts.length - fromOther, 0, "nenhum PUT da fila da Ana com a sessão da Bia");
   assert.equal((await serverClient(user, pending)).status, 404);
   ok("a Bia vê o banco dela, vazio; em 5 s nenhum PUT, e o servidor não recebeu a pendência");
+  // O cookie agora é o da Bia: apagado, o reload não renova a sessão dela, e o /login pede a entrada de novo.
+  await context.clearCookies();
   await page.reload();
   await signIn(page, user, { expired: true });
   await until(async () => (await outboxCount(page, user)) === 0, "a fila da Ana sai", 90_000);

@@ -4,7 +4,8 @@
 // Serve `apps/web/out` como o Caddy em produção (`/rota` → `rota.html`). Com a rede desligada, cada página
 // precisa vir do service worker (`response.fromServiceWorker()`).
 // Desde o #72 o shell exige sessão: o roteiro entra pelo /login com o signin respondido aqui (sem API no CI) e, ao
-// voltar a rede depois do reload, confere que a sessão expirada pede login de novo.
+// voltar a rede depois do reload, confere que a sessão expirada pede login de novo. Desde o #132 a volta da rede tenta
+// renovar pelo cookie; o roteiro não tem cookie, e o refresh respondido aqui é recusado (401 unauthorized).
 // Desde o #73 o passo 3 cria um cliente offline pela tela e reabre /clients/edit?id= pelo service worker; o PUT
 // dele também é respondido aqui, para a fila esvaziar depois do login.
 
@@ -73,6 +74,19 @@ async function fakeApi(context) {
         accessToken: "token-do-roteiro",
         expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
         user,
+      }),
+    }),
+  );
+  await context.route("**/api/v1/auth/refresh", (route) =>
+    route.fulfill({
+      status: 401,
+      contentType: "application/problem+json",
+      body: JSON.stringify({
+        type: "urn:vistoria:problem:unauthorized",
+        title: "Não autenticado",
+        status: 401,
+        detail: "Sem refresh token.",
+        traceId: "00-roteiro",
       }),
     }),
   );
