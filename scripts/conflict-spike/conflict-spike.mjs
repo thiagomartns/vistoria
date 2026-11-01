@@ -4,9 +4,8 @@
 // O celular (A) cria e sincroniza; o desktop (B) abre pelo id (#101). Os dois editam offline, inclusive o mesmo item,
 // e a rede volta: o que não colidiu converge sozinho, o que colidiu passa pelo ConflictResolver (#105), e o reenvio sai
 // com chave nova. Depois, a exclusão (#109) e o mesmo cliente editado nos dois (#106).
-// Antes do delta (M4), um aparelho só recebe o que o outro gravou no próprio envio seguinte, pelo 412: é assim que os
-// dois terminam mostrando o mesmo. Com o pull ligado, os passos que dependem disso o seguram (`holdPull`, #144); a
-// convergência pelo pull é do #135.
+// Os passos 2 a 4 seguram o pull (`holdPull`, #144): cada aparelho só vê o que o outro gravou pelo 412 do próprio
+// envio. Desde o #135 o passo 5 converge pelo pull: os dois terminam mostrando o que o servidor tem sem escrita própria.
 // O celular nunca recarrega (a sessão fica na memória) e sai do /login sem o service worker controlar a página; o
 // desktop abre cada link pelo /login, sem service worker, para o modo avião barrar o fetch (spike 4 cobre o SW).
 // Com SCREENS=1, tira os prints dos estados em `.screens/conflito/`, para `pnpm screens --files .screens/conflito`.
@@ -33,6 +32,7 @@ import {
   openRoom,
   outboxCount,
   printTrace,
+  pullNow,
   root,
   rowOf,
   serve,
@@ -79,6 +79,21 @@ async function shownOn(page, inspection) {
     }
   }
   return shown;
+}
+
+/**
+ * Espera a tela de campo mostrar o que o servidor tem em `inspection`: o pull grava, refaz o rascunho e a tela recarrega
+ * depois da resposta. No prazo, falha com o diff.
+ */
+async function showsServer(page, inspection, what, timeout = 15_000) {
+  const expected = serverView(inspection);
+  const end = Date.now() + timeout;
+  for (;;) {
+    const shown = await shownOn(page, inspection);
+    if (Date.now() >= end) return assert.deepEqual(shown, expected, what);
+    if (JSON.stringify(shown) === JSON.stringify(expected)) return;
+    await wait(500);
+  }
 }
 
 /** O item `room/item` da vistoria do servidor. */
@@ -242,30 +257,33 @@ try {
   assert.equal(itemOf(merged, "Banheiro", "Piso").condition, "good");
   ok(`version ${merged.version}: Piso escolhido, Paredes com a condição do celular e a observação do desktop, Teto da Cozinha do celular, Piso do Banheiro do desktop`);
 
-  step(5, "Os dois mostram o mesmo: cada um recebe o que o outro gravou no próprio envio seguinte");
-  // O celular ainda está na version da edição dele: o próximo envio dá 412, sem colisão, e o reenvio traz tudo.
+  step(5, "Os dois mostram o mesmo pelo pull, sem escrita própria (#135)");
+  await releasePhonePull();
+  await releaseDeskPull();
+  // O celular ainda está na version da edição dele. O rascunho limpo não segura o pull (ADR 0043): a tela recarrega.
+  const phoneBeforePull = aPuts.length;
+  await pullNow(phone, a);
+  await showsServer(a, merged, "o celular mostra o merge depois do pull");
+  assert.equal(aPuts.length, phoneBeforePull, "o pull do celular não envia nada");
+  ok("celular: um pull traz a observação das Paredes e o Piso do Banheiro do desktop, sem nenhum PUT");
+  // Já com a version do servidor, o envio seguinte não leva 412.
   const fromAgain = aPuts.length;
   await openRoom(a, "Quarto");
   await mark(a, "Piso", "Bom");
-  await settled(a, user, aPuts, fromAgain, 200, "o envio seguinte do celular converge");
+  await settled(a, user, aPuts, fromAgain, 200, "o envio seguinte do celular");
   const again = aPuts.slice(fromAgain);
-  assert.deepEqual(again.map((put) => put.status), [412, 200], "um 412 e um reenvio");
-  assert.equal(again[1].ifMatch, `"${merged.version}"`);
-  assert.notEqual(again[1].key, again[0].key, "o reenvio sai com chave nova");
-  assert.equal(await a.getByText("Esta vistoria foi alterada em outro aparelho").count(), 0, "sem colisão, sem aviso");
-  ok(`celular: Quarto/Piso → 412 → merge sem colisão → reenvio com If-Match "${merged.version}" e chave nova → 200`);
-  // O desktop marca o mesmo: o merge dá igual ao servidor, e nada sai de novo; ele só adota o current.
-  const fromSame = bPuts.length;
-  await openRoom(b, "Quarto");
-  await mark(b, "Piso", "Bom");
-  await settled(b, user, bPuts, fromSame, 412, "o envio do desktop adota o current");
-  await wait(3000);
-  assert.equal(bPuts.length - fromSame, 1, "merge igual ao servidor não sai");
+  assert.deepEqual(again.map((put) => put.status), [200], "um PUT só, sem 412");
+  assert.equal(again[0].ifMatch, `"${merged.version}"`, "com a version que o pull trouxe");
+  ok(`celular: Quarto/Piso → PUT com If-Match "${merged.version}" → 200, sem 412`);
   const final = (await serverInspection(user, vistoria)).body;
-  assert.equal(final.version, versionOf(again[1].etag));
-  ok("desktop: o mesmo Quarto/Piso → 412 → merge igual ao servidor: adota o current, sem reenvio");
-  await releasePhonePull();
-  await releaseDeskPull();
+  assert.equal(final.version, versionOf(again[0].etag));
+  // O desktop recebe o Quarto/Piso do celular pelo pull, sem mandar nada.
+  const deskBeforePull = bPuts.length;
+  await pullNow(desk, b);
+  await openRoom(b, "Quarto");
+  await until(async () => checked(b, "Piso", "Bom"), "o Quarto/Piso do celular no desktop", 10_000);
+  assert.equal(bPuts.length, deskBeforePull, "o pull do desktop não envia nada");
+  ok("desktop: um pull traz o Quarto/Piso do celular, sem nenhum PUT");
   const expected = serverView(final);
   assert.deepEqual(await shownOn(a, final), expected, "o celular mostra o que o servidor tem");
   assert.deepEqual(await shownOn(b, final), expected, "o desktop também");

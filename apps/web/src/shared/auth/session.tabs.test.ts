@@ -94,6 +94,29 @@ describe("duas abas com o token vencido", () => {
     expect(b.session.sessionStore.getSnapshot().status).toBe("active");
   });
 
+  it("a outra aba já gravou a renovação e o anúncio ainda não chegou: espera o anúncio, sem outro refresh", async () => {
+    // A corrida do spike:device no CI (#135): a aba A renovou e gravou a data antes de anunciar, e o 401 da aba B
+    // chegou nesse meio. A data lida na hora da chamada já era a nova, e a aba B pedia o próprio refresh.
+    const locks = fakeLocks();
+    Object.defineProperty(navigator, "locks", { value: locks, configurable: true });
+    api.refresh.mockResolvedValue({
+      data: { accessToken: tokenOf(user.id, 9), expiresAt: "2026-10-31T15:00:00Z" },
+    });
+    tabs = [await openTab()];
+    const [b] = tabs as [Tab];
+    const otherTab = new BroadcastChannel("auth-refresh");
+    localStorage.setItem("vistoria.renewed-at", "2026-10-31T14:45:00.000Z");
+
+    const renewing = b.session.renewSession();
+    setTimeout(() => otherTab.postMessage({ userId: user.id, accessToken: tokenOf(user.id, 1) }), 50);
+    const outcome = await renewing;
+    otherTab.close();
+
+    expect(outcome).toBe("renewed");
+    expect(api.refresh).not.toHaveBeenCalled();
+    expect(b.client.accessToken.get()).toBe(tokenOf(user.id, 1));
+  });
+
   it("o anúncio de outro dono não vale nesta aba", async () => {
     tabs = [await openTab()];
     const [a] = tabs as [Tab];
