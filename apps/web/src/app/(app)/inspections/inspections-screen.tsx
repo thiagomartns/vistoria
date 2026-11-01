@@ -9,12 +9,13 @@ import { useInspections } from "@/features/inspections/hooks/useInspections";
 import { EmptyState } from "@/shared/components/empty-state";
 
 // /inspections (wireframe 67:1490 e 67:1649): "Nova vistoria" e a lista do banco local, em andamento primeiro, com o
-// "···" de excluir na linha em andamento (desktop, #107). Busca e filtros chegam no M5.
+// "···" de excluir na linha em andamento (desktop, #107). A lista monta 50 linhas por vez, com "Mostrar mais" (ADR 0047).
+// Busca e filtros chegam no M5.
 
 const NEW_INSPECTION_HREF = "/inspections/new";
 
 export function InspectionsScreen() {
-  const { ready, empty, rows, count, remove } = useInspections();
+  const { ready, empty, rows, count, hidden, showMore, remove } = useInspections();
 
   if (!ready) return null;
 
@@ -47,6 +48,11 @@ export function InspectionsScreen() {
         </Button>
       </div>
       <InspectionsList items={rows} onDelete={remove} />
+      {hidden > 0 ? (
+        <Button variant="outline" size="lg" className="w-full md:h-8 md:w-auto md:self-center md:px-3" onClick={showMore}>
+          Mostrar mais
+        </Button>
+      ) : null}
       <p className="hidden text-sm text-muted-foreground md:block">{count}</p>
     </>
   );
