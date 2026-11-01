@@ -59,6 +59,12 @@ let opening = true;
 /** A rede caiu (ou abriu sem ela): na volta, renova antes da outbox e do pull. */
 let renewOnReconnect = false;
 let lock: RefreshLock | undefined;
+/**
+ * A última renovação que esta aba conhece: a do token que ela tem (o login, o próprio refresh ou o anúncio adotado) ou,
+ * sem token, a de quando abriu. Uma data mais nova no localStorage diz que outra aba renovou depois, e o anúncio dela
+ * está a caminho. `undefined` antes de a aba instalar os gatilhos: aí vale a data lida na hora.
+ */
+let knownRenewedAt: string | null | undefined;
 
 const refreshLock = () => (lock ??= createRefreshLock());
 
@@ -81,8 +87,10 @@ function writeOwner(user: SessionUser | null) {
 }
 
 function writeRenewedAt(at: Date | null) {
+  const value = at?.toISOString() ?? null;
+  knownRenewedAt = value;
   try {
-    if (at) localStorage.setItem(RENEWED_AT_KEY, at.toISOString());
+    if (value) localStorage.setItem(RENEWED_AT_KEY, value);
     else localStorage.removeItem(RENEWED_AT_KEY);
   } catch {
     // Sem localStorage, a janela offline não tem de onde contar (e vale como vencida).
@@ -166,9 +174,9 @@ function nextAnnouncement(ms: number): Promise<boolean> {
 }
 
 /**
- * Renova pelo cookie, já com o lock entre abas. Se outra aba renovou enquanto esta esperava o lock, não sai outro
- * refresh: o token anunciado já chegou, ou chega logo (a data da renovação é gravada antes de a outra aba soltar o lock,
- * e o anúncio pode chegar depois do lock). O cookie é do navegador, não da aba: um token de outro usuário (outra aba
+ * Renova pelo cookie, já com o lock entre abas. Se outra aba renovou depois do token que esta tem, não sai outro
+ * refresh: o token anunciado já chegou, ou chega logo. A data da renovação é gravada antes de a outra aba soltar o lock,
+ * e o anúncio pode chegar depois do lock, ou depois de esta aba pedir a renovação (#135). O cookie é do navegador, não da aba: um token de outro usuário (outra aba
  * entrou com outra conta) não vale para este dono, porque a fila de um nunca sai com a conta do outro.
  */
 async function refreshAs(
@@ -216,7 +224,7 @@ export function renewSession(): Promise<RenewOutcome> {
   const owner = current().user;
   if (!owner) return Promise.resolve("expired");
   const before = accessToken.get();
-  const renewedBefore = readRenewedAt();
+  const renewedBefore = knownRenewedAt === undefined ? readRenewedAt() : knownRenewedAt;
   renewing = refreshLock()
     .run(() => refreshAs(owner, before, renewedBefore))
     .catch((): RenewOutcome => "offline")
@@ -251,6 +259,7 @@ function adopt({ userId, accessToken: token }: Announcement) {
   const { user } = current();
   if (user?.id !== userId) return;
   accessToken.set(token);
+  knownRenewedAt = readRenewedAt();
   renewOnReconnect = false;
   update(user);
   for (const arrived of [...announced]) arrived();
@@ -261,6 +270,7 @@ function start() {
   if (started || typeof window === "undefined") return;
   started = true;
   opening = false;
+  knownRenewedAt = readRenewedAt();
   window.addEventListener("online", renewAfterReconnect);
   window.addEventListener("offline", markReconnect);
   refreshLock().onAnnounce(adopt);
@@ -409,6 +419,7 @@ export function resetSession(): void {
   accessToken.set(null);
   snapshot = undefined;
   renewing = null;
+  knownRenewedAt = undefined;
   started = false;
   opening = true;
   renewOnReconnect = false;
