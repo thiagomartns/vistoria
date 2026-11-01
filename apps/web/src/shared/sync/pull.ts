@@ -10,7 +10,8 @@ import { readFailure } from "../api/client";
 import { handleProblem } from "../api/problems";
 import type { DraftsCollection } from "./drafts";
 import { type GetCall, dropClean, hasPending, rebaseClean, refetchById } from "./fetch";
-import type { LocalCollection, SyncRecord } from "./upsert";
+import { type LocalCollection, type SyncRecord, confirmedByIds } from "./upsert";
+import { isNewer } from "./version";
 
 // O pull por delta (frontend.md, "Leitura (pull)"): um laço por entidade, cada um com o seu cursor, repetido enquanto
 // `hasMore` for verdadeiro. O pull não toca registro com pendência (ADR 0041): ele ganha uma marca, resolvida pelo `GET`
@@ -21,9 +22,10 @@ import type { LocalCollection, SyncRecord } from "./upsert";
 // O cursor vencido ou ilegível (`cursor-expired`, `invalid-cursor`) pede o resync completo da entidade: puxa do zero
 // gravando por cima do que o aparelho tem e só no fim tira o que não veio, menos o que tem pendência, que ganha a marca
 // (ADR 0043). Se cair no meio, o próximo ciclo recomeça do zero: a collection nunca fica vazia no caminho.
-// A resposta tem o servidor da hora em que ele a leu. Um registro que a store confirmada mudou depois disso (o envio
-// daqui confirmou com a página em voo) é tratado como pendência e ganha a marca: aplicar a página voltaria a versão
-// (ADR 0044). A varredura do resync compara com a store do começo dele.
+// A resposta tem o servidor da hora em que ele a leu. Um item mais velho que a store confirmada (o envio daqui confirmou
+// com a página em voo) é tratado como pendência e ganha a marca: aplicar a página voltaria a versão (ADR 0044). A
+// idade vem do rowversion, e a página lê da store só os ids dela (ADR 0047). A varredura do resync, rara, compara com
+// a store inteira do começo dele.
 
 /** Uma página do delta (`SyncPageDto` do backend.md, "Leitura por delta"). */
 export interface SyncPage<D> {
@@ -160,7 +162,6 @@ async function pullEntity(state: PullState, entity: PullEntity): Promise<PullOut
   }
   for (;;) {
     const cursor = cursors.get(entity.name);
-    const before = await versionsOf(entity.store);
     const result = await entity.page({ query: cursor ? { cursor } : {} });
     if (!result.data) {
       const failure = failureOf(entity, result);
@@ -174,7 +175,7 @@ async function pullEntity(state: PullState, entity: PullEntity): Promise<PullOut
       atResync = await versionsOf(entity.store);
       continue;
     }
-    await applyPage(state, entity, result.data, before, seen);
+    await applyPage(state, entity, result.data, seen);
     if (result.data.hasMore) continue;
     if (seen && atResync) {
       await sweep(state, entity, seen, atResync);
@@ -201,7 +202,7 @@ function failureOf(
 type Mutation = { type: "insert" | "update" | "delete"; key: string; modified: SyncRecord };
 /** A gravação de um rascunho que mudou com a página. */
 type Persisting = { isPersisted: { promise: Promise<unknown> } } | undefined;
-/** A `version` de cada registro da store confirmada. */
+/** A `version` de cada registro da store confirmada (só no resync: lê a store inteira). */
 type Versions = Map<string, string | null>;
 
 const versionsOf = async (store: PullEntity["store"]): Promise<Versions> =>
@@ -213,32 +214,33 @@ const versionsOf = async (store: PullEntity["store"]): Promise<Versions> =>
  * registro. O rascunho limpo de um registro gravado passa à versão nova (`rebaseClean`) e o de um excluído sai com ele
  * (ADR 0043). A pendência é a da hora de aplicar, não a de quando a requisição saiu: entre a conferência e a gravação
  * não há `await`, então uma escrita feita com a página em voo vence. Também contam como pendência a transação na
- * outbox (`queued`) e o registro que a store confirmada mudou depois de `before`, lida antes de a requisição sair
- * (ADR 0044). O cursor só é gravado depois.
+ * outbox (`queued`) e o item mais velho que a store confirmada: o servidor o leu antes de um envio daqui confirmar
+ * (ADR 0044). A store é lida só nos ids da página, e a idade vem do rowversion (ADR 0047). Uma exclusão não tem
+ * versão, mas também não tem envio que confirme depois dela: o servidor recusa o `PUT` no excluído. O cursor só é
+ * gravado depois.
  */
 async function applyPage(
   state: PullState,
   entity: PullEntity,
   page: SyncPage<unknown>,
-  before: Versions,
   seen?: Set<string>,
 ): Promise<void> {
   const { store } = entity;
   const { drafts } = state;
-  const confirmed = new Map((await store.utils.exportData()).map((record) => [record.id, record]));
+  const records = page.items.map((dto) => entity.shape(dto));
+  const confirmed = await confirmedByIds(store, [
+    ...records.map((record) => record.id),
+    ...page.deletedIds,
+  ]);
   const queued = await state.queued();
-  const held = (id: string) =>
-    hasPending(store, drafts, id) ||
-    queued.has(id) ||
-    confirmed.get(id)?.version !== before.get(id);
+  const held = (id: string) => hasPending(store, drafts, id) || queued.has(id);
   const skipped: string[] = [];
   const mutations: Mutation[] = [];
   const rewritten: Persisting[] = [];
-  for (const dto of page.items) {
-    const record = entity.shape(dto);
+  for (const record of records) {
     const known = confirmed.get(record.id);
     seen?.add(record.id);
-    if (held(record.id)) skipped.push(record.id);
+    if (held(record.id) || isNewer(known?.version, record.version)) skipped.push(record.id);
     else if (known?.version !== record.version) {
       mutations.push({ type: known ? "update" : "insert", key: record.id, modified: record });
       rewritten.push(rebaseClean(drafts, record));

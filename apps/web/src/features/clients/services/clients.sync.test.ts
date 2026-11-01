@@ -51,7 +51,7 @@ function setup(
   // A camada otimista: o que está na fila, por cima da store.
   const optimistic = new Map(queued.map((row) => [row.id, row]));
   const clients = {
-    utils: { acceptMutations, exportData: async () => stored },
+    utils: { acceptMutations, exportData: async () => stored, readConfirmed: async (ids: readonly string[]) => stored.filter((row) => ids.includes(row.id)) },
     get: (key: string) => optimistic.get(key),
     has: (key: string) => optimistic.has(key),
     insert: (row: ClientRecord) => optimistic.set(row.id, row),

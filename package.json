@@ -19,6 +19,7 @@
     "spike:outbox": "pnpm --filter outbox-spike start",
     "spike:conflict": "pnpm --filter conflict-spike start",
     "spike:shell": "pnpm --filter shell-spike start",
-    "spike:device": "pnpm --filter device-spike start"
+    "spike:device": "pnpm --filter device-spike start",
+    "spike:volume": "pnpm --filter volume-spike start"
   }
 }
