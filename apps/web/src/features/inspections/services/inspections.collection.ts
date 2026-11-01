@@ -1,4 +1,6 @@
-import { type IndexedDBInstance, createCollection, indexedDBCollectionOptions } from "@tanstack/db";
+import { type IndexedDBInstance, createCollection } from "@tanstack/db";
+
+import { syncedCollectionOptions } from "@/shared/db/local-db";
 
 import type { InspectionRecord } from "../models/inspection";
 
@@ -6,13 +8,7 @@ import type { InspectionRecord } from "../models/inspection";
 // que está pendente volta da outbox como estado otimista quando o app abre.
 
 export function createInspectionsCollection(db: IndexedDBInstance) {
-  return createCollection(
-    indexedDBCollectionOptions<InspectionRecord, string>({
-      db,
-      name: "inspections",
-      getKey: (inspection) => inspection.id,
-    }),
-  );
+  return createCollection(syncedCollectionOptions<InspectionRecord>(db, "inspections"));
 }
 
 export type InspectionsCollection = ReturnType<typeof createInspectionsCollection>;

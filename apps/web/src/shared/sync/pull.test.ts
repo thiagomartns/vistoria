@@ -7,7 +7,7 @@ import { expireSession } from "../auth/session";
 import type { DraftRecord } from "./drafts";
 import { hasPending } from "./fetch";
 import type { CursorStore } from "./pull";
-import { closeDevices, device, fakeApi, stopLater } from "./pull.harness";
+import { V, closeDevices, device, fakeApi, stopLater } from "./pull.harness";
 import { startPull } from "./pull-triggers";
 
 // O pull de ponta a ponta (frontend.md, "Leitura (pull)"; ADR 0041, 0042 e 0043), com o harness de `pull.harness.ts`:
@@ -24,7 +24,7 @@ const ID = "01a16032-2dfb-77de-84a2-1f165bdd9950";
 /** O cliente como os dois aparelhos o confirmaram (V1). */
 const clientV1: ClientRecord = {
   id: ID,
-  version: "V1",
+  version: V(1),
   name: "Imobiliária Alfa",
   document: null,
   email: "contato@alfa.com",
@@ -96,17 +96,17 @@ describe("pull: registro com pendência (ADR 0041)", () => {
     api.write("clients", { ...clientV1, name: "Alfa Imóveis" });
 
     await phone.pull();
-    expect(phone.clients.confirmed.get(ID)?.version).toBe("V1");
+    expect(phone.clients.confirmed.get(ID)?.version).toBe(V(1));
 
     release();
     await phone.drained();
     const merged = { ...clientV1, name: "Alfa Imóveis", phone: "(71) 4444-0000" };
-    expect(api.current("clients", ID)).toEqual({ ...merged, version: "V3" });
+    expect(api.current("clients", ID)).toEqual({ ...merged, version: V(3) });
     expect(phone.drafts.size).toBe(0);
 
     // A marca sai no ciclo seguinte, pelo GET: a store fica com o que os dois gravaram.
     await phone.pull();
-    expect(phone.clients.confirmed.get(ID)).toEqual({ ...merged, version: "V3" });
+    expect(phone.clients.confirmed.get(ID)).toEqual({ ...merged, version: V(3) });
     expect(phone.marks.list("clients")).toEqual([]);
   });
 
@@ -166,7 +166,7 @@ describe("pull: registro com pendência (ADR 0041)", () => {
     expect(phone.clients.confirmed.get(ID)).toEqual({
       ...clientV1,
       name: "Alfa Imóveis",
-      version: "V2",
+      version: V(2),
     });
     expect(api.requests).toContain(`GET /api/v1/clients/${ID}`);
   });
@@ -188,21 +188,21 @@ describe("pull: o laço por entidade", () => {
     const api = fakeApi();
     const removed = clientOf(1);
     api.seed("clients", clientV1);
-    api.seed("clients", { ...removed, version: "V2" });
+    api.seed("clients", { ...removed, version: V(2) });
     api.write("clients", { ...clientV1, email: "vendas@alfa.com" });
     api.write("clients", removed, true);
     const property = propertyOf(ID);
     api.write("properties", property);
-    const phone = await device(api, { clients: [clientV1, { ...removed, version: "V2" }] });
+    const phone = await device(api, { clients: [clientV1, { ...removed, version: V(2) }] });
     // A partir do cursor de quem já tinha a V1 e a V2.
     await phone.state.cursors.set("clients", "2");
 
     expect(await phone.pull()).toBe("done");
 
     expect([...phone.clients.confirmed.values()]).toEqual([
-      { ...clientV1, email: "vendas@alfa.com", version: "V3" },
+      { ...clientV1, email: "vendas@alfa.com", version: V(3) },
     ]);
-    expect([...phone.properties.confirmed.values()]).toEqual([{ ...property, version: "V5" }]);
+    expect([...phone.properties.confirmed.values()]).toEqual([{ ...property, version: V(5) }]);
     expect(phone.clients.collection.get(ID)?.email).toBe("vendas@alfa.com");
     expect(api.requests).toEqual([
       "GET /api/v1/sync/clients?cursor=2",
@@ -291,6 +291,44 @@ describe("pull: o laço por entidade", () => {
 
 // O cursor vencido ou ilegível pede o resync completo da entidade (ADR 0043): puxa do zero por cima do que o aparelho
 // tem e só no fim tira o que não veio, menos o que tem pendência.
+describe("pull: a store lida por chave (spike 2, ADR 0047)", () => {
+  it("a página lê da store confirmada só os ids dela, e a store inteira só no resync", async () => {
+    const api = fakeApi();
+    const [kept, changed, removed] = [clientOf(1), clientOf(2), clientOf(3)];
+    for (const row of [kept, changed, removed]) api.seed("clients", { ...row, version: V(1) });
+    api.write("clients", { ...changed, name: "Cliente 2 renomeado" });
+    api.write("clients", removed, true);
+    api.write("clients", clientOf(4));
+    const phone = await device(api, {
+      clients: [kept, changed, removed].map((row) => ({ ...row, version: V(1) })),
+    });
+    await phone.state.cursors.set("clients", "1");
+
+    expect(await phone.pull()).toBe("done");
+
+    const asked = phone.clients.readConfirmed.mock.calls.map(([ids]) => [...ids].toSorted());
+    expect(asked).toContainEqual([changed.id, removed.id, clientOf(4).id].toSorted());
+    expect(asked.flat()).not.toContain(kept.id);
+    expect(phone.clients.exportData).not.toHaveBeenCalled();
+    expect(phone.clients.confirmed.get(changed.id)?.name).toBe("Cliente 2 renomeado");
+    expect(phone.clients.confirmed.has(removed.id)).toBe(false);
+    expect(phone.clients.confirmed.has(clientOf(4).id)).toBe(true);
+  });
+
+  it("item mais velho que a store, sem pendência: a versão não volta, e o registro ganha a marca", async () => {
+    const api = fakeApi();
+    api.seed("clients", { ...clientV1, version: V(3) });
+    // O aparelho já confirmou a V5 (um envio daqui, lido depois da página).
+    const newer = { ...clientV1, phone: "(71) 4444-0000", version: V(5) };
+    const phone = await device(api, { clients: [newer] });
+
+    expect(await phone.pull()).toBe("done");
+
+    expect(phone.clients.confirmed.get(ID)).toEqual(newer);
+    expect(phone.marks.list("clients")).toEqual([ID]);
+  });
+});
+
 describe("pull: resync", () => {
   const removed = clientOf(2);
   const kept = clientOf(1);
@@ -300,14 +338,14 @@ describe("pull: resync", () => {
     async (type) => {
       const api = fakeApi();
       api.seed("clients", clientV1);
-      api.seed("clients", { ...kept, version: "V2" });
-      api.seed("clients", { ...removed, version: "V3" });
+      api.seed("clients", { ...kept, version: V(2) });
+      api.seed("clients", { ...removed, version: V(3) });
       api.write("clients", removed, true);
       api.write("clients", { ...clientV1, name: "Alfa Imóveis" });
       const added = clientOf(3);
       api.write("clients", added);
       const phone = await device(api, {
-        clients: [clientV1, { ...kept, version: "V2" }, { ...removed, version: "V3" }],
+        clients: [clientV1, { ...kept, version: V(2) }, { ...removed, version: V(3) }],
       });
       await phone.state.cursors.set("clients", "3");
       const release = api.hold("/api/v1/clients/");
@@ -325,8 +363,8 @@ describe("pull: resync", () => {
       ]);
       expect([...phone.clients.confirmed.values()]).toEqual([
         clientV1,
-        { ...kept, version: "V2" },
-        { ...added, version: "V6" },
+        { ...kept, version: V(2) },
+        { ...added, version: V(6) },
       ]);
       expect(phone.marks.list("clients")).toEqual([ID]);
       expect(await phone.outbox.peekOutbox()).toHaveLength(1);
@@ -381,7 +419,7 @@ describe("pull: resync", () => {
     const api = fakeApi({ pageSize: 2 });
     const phoneHas: ClientRecord[] = [];
     for (let n = 1; n <= 5; n += 1) {
-      const row = { ...clientOf(n), version: `V${n}` };
+      const row = { ...clientOf(n), version: V(n) };
       api.seed("clients", row);
       phoneHas.push(row);
     }
@@ -461,7 +499,7 @@ describe("pull: resposta lida antes de uma confirmação daqui (#144)", () => {
 
     phone.saveClient({ ...clientV1, phone: phoneHere });
     await confirmedHere(phone, ID);
-    const confirmed = { ...clientV1, phone: phoneHere, version: "V2" };
+    const confirmed = { ...clientV1, phone: phoneHere, version: V(2) };
     expect(phone.clients.confirmed.get(ID)).toEqual(confirmed);
     release();
     await pulling;
@@ -488,7 +526,7 @@ describe("pull: resposta lida antes de uma confirmação daqui (#144)", () => {
     release();
     await pulling;
 
-    expect(phone.clients.confirmed.get(ID)).toEqual({ ...clientV1, phone: phoneHere, version: "V2" });
+    expect(phone.clients.confirmed.get(ID)).toEqual({ ...clientV1, phone: phoneHere, version: V(2) });
     expect(phone.marks.list("clients")).toEqual([ID]);
   });
 
@@ -508,7 +546,7 @@ describe("pull: resposta lida antes de uma confirmação daqui (#144)", () => {
     release();
     expect(await pulling).toBe("done");
 
-    expect(phone.clients.confirmed.get(added.id)).toEqual({ ...added, version: "V2" });
+    expect(phone.clients.confirmed.get(added.id)).toEqual({ ...added, version: V(2) });
     expect(phone.marks.list("clients")).toEqual([added.id]);
   });
 });

@@ -197,6 +197,7 @@ async function start(server: ReturnType<typeof fakeServer>, local: ReturnType<ty
     update: (id: string, change: (row: InspectionRecord) => void) => optimistic.update(id, change),
     utils: {
       exportData: async () => [...local.confirmed.values()],
+      readConfirmed: async (ids: readonly string[]) => ids.flatMap((key) => local.confirmed.get(key) ?? []),
       acceptMutations: async ({ mutations }: { mutations: { modified: InspectionRecord }[] }) => {
         for (const { modified } of mutations) local.confirmed.set(modified.id, modified);
       },

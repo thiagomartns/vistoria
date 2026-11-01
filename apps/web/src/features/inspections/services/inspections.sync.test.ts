@@ -50,6 +50,7 @@ function setup(responses: (() => Response)[], stored: InspectionRecord[] = []) {
   const inspections = {
     utils: {
       exportData: async () => [...confirmed.values()],
+      readConfirmed: async (ids: readonly string[]) => ids.flatMap((key) => confirmed.get(key) ?? []),
       acceptMutations: async ({ mutations }: { mutations: { modified: InspectionRecord }[] }) => {
         for (const { modified } of mutations) confirmed.set(modified.id, modified);
       },

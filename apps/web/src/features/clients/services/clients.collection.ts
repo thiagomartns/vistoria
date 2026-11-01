@@ -1,4 +1,6 @@
-import { type IndexedDBInstance, createCollection, indexedDBCollectionOptions } from "@tanstack/db";
+import { type IndexedDBInstance, createCollection } from "@tanstack/db";
+
+import { syncedCollectionOptions } from "@/shared/db/local-db";
 
 import type { ClientRecord } from "../models/client";
 
@@ -6,13 +8,7 @@ import type { ClientRecord } from "../models/client";
 // pendente volta da outbox como estado otimista quando o app abre.
 
 export function createClientsCollection(db: IndexedDBInstance) {
-  return createCollection(
-    indexedDBCollectionOptions<ClientRecord, string>({
-      db,
-      name: "clients",
-      getKey: (client) => client.id,
-    }),
-  );
+  return createCollection(syncedCollectionOptions<ClientRecord>(db, "clients"));
 }
 
 export type ClientsCollection = ReturnType<typeof createClientsCollection>;
