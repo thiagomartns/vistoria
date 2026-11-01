@@ -112,6 +112,12 @@ importers:
 
   scripts/dev-api: {}
 
+  scripts/device-spike:
+    devDependencies:
+      playwright-core:
+        specifier: 1.64.1
+        version: 1.64.1
+
   scripts/gen-api:
     devDependencies:
       '@hey-api/openapi-ts':
