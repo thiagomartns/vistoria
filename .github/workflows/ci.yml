@@ -137,6 +137,9 @@ jobs:
       - name: Roteiro do conflito
         run: pnpm spike:conflict
 
+      - name: Roteiro do aparelho
+        run: pnpm spike:device
+
       - name: Log da API
         if: failure()
         run: tail -n 300 "$RUNNER_TEMP/api.log"
