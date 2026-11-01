@@ -140,6 +140,13 @@ jobs:
       - name: Roteiro do aparelho
         run: pnpm spike:device
 
+      # Depois dos roteiros: o signup do seed não divide o limite de 5 por minuto com os deles. Duas vezes, para provar
+      # que rodar de novo completa até N sem duplicar nada (o seed confere o total pelo delta e falha se não bater).
+      - name: Seed
+        run: |
+          pnpm seed --inspections 200
+          pnpm seed --inspections 200
+
       - name: Log da API
         if: failure()
         run: tail -n 300 "$RUNNER_TEMP/api.log"

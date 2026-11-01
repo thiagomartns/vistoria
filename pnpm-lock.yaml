@@ -139,6 +139,8 @@ importers:
         specifier: 1.64.1
         version: 1.64.1
 
+  scripts/seed: {}
+
   scripts/shell-spike:
     devDependencies:
       playwright-core:

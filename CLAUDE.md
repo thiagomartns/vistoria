@@ -12,10 +12,10 @@ A API é a única fonte de verdade e de segurança. Detalhes em [docs/vision.md]
 | --- | --- |
 | `apps/web/` | Next.js 16, static export ([CLAUDE.md](apps/web/CLAUDE.md)) |
 | `apps/api/` | .NET 10, controllers + testes; `openapi.json` gerado no build ([CLAUDE.md](apps/api/CLAUDE.md)) |
-| `scripts/` | `screens` (prints do static export), `gen-api` (gerador do contrato, com TypeScript 6), `db-init` (senha local e chave do JWT; `ci-env.mjs` gera as do job `e2e`), `dev-api` (pré-check e `dotnet watch`), `outbox-spike` (roteiro dos spikes 1a e 1b e das duas entregas do M2, pelas telas de clientes, imóveis e vistorias, com os helpers em `lib.mjs`), `conflict-spike` (roteiro do spike 3, a entrega do M3), `shell-spike` (roteiro do spike 4) e `device-spike` (a entrega do M4: aparelho novo, duas abas e pendência protegida) |
+| `scripts/` | `screens` (prints do static export), `gen-api` (gerador do contrato, com TypeScript 6), `db-init` (senha local e chave do JWT; `ci-env.mjs` gera as do job `e2e`), `dev-api` (pré-check e `dotnet watch`), `seed` (dados pela API, com o client gerado), `outbox-spike` (roteiro dos spikes 1a e 1b e das duas entregas do M2, pelas telas de clientes, imóveis e vistorias, com os helpers em `lib.mjs`), `conflict-spike` (roteiro do spike 3, a entrega do M3), `shell-spike` (roteiro do spike 4) e `device-spike` (a entrega do M4: aparelho novo, duas abas e pendência protegida) |
 | `infra/` | `docker-compose.dev.yml` (SQL Server); senha em `infra/.env`, gerada pelo `pnpm db:init` e nunca commitada |
 | `docs/` | Visão, arquitetura e ADRs (`docs/decisions/`) — **o repositório manda** |
-| `.github/` | CI (`ci.yml`: jobs `api`, `web`, `e2e`, `security`, obrigatórios na `main`; o `e2e` roda `spike:outbox`, `spike:conflict` e `spike:device` contra SQL Server e API de verdade) e Dependabot semanal |
+| `.github/` | CI (`ci.yml`: jobs `api`, `web`, `e2e`, `security`, obrigatórios na `main`; o `e2e` roda `spike:outbox`, `spike:conflict`, `spike:device` e o `seed` duas vezes contra SQL Server e API de verdade) e Dependabot semanal |
 | `.claude/commands/` | `/issue`, `/adr`, `/gen-api`, `/screen` |
 | `.mcp.json` | Servidor remoto do MCP do Figma (OAuth, sem token) |
 
@@ -27,7 +27,8 @@ A API é a única fonte de verdade e de segurança. Detalhes em [docs/vision.md]
 | `pnpm db:up` / `pnpm db:down` | Sobe / derruba o SQL Server (exige `infra/.env`); com `restart: unless-stopped`, ele volta sozinho depois de um reboot |
 | `pnpm dev:api` | Confere o ambiente (outro watch, porta 8080, User Secrets) e sobe o banco se estiver parado; depois `dotnet watch` em `http://localhost:8080` (Swagger em `/swagger`), que aplica as migrações |
 | `pnpm dev:web` | `next dev` em `http://localhost:3000` |
-| `pnpm check` | Lint (Oxlint), typecheck e testes (Vitest) do web, e testes de `scripts/screens`, `scripts/db-init` e `scripts/dev-api` |
+| `pnpm check` | Lint (Oxlint), typecheck e testes (Vitest) do web, e testes de `scripts/screens`, `scripts/db-init`, `scripts/dev-api` e `scripts/seed` |
+| `pnpm seed` | Cria pela API, com o client gerado, o `dev@vistoria.local`, clientes, imóveis, o roteiro "Apartamento" e N vistorias vivas (`--inspections N`, 200 por padrão), 40% concluídas e uma excluída a mais a cada 10; rodar de novo completa até N sem duplicar (exige `db:up` e `dev:api`) |
 | `pnpm gen:api` | Gera tipos, client, Zod e `ProblemType` em `apps/web/src/shared/api/generated/` a partir de `apps/api/openapi.json` |
 | `pnpm --filter web build` | Static export em `apps/web/out/`, com o service worker (`sw.js`) |
 | `pnpm test:api` | `dotnet test` na solution da API (integração com Testcontainers: exige Docker) |
@@ -37,7 +38,7 @@ A API é a única fonte de verdade e de segurança. Detalhes em [docs/vision.md]
 | `pnpm spike:shell` | Roteiro Playwright do spike 4: o shell abre em modo avião depois da primeira visita (exige o build do web; roda no CI) |
 | `pnpm spike:device` | Roteiro Playwright da entrega do M4, com o resto do spike 4: um aparelho novo baixa tudo pelo delta e abre em modo avião; duas abas com o access token vencido renovam com um refresh só (e, sem Web Locks, a tolerância da API segura os dois); o pull não toca a pendência do celular, que envia e converge. Contra a API real (exige `db:up`, `dev:api` e o build do web); com `SCREENS=1`, os prints em `.screens/aparelho/`; aceita `PULL_CHAOS=1` |
 
-`pnpm seed` chega no M2. Uma tela do Figma vira código com `/screen <link> <issue>`.
+Uma tela do Figma vira código com `/screen <link> <issue>`.
 
 **MCP do Figma, na primeira sessão:** aprove o servidor `figma` do `.mcp.json` e rode `/mcp` → figma → Authenticate (OAuth no navegador; o token fica fora do repositório).
 
@@ -48,6 +49,8 @@ Nenhum segredo em arquivo versionado, **nem de exemplo** ([ADR 0025](docs/decisi
 - `.env.example` só lista nomes (`NOME=`); o valor é gerado pelo `pnpm db:init`. Nunca `cp` do exemplo.
 - Nunca imprimir, logar ou pôr em argumento de comando uma senha: compare por hash, passe por stdin ou arquivo.
 - Senha exibida ou copiada de algum lugar conta como vazada: `pnpm db:init --rotate`.
+- A senha do `dev@vistoria.local` é gerada pelo `pnpm seed` no `infra/.env` (`DEV_USER_PASSWORD`); no CI, pelo
+  `ci-env.mjs`. Quem entra como ele (o roteiro do spike 2) a lê de lá, nunca de um literal.
 - O `SecretsTests` (API) quebra o CI com valor em `.env.example`, senha literal no compose ou connection
   string em `appsettings*.json`.
 

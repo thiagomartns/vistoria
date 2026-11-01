@@ -1,0 +1,10 @@
+{
+  "name": "seed",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node seed.mjs",
+    "test": "node --test"
+  }
+}
