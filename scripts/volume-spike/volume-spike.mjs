@@ -5,8 +5,8 @@
 // - o tamanho do banco local (IndexedDB);
 // - a live query da lista: da resposta do delta com uma mudança até a linha mudar;
 // - a abertura do app recarregado em modo avião até a lista pronta, e a da tela de campo pela lista.
-// As metas ficaram fixadas antes de medir (frontend.md, Spike 2); uma meta não cumprida quebra o roteiro, menos a do
-// reload offline, pendente na #154 (ADR 0047).
+// As metas ficaram fixadas antes de medir (frontend.md, Spike 2); uma meta não cumprida quebra o roteiro. A do reload
+// offline foi cumprida pela lista pelo resumo (#154, ADR 0048).
 // `--inspections` é o mínimo de vistorias vivas que o servidor precisa ter (10 mil por padrão; o CI roda com 200).
 // Exige `pnpm db:up`, `pnpm dev:api`, `pnpm seed -- --inspections N` e `pnpm --filter web build`.
 // A senha do usuário de dev vem de DEV_USER_PASSWORD ou do infra/.env, nunca impressa (ADR 0025).
@@ -35,15 +35,12 @@ const DEV_EMAIL = "dev@vistoria.local";
 const RUNS = 3;
 const MB = 1024 * 1024;
 
-/**
- * As metas, por aparelho. Fixadas antes da primeira medida (#134): não se ajustam ao número. Uma meta com `pending`
- * ainda não é cumprida, e a issue dela a cumpre (ADR 0047): o roteiro a imprime, com ✗ se for o caso, sem quebrar.
- */
+/** As metas, por aparelho. Fixadas antes da primeira medida (#134): não se ajustam ao número. */
 const TARGETS = {
   firstPull: { label: "Primeiro pull completo", unit: "ms", phone: 120_000, desktop: 60_000 },
   database: { label: "Banco local (IndexedDB)", unit: "bytes", phone: 100 * MB, desktop: 100 * MB },
   liveQuery: { label: "Live query (delta → linha)", unit: "ms", phone: 500, desktop: 200 },
-  reload: { label: "Reload offline → lista pronta", unit: "ms", phone: 2000, desktop: 1000, pending: "#154" },
+  reload: { label: "Reload offline → lista pronta", unit: "ms", phone: 2000, desktop: 1000 },
   field: { label: "Lista → tela de campo", unit: "ms", phone: 1000, desktop: 500 },
 };
 
@@ -376,7 +373,7 @@ async function measure(browser, device, user, server) {
   }
 }
 
-/** A tabela final: cada medida, a meta e se cumpriu. Devolve as que não cumpriram, fora as pendentes. */
+/** A tabela final: cada medida, a meta e se cumpriu. Devolve as que não cumpriram. */
 function report(measured) {
   const missed = [];
   console.log("\nResultado (mediana de 3 nas medidas de tela):\n");
@@ -385,13 +382,12 @@ function report(measured) {
     const cells = DEVICES.map(({ name }) => {
       const value = measured[name][key];
       const met = value <= target[name];
-      if (!met && !target.pending) {
+      if (!met) {
         missed.push(`${target.label} no ${name}: ${format(value, target.unit)} > ${format(target[name], target.unit)}`);
       }
       return `${met ? "✓" : "✗"} ${format(value, target.unit)} (≤ ${format(target[name], target.unit)})`;
     });
-    const note = target.pending ? `  (meta pendente, ${target.pending})` : "";
-    console.log(`  ${target.label.padEnd(32)}${cells[0].padEnd(30)}${cells[1].padEnd(30)}${note}`);
+    console.log(`  ${target.label.padEnd(32)}${cells[0].padEnd(30)}${cells[1]}`);
   }
   return missed;
 }
