@@ -1,4 +1,6 @@
-import { type IndexedDBInstance, createCollection, indexedDBCollectionOptions } from "@tanstack/db";
+import { type IndexedDBInstance, createCollection } from "@tanstack/db";
+
+import { syncedCollectionOptions } from "@/shared/db/local-db";
 
 import type { PropertyRecord } from "../models/property";
 
@@ -6,13 +8,7 @@ import type { PropertyRecord } from "../models/property";
 // está pendente volta da outbox como estado otimista quando o app abre.
 
 export function createPropertiesCollection(db: IndexedDBInstance) {
-  return createCollection(
-    indexedDBCollectionOptions<PropertyRecord, string>({
-      db,
-      name: "properties",
-      getKey: (property) => property.id,
-    }),
-  );
+  return createCollection(syncedCollectionOptions<PropertyRecord>(db, "properties"));
 }
 
 export type PropertiesCollection = ReturnType<typeof createPropertiesCollection>;

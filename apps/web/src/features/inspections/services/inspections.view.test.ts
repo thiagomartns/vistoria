@@ -6,6 +6,9 @@ import type { DraftRecord } from "@/shared/sync/drafts";
 
 import type { InspectionRecord } from "../models/inspection";
 import {
+  LIST_PAGE_SIZE,
+  countLabel,
+  dateOf,
   deletionSubject,
   fieldHeader,
   hasUnsent,
@@ -170,6 +173,45 @@ describe("inspectionRows", () => {
       ["i2", "sincronizado"],
       ["i1", "sincronizado"],
     ]);
+  });
+});
+
+describe("lista longa (spike 2, ADR 0047)", () => {
+  it("o contador diz o total, e quantas a lista montou quando ela está cortada", () => {
+    expect(countLabel(1, 1)).toBe("1 vistoria");
+    expect(countLabel(6, 6)).toBe("6 vistorias");
+    expect(countLabel(LIST_PAGE_SIZE, 10_000)).toBe("50 de 10.000 vistorias");
+    expect(countLabel(1_050, 10_000)).toBe("1.050 de 10.000 vistorias");
+  });
+
+  it("10 mil vistorias: em andamento primeiro e a mais recente antes, pela data do início", () => {
+    const records = Array.from({ length: 10_000 }, (_, n) =>
+      inspection(`i${n}`, {
+        status: n % 10 < 4 ? "completed" : "inProgress",
+        startedAt: new Date(Date.UTC(2026, 0, 1) + n * 60_000).toISOString(),
+      }),
+    );
+
+    const rows = inspectionRows(records, [], new Map(), addresses);
+
+    expect(rows).toHaveLength(10_000);
+    const firstDone = rows.findIndex((row) => row.status === "completed");
+    expect(firstDone).toBe(6_000);
+    for (const part of [rows.slice(0, firstDone), rows.slice(firstDone)]) {
+      const dates = part.map((row) => row.startedAt);
+      expect(dates).toEqual(dates.toSorted().toReversed());
+    }
+  });
+
+  it("as datas saem como o toLocaleDateString e o toLocaleTimeString de pt-BR", () => {
+    for (const iso of ["2026-10-19T12:12:00.000Z", "2026-01-05T23:59:00.000Z", "2026-12-31T00:01:00.000Z"]) {
+      const date = new Date(iso);
+      const day = date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+      const time = date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+      expect(dateOf(iso)).toBe(date.toLocaleDateString("pt-BR"));
+      expect(startedLabel(iso)).toBe(`Iniciada em ${day}, ${time}`);
+    }
+    expect(dateOf("não é data")).toBe("");
   });
 });
 

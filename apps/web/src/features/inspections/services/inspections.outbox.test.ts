@@ -111,6 +111,7 @@ function localStores() {
   const store = {
     utils: {
       exportData: async () => [...confirmed.values()],
+      readConfirmed: async (ids: readonly string[]) => ids.flatMap((key) => confirmed.get(key) ?? []),
       acceptMutations: async ({ mutations }: { mutations: { modified: { id: string; version: string } }[] }) => {
         for (const { modified } of mutations) confirmed.set(modified.id, modified);
       },

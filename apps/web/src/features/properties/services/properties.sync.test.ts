@@ -53,7 +53,7 @@ function setup(respond: () => Response, stored: PropertyRecord[] = []) {
     async () => {},
   );
   const properties = {
-    utils: { acceptMutations, exportData: async () => stored },
+    utils: { acceptMutations, exportData: async () => stored, readConfirmed: async (ids: readonly string[]) => stored.filter((row) => ids.includes(row.id)) },
     get: () => undefined,
   } as unknown as PropertiesCollection;
   const drafts = new Map<string, Record<string, unknown>>();

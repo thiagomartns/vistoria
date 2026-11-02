@@ -85,6 +85,7 @@ function collection<T extends { id: string }>(name: string, writes: string[], st
     collection: {
       utils: {
         exportData: async () => [...confirmed.values()],
+        readConfirmed: async (ids: readonly string[]) => ids.flatMap((key) => confirmed.get(key) ?? []),
         acceptMutations: async ({ mutations }: { mutations: { modified: T }[] }) => {
           for (const { modified } of mutations) {
             confirmed.set(modified.id, modified);

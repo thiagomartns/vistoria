@@ -270,4 +270,40 @@ describe("InspectionsScreen", () => {
     expect(rows()).toHaveLength(1);
     expect(rows()[0]!.getAttribute("href")).toBe("/inspections/edit?id=i2");
   });
+
+  it("lista longa: monta 50 linhas por vez, e 'Mostrar mais' monta a próxima página até acabar (ADR 0047)", async () => {
+    const user = userEvent.setup();
+    // 60 em andamento, da mais recente (i0) para a mais antiga.
+    const many = Array.from({ length: 60 }, (_, n) =>
+      inspection(`i${n}`, { startedAt: new Date(2026, 9, 20, 8, 0, -n).toISOString() }),
+    );
+    const { container } = open({ inspections: many });
+    // Por seletor: as consultas por role do jsdom ficam lentas com dezenas de linhas.
+    const tableLinks = () => container.querySelectorAll("tbody a");
+    const mobileLinks = () => container.querySelectorAll("ul a");
+
+    expect(tableLinks()).toHaveLength(50);
+    expect(mobileLinks()).toHaveLength(50);
+    expect(tableLinks()[0]!.getAttribute("href")).toBe("/inspections/edit?id=i0");
+    expect(tableLinks()[49]!.getAttribute("href")).toBe("/inspections/edit?id=i49");
+    expect(screen.getByText("50 de 60 vistorias")).toBeDefined();
+
+    await user.click(screen.getByRole("button", { name: "Mostrar mais" }));
+
+    expect(tableLinks()).toHaveLength(60);
+    expect(mobileLinks()).toHaveLength(60);
+    expect(tableLinks()[59]!.getAttribute("href")).toBe("/inspections/edit?id=i59");
+    expect(screen.getByText("60 vistorias")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Mostrar mais" })).toBeNull();
+  });
+
+  it("até 50 vistorias, sem 'Mostrar mais'", () => {
+    const { container } = open({
+      inspections: Array.from({ length: 50 }, (_, n) => inspection(`i${n}`)),
+    });
+
+    expect(container.querySelectorAll("tbody a")).toHaveLength(50);
+    expect(screen.getByText("50 vistorias")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Mostrar mais" })).toBeNull();
+  });
 });

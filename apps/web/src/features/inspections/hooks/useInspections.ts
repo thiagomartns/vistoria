@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import type { ClientRecord } from "@/features/clients/models/client";
 import { useLocalStore } from "@/features/local-store/hooks/useLocalStore";
 import type { PropertyRecord } from "@/features/properties/models/property";
@@ -6,7 +8,9 @@ import { addressOf } from "@/features/properties/services/properties.view";
 import { conflictHref } from "../services/inspections.resolve";
 import { deleteInspection } from "../services/inspections.sync";
 import {
+  LIST_PAGE_SIZE,
   type PlaceView,
+  countLabel,
   dateOf,
   deletionSubject,
   hasUnsent,
@@ -38,16 +42,24 @@ export function placesOf(
 /**
  * As vistorias do banco local para a lista de /inspections, com o imóvel, o cliente e o estado de sync. A linha abre a
  * tela de campo, ou o ConflictResolver quando a vistoria está em conflito. `remove` põe a exclusão na fila (ADR 0039).
+ * A lista monta `LIST_PAGE_SIZE` linhas por vez; `showMore` monta mais uma página (ADR 0047).
  */
 export function useInspections() {
   const { store, ready, inspections, properties, clients, drafts, states } = useLocalStore();
-  const rows = inspectionRows(inspections, drafts, states, placesOf(properties, clients));
+  const [limit, setLimit] = useState(LIST_PAGE_SIZE);
+  const all = inspectionRows(inspections, drafts, states, placesOf(properties, clients));
+  const rows = all.slice(0, limit);
   return {
     ready,
     /** O aparelho não tem nenhuma vistoria. */
-    empty: rows.length === 0,
-    /** "6 vistorias". */
-    count: `${rows.length} ${rows.length === 1 ? "vistoria" : "vistorias"}`,
+    empty: all.length === 0,
+    /** "6 vistorias", ou "50 de 10.000 vistorias" com a lista cortada. */
+    count: countLabel(rows.length, all.length),
+    /** Quantas vistorias ainda não estão na lista. */
+    hidden: all.length - rows.length,
+    showMore() {
+      setLimit((current) => current + LIST_PAGE_SIZE);
+    },
     rows: rows.map((row) => ({
       id: row.id,
       deletable: isDeletable(row),

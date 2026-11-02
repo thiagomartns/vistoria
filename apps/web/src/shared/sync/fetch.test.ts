@@ -74,7 +74,7 @@ function setup({
     }
   });
   const store = {
-    utils: { acceptMutations, exportData: async () => [...confirmed.values()] },
+    utils: { acceptMutations, exportData: async () => [...confirmed.values()], readConfirmed: async (ids: readonly string[]) => ids.flatMap((key) => confirmed.get(key) ?? []) },
     // O que está na fila leva `$hasPendingWrites`, como a linha otimista do TanStack DB.
     get: (key: string) =>
       optimistic.has(key) ? { ...optimistic.get(key), $hasPendingWrites: true } : confirmed.get(key),

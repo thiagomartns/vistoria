@@ -38,6 +38,10 @@ import {
 } from "./pull";
 import { resetSyncStatus } from "./sync-status";
 import type { SyncRecord } from "./upsert";
+import { rowversionOf, versionOf } from "./version";
+
+/** A `version` que o servidor falso dá à escrita `n` do relógio dele: o rowversion `n` em base64, como a API. */
+export const V = (n: number) => versionOf(n);
 
 // O pull de ponta a ponta, para os testes (`pull.test.ts` e `inspections.pull.test.ts`): a outbox e as mutationFns de
 // verdade, uma collection com a camada otimista do TanStack DB por cima da store confirmada, e um servidor falso que,
@@ -75,7 +79,7 @@ type Row = SyncRecord & Record<string, unknown> & { seq: number; deleted?: boole
 export const DELETED_AT = "2026-10-29T11:00:00+00:00";
 
 /**
- * O servidor falso. A versão é `V<n>`, com `n` de um relógio do banco inteiro, como o rowversion; o cursor é o `n` da
+ * O servidor falso. A versão é `V(n)`, o rowversion `n` em base64, de um relógio do banco inteiro; o cursor é o `n` da
  * última linha da página. `hold` segura as requisições de um caminho antes de o servidor ler; `holdAfter`, depois de ele
  * ler, com a resposta já pronta e entregue só na liberação.
  */
@@ -112,8 +116,8 @@ export function fakeApi({ pageSize = 500 } = {}) {
   /** Grava `row` numa versão nova, como um `PUT` aceito (ou a exclusão, com `deleted`); devolve a versão. */
   const write = (entity: Entity, row: SyncRecord & Record<string, unknown>, deleted = false) => {
     clock += 1;
-    tables[entity].set(row.id, { ...row, version: `V${clock}`, seq: clock, deleted });
-    return `V${clock}`;
+    tables[entity].set(row.id, { ...row, version: V(clock), seq: clock, deleted });
+    return V(clock);
   };
 
   const handle = async (request: Request): Promise<Response> => {
@@ -176,7 +180,7 @@ export function fakeApi({ pageSize = 500 } = {}) {
     write,
     /** Grava como o aparelho já confirmou: a versão vem de `row`, e o relógio a acompanha. */
     seed(entity: Entity, row: SyncRecord & Record<string, unknown>) {
-      const seq = Number(row.version!.slice(1));
+      const seq = Number(rowversionOf(row.version)!);
       clock = Math.max(clock, seq);
       tables[entity].set(row.id, { ...row, seq });
     },
@@ -242,6 +246,12 @@ export async function syncedStore<T extends SyncRecord>(initial: T[]) {
     }
     channel!.commit();
   });
+  /** A store inteira, como o `exportData` da IndexedDB. */
+  const exportData = vi.fn<() => Promise<T[]>>(async () => [...confirmed.values()]);
+  /** Só os ids pedidos, como o `readConfirmed` de `local-db.ts`. */
+  const readConfirmed = vi.fn<(ids: readonly string[]) => Promise<T[]>>(async (ids) =>
+    ids.flatMap((key) => confirmed.get(key) ?? []),
+  );
   created += 1;
   const collection = createCollection<T, string>({
     id: `synced-${created}`,
@@ -256,10 +266,10 @@ export async function syncedStore<T extends SyncRecord>(initial: T[]) {
         params.markReady();
       },
     },
-    utils: { acceptMutations, exportData: async () => [...confirmed.values()] },
+    utils: { acceptMutations, exportData, readConfirmed },
   } as never);
   await collection.preload();
-  return { collection, confirmed, acceptMutations };
+  return { collection, confirmed, acceptMutations, exportData, readConfirmed };
 }
 
 export const localOnly = <T extends { id: string }>(name: string) => {

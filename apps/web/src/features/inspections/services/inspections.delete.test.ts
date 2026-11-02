@@ -133,6 +133,7 @@ function localInspections() {
   const accept = inspections.utils.acceptMutations;
   Object.assign(inspections.utils, {
     exportData: async () => [...confirmed.values()],
+    readConfirmed: async (ids: readonly string[]) => ids.flatMap((key) => confirmed.get(key) ?? []),
     acceptMutations: async (transaction: {
       mutations: { type: string; modified: InspectionRecord }[];
     }) => {

@@ -36,9 +36,21 @@ export type SyncRecord = { id: string; version: string | null; deleting?: true }
 /** A store onde o registro vai depois do 2xx (as `utils` de uma collection IndexedDB). */
 export interface ConfirmedStore<T> {
   utils: {
+    /** A store inteira. Só o resync a lê assim: com milhares de registros, custa segundos (ADR 0047). */
     exportData: () => Promise<T[]>;
+    /** Só os registros de `ids` que a store tem, lidos por chave (`readConfirmed` de `shared/db/local-db.ts`). */
+    readConfirmed: (ids: readonly string[]) => Promise<T[]>;
     acceptMutations: (transaction: { mutations: PendingMutation[] }) => Promise<void>;
   };
+}
+
+/** Os registros de `ids` na store confirmada, por id. */
+export async function confirmedByIds<T extends SyncRecord>(
+  store: ConfirmedStore<T>,
+  ids: readonly string[],
+): Promise<Map<string, T>> {
+  if (ids.length === 0) return new Map();
+  return new Map((await store.utils.readConfirmed(ids)).map((record) => [record.id, record]));
 }
 
 /**
@@ -79,7 +91,7 @@ export async function confirmedOf<T extends SyncRecord>(
   store: ConfirmedStore<T>,
   id: string,
 ): Promise<T | undefined> {
-  return (await store.utils.exportData()).find((record) => record.id === id);
+  return (await confirmedByIds(store, [id])).get(id);
 }
 
 /** Grava na store confirmada, pela mutação da transação, o registro como o servidor o tem agora. */

@@ -490,10 +490,21 @@ export async function openRoom(page, room) {
   await currentRoomIs(page, room);
 }
 
-/** A tela de campo manda para a fila 1,5 s depois da última mudança: espera isso e a fila esvaziar. */
+/**
+ * A tela de campo manda para a fila 1,5 s depois da última mudança: espera isso, a fila esvaziar e a tela saber disso.
+ * A tela lê a outbox a cada segundo (`sync-status.ts`): logo depois de a fila esvaziar no IndexedDB, o SyncBadge do
+ * header e o Dialog de exclusão ainda podem falar de alteração pendente. O badge está no DOM também no celular, escondido.
+ */
 export async function inspectionSettled(page, user, what) {
   await wait(1800);
   await until(async () => (await outboxCount(page, user)) === 0, what, 90_000);
+  const banner = page.getByRole("banner");
+  await until(
+    async () =>
+      (await banner.getByText("Salvo no aparelho", { exact: true }).count()) === 0 &&
+      (await banner.getByText("Enviando", { exact: true }).count()) === 0,
+    `${what}: a tela vê a fila vazia`,
+  );
 }
 
 /** Tira prints em `dir` (nada sem `dir`): o mesmo estado no celular e no desktop, trocando o viewport. */

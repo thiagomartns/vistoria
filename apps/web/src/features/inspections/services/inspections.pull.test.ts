@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { expireSession } from "@/shared/auth/session";
 import { type DraftRecord, saveDraftValues } from "@/shared/sync/drafts";
-import { DELETED_AT, closeDevices, device, fakeApi } from "@/shared/sync/pull.harness";
+import { DELETED_AT, V, closeDevices, device, fakeApi } from "@/shared/sync/pull.harness";
 
 import { INSPECTION_ENTITY, type InspectionRecord, type ItemCondition } from "../models/inspection";
 import type { InspectionsCollection } from "./inspections.collection";
@@ -32,7 +32,7 @@ const PROPERTY = "01a16032-2dfb-77de-84a2-1f165bdd9a00";
 const inspectionV1: InspectionRecord = {
   ...newMoveInInspection(PROPERTY, new Date("2026-10-29T09:00:00Z")),
   id: ID,
-  version: "V1",
+  version: V(1),
 };
 
 /** A vistoria com a condição do item `i` do ambiente `r`. */
@@ -194,7 +194,7 @@ describe("pull da vistoria: sem pendência (ADR 0043)", () => {
 
     expect(await phone.pull()).toBe("done");
 
-    expect(phone.inspections.confirmed.get(ID)).toEqual({ ...remote, version: "V2" });
+    expect(phone.inspections.confirmed.get(ID)).toEqual({ ...remote, version: V(2) });
     expect(phone.drafts.get(ID)).toMatchObject({
       status: "draft",
       step: 2,

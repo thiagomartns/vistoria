@@ -147,6 +147,10 @@ jobs:
           pnpm seed --inspections 200
           pnpm seed --inspections 200
 
+      # Com as 200 vistorias do seed: prova que o roteiro do spike 2 segue de pé. Os números de 10 mil ficam no frontend.md.
+      - name: Roteiro do volume
+        run: pnpm spike:volume --inspections 200
+
       - name: Log da API
         if: failure()
         run: tail -n 300 "$RUNNER_TEMP/api.log"

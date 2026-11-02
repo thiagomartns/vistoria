@@ -132,9 +132,25 @@ export function inspectionRows(
     if (!known.has(draft.id)) rows.push(inspectionRowOf(undefined, draft, undefined, places));
   }
   const rank = (row: InspectionRow) => (row.status === "completed" ? 1 : 0);
+  // `startedAt` é ISO 8601 em UTC: a ordem das strings é a das datas, sem o custo do `localeCompare` em 10 mil linhas.
+  const newest = (a: InspectionRow, b: InspectionRow) =>
+    a.startedAt === b.startedAt ? 0 : a.startedAt < b.startedAt ? 1 : -1;
   return rows
     .filter((row) => row !== undefined)
-    .toSorted((a, b) => rank(a) - rank(b) || b.startedAt.localeCompare(a.startedAt));
+    .toSorted((a, b) => rank(a) - rank(b) || newest(a, b));
+}
+
+/**
+ * Quantas linhas a lista monta de cada vez. Montar todas trava a tela com milhares de vistorias no aparelho (spike 2,
+ * ADR 0047); a busca e os filtros do M5 vêm por cima disto.
+ */
+export const LIST_PAGE_SIZE = 50;
+
+/** "6 vistorias", "1 vistoria"; com a lista cortada, "50 de 10.000 vistorias". */
+export function countLabel(shown: number, total: number): string {
+  const noun = total === 1 ? "vistoria" : "vistorias";
+  const all = total.toLocaleString("pt-BR");
+  return shown < total ? `${shown.toLocaleString("pt-BR")} de ${all} ${noun}` : `${all} ${noun}`;
 }
 
 /** Só a vistoria em andamento pode ser excluída, e só uma vez: a que já está saindo não mostra o "···". */
@@ -150,16 +166,19 @@ export function deletionSubject(address: string, kindLabel: string | null): stri
   return kindLabel ? `${address} · Vistoria de ${kindLabel.toLowerCase()}` : address;
 }
 
+// Um formatador por formato, reaproveitado: o `toLocaleDateString` cria um a cada chamada, e isso custava mais de um
+// segundo numa lista de 10 mil vistorias (spike 2). A saída é a mesma.
+const DATE = new Intl.DateTimeFormat("pt-BR");
+const DAY = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" });
+const TIME = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" });
+
 /** "19/10/2026". */
 export function dateOf(iso: string): string {
   const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString("pt-BR");
+  return Number.isNaN(date.getTime()) ? "" : DATE.format(date);
 }
 
-const dayAndTime = (date: Date) => ({
-  day: date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
-  time: date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
-});
+const dayAndTime = (date: Date) => ({ day: DAY.format(date), time: TIME.format(date) });
 
 /** "Iniciada em 19/10, 09:12" (meta da linha no celular). */
 export function startedLabel(iso: string): string {
