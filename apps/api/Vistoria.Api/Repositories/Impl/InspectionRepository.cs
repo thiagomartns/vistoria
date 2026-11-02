@@ -112,6 +112,14 @@ public class InspectionRepository(AppDbContext db) : GenericRepository<Inspectio
         return rooms.Concat(items).ToHashSet();
     }
 
+    // Sem o filtro de soft delete, que esconderia justamente os tombstones. Ambientes e itens saem pelo ON DELETE
+    // CASCADE, no mesmo statement; o ExecuteDelete não passa pelo SaveChanges, que transformaria tudo em DeletedAt.
+    public Task<int> PurgeDeletedBeforeAsync(DateTimeOffset cutoff, CancellationToken cancellationToken) =>
+        Set.IgnoreQueryFilters(SoftDelete)
+            .Where(i => i.DeletedAt < cutoff
+                && !Set.IgnoreQueryFilters(SoftDelete).Any(other => other.ReferenceInspectionId == i.Id))
+            .ExecuteDeleteAsync(cancellationToken);
+
     // Ambientes e itens vivos, em ordem de position. O Where é explícito porque o delta ignora o filtro de soft delete
     // na consulta inteira, Include incluído. Uma consulta só, não split: duas leituras poderiam pegar a raiz de uma
     // versão e os filhos de outra, com uma gravação no meio.

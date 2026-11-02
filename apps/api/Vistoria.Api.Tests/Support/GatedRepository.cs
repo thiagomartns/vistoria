@@ -113,4 +113,7 @@ public sealed class GatedInspectionRepository : GatedRepository<Inspection>, IIn
         Guid inspectionId, IReadOnlyCollection<Guid> roomIds, IReadOnlyCollection<Guid> itemIds,
         CancellationToken cancellationToken) =>
         _inner.FindChildIdsOfOtherInspectionsAsync(inspectionId, roomIds, itemIds, cancellationToken);
+
+    public Task<int> PurgeDeletedBeforeAsync(DateTimeOffset cutoff, CancellationToken cancellationToken) =>
+        _inner.PurgeDeletedBeforeAsync(cutoff, cancellationToken);
 }

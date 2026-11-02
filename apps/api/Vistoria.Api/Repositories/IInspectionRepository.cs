@@ -21,4 +21,12 @@ public interface IInspectionRepository : IRepository<Inspection>
     Task<IReadOnlySet<Guid>> FindChildIdsOfOtherInspectionsAsync(
         Guid inspectionId, IReadOnlyCollection<Guid> roomIds, IReadOnlyCollection<Guid> itemIds,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Apaga fisicamente as vistorias excluídas antes de <paramref name="cutoff"/>, de todos os donos, com os ambientes
+    /// e itens delas (cascata do banco), e devolve quantas raízes apagou. Uma excluída que outra vistoria referencia
+    /// fica: o FK da referência derrubaria o <c>DELETE</c> inteiro. Um <c>DELETE</c> só, sem trava: duas instâncias
+    /// rodando juntas não falham, e cada linha é apagada por uma delas só.
+    /// </summary>
+    Task<int> PurgeDeletedBeforeAsync(DateTimeOffset cutoff, CancellationToken cancellationToken);
 }
