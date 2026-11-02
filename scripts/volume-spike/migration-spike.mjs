@@ -45,8 +45,11 @@ import {
   setOffline,
 } from "./lib.mjs";
 
-/** A `main` antes da #154: o banco local na versão 5, com as vistorias na collection IndexedDB do TanStack DB. */
-const V5_REF = "b362132";
+/**
+ * A `main` antes da #154: o banco local na versão 5, com as vistorias na collection IndexedDB do TanStack DB. O sha
+ * inteiro: o checkout raso do CI só busca um commit pelo sha completo.
+ */
+const V5_REF = "b36213291a51b5c11b84256e71e95a4da80dd5a8";
 /** As condições que o roteiro alterna no item marcado. */
 const CONDITIONS = { good: "Bom", poor: "Ruim" };
 
@@ -72,7 +75,7 @@ function oldBuild(ref) {
   })();
   const out = join(root, "node_modules", ".cache", "migration-spike", sha, "out");
   if (existsSync(join(out, "index.html"))) {
-    ok(`build de ${ref} (${sha.slice(0, 7)}) do cache`);
+    ok(`build de ${sha.slice(0, 7)} do cache`);
     return out;
   }
   const tree = mkdtempSync(join(tmpdir(), "vistoria-migration-"));
@@ -86,7 +89,7 @@ function oldBuild(ref) {
     git("worktree", "remove", "--force", tree);
     rmSync(tree, { recursive: true, force: true });
   }
-  ok(`build de ${ref} (${sha.slice(0, 7)}) feito num git worktree`);
+  ok(`build de ${sha.slice(0, 7)} feito num git worktree`);
   return out;
 }
 
@@ -167,7 +170,7 @@ const server = await serve();
 const newOut = join(root, "apps", "web", "out");
 const browser = await launch();
 try {
-  step(1, `O build de ${options.from} (banco na versão 5) baixa tudo e guarda uma marcação sem enviar`);
+  step(1, `O build de ${options.from.slice(0, 12)} (banco na versão 5) baixa tudo e guarda uma marcação sem enviar`);
   const oldOut = oldBuild(options.from);
   const password = devPassword();
   const user = { email: DEV_EMAIL, password, ...(await apiSignIn({ email: DEV_EMAIL, password })) };
