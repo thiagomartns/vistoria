@@ -9,18 +9,20 @@ import {
 } from "@tanstack/db";
 
 // Banco local do aparelho, um por usuário (`vistoria-<user.id>`, frontend.md "Dados no aparelho"), com uma store por
-// collection: as das entidades, os rascunhos e, do pull, os cursores e as marcas dos registros pulados. Uma store nova só
-// sobe a versão (o IndexedDB cria as que faltam no upgrade). Apagar o banco ao sair ou trocar de usuário é `wipe.ts`.
+// collection: as das entidades, o resumo das vistorias (ADR 0048), os rascunhos e, do pull, os cursores e as marcas dos
+// registros pulados. Uma store nova só sobe a versão (o IndexedDB cria as que faltam no upgrade). Apagar o banco ao sair
+// ou trocar de usuário é `wipe.ts`.
 
 export const LOCAL_STORES = [
   "clients",
   "properties",
   "inspections",
+  "inspectionSummaries",
   "drafts",
   "cursors",
   "skipped",
 ] as const;
-const LOCAL_DB_VERSION = 5;
+const LOCAL_DB_VERSION = 6;
 
 /** Nome do banco local de um usuário. */
 export const localDbName = (ownerId: string) => `vistoria-${ownerId}`;

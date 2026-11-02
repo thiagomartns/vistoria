@@ -5,45 +5,37 @@
 // - o tamanho do banco local (IndexedDB);
 // - a live query da lista: da resposta do delta com uma mudança até a linha mudar;
 // - a abertura do app recarregado em modo avião até a lista pronta, e a da tela de campo pela lista.
-// As metas ficaram fixadas antes de medir (frontend.md, Spike 2); uma meta não cumprida quebra o roteiro, menos a do
-// reload offline, pendente na #154 (ADR 0047).
+// As metas ficaram fixadas antes de medir (frontend.md, Spike 2); uma meta não cumprida quebra o roteiro. A do reload
+// offline foi cumprida pela lista pelo resumo (#154, ADR 0048).
 // `--inspections` é o mínimo de vistorias vivas que o servidor precisa ter (10 mil por padrão; o CI roda com 200).
 // Exige `pnpm db:up`, `pnpm dev:api`, `pnpm seed -- --inspections N` e `pnpm --filter web build`.
 // A senha do usuário de dev vem de DEV_USER_PASSWORD ou do infra/.env, nunca impressa (ADR 0025).
 
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 
-import { readEnvValue } from "../db-init/lib.mjs";
+import { callApi, launch, ok, printTrace, serve, signIn, step, until, uuidv7, wait } from "../outbox-spike/lib.mjs";
 import {
-  base,
-  callApi,
-  launch,
-  ok,
-  printTrace,
-  root,
-  serve,
-  signIn,
-  step,
-  until,
-  uuidv7,
-  wait,
-} from "../outbox-spike/lib.mjs";
+  DEV_EMAIL,
+  ROW_LINK,
+  TABLE_LINK,
+  apiSignIn,
+  devPassword,
+  listedTotal,
+  markListReady,
+  pageValue,
+  serverInspections,
+  setOffline,
+} from "./lib.mjs";
 
-const DEV_EMAIL = "dev@vistoria.local";
 const RUNS = 3;
 const MB = 1024 * 1024;
 
-/**
- * As metas, por aparelho. Fixadas antes da primeira medida (#134): não se ajustam ao número. Uma meta com `pending`
- * ainda não é cumprida, e a issue dela a cumpre (ADR 0047): o roteiro a imprime, com ✗ se for o caso, sem quebrar.
- */
+/** As metas, por aparelho. Fixadas antes da primeira medida (#134): não se ajustam ao número. */
 const TARGETS = {
   firstPull: { label: "Primeiro pull completo", unit: "ms", phone: 120_000, desktop: 60_000 },
   database: { label: "Banco local (IndexedDB)", unit: "bytes", phone: 100 * MB, desktop: 100 * MB },
   liveQuery: { label: "Live query (delta → linha)", unit: "ms", phone: 500, desktop: 200 },
-  reload: { label: "Reload offline → lista pronta", unit: "ms", phone: 2000, desktop: 1000, pending: "#154" },
+  reload: { label: "Reload offline → lista pronta", unit: "ms", phone: 2000, desktop: 1000 },
   field: { label: "Lista → tela de campo", unit: "ms", phone: 1000, desktop: 500 },
 };
 
@@ -58,11 +50,6 @@ const DEVICES = [
   },
   { name: "desktop", title: "desktop (1440×900)", cpu: 1, options: { viewport: { width: 1440, height: 900 } } },
 ];
-
-/** Os links de tela de campo da lista: um por vistoria na Table, montada também no celular (escondida), e outro na ListRow. */
-const ROW_LINK = 'a[href*="/inspections/edit?id="]';
-/** Um por vistoria: o da linha da Table. */
-const TABLE_LINK = `tbody ${ROW_LINK}`;
 
 function parseArgs(argv) {
   const args = argv.filter((arg) => arg !== "--");
@@ -86,50 +73,6 @@ const median = (values) => {
 
 const format = (value, unit) =>
   unit === "bytes" ? `${(value / MB).toFixed(1)} MB` : value >= 10_000 ? `${(value / 1000).toFixed(1)} s` : `${Math.round(value)} ms`;
-
-function devPassword() {
-  if (process.env.DEV_USER_PASSWORD) return process.env.DEV_USER_PASSWORD;
-  const envPath = join(root, "infra", ".env");
-  const stored = existsSync(envPath) ? readEnvValue(readFileSync(envPath, "utf8"), "DEV_USER_PASSWORD") : "";
-  if (!stored) throw new Error("sem DEV_USER_PASSWORD nem infra/.env com ela: rode `pnpm seed` antes.");
-  return stored;
-}
-
-/** Entra pela API, esperando o Retry-After num 429 (o signin aceita 5 por minuto e IP). */
-async function apiSignIn(user) {
-  for (;;) {
-    const res = await fetch(new URL("/api/v1/auth/signin", base), {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email: user.email, password: user.password }),
-    });
-    if (res.status === 429) {
-      const seconds = Number(res.headers.get("retry-after") ?? 60);
-      console.log(`   · signin 429 rate-limited: espera o Retry-After de ${seconds} s`);
-      await wait(seconds * 1000);
-      continue;
-    }
-    assert.equal(res.status, 200, `o signin pela API respondeu ${res.status}: rode \`pnpm seed\` antes`);
-    const body = await res.json();
-    return { id: body.user.id, token: body.accessToken };
-  }
-}
-
-/** As vistorias vivas do servidor: o primeiro sync, sem cursor, até o fim. */
-async function serverInspections(user) {
-  const items = [];
-  let cursor;
-  for (;;) {
-    const query = new URLSearchParams({ limit: "1000", ...(cursor ? { cursor } : {}) });
-    const { status, body } = await callApi(`/api/v1/sync/inspections?${query}`, {
-      headers: { authorization: `Bearer ${user.token}` },
-    });
-    assert.equal(status, 200, `o delta de vistorias respondeu ${status}`);
-    items.push(...body.items);
-    if (!body.hasMore) return items;
-    cursor = body.nextCursor;
-  }
-}
 
 /** Outro aparelho troca o tipo da vistoria (Entrada ↔ Saída), um PUT direto na API; devolve o rótulo novo. */
 async function toggleKind(user, id) {
@@ -171,43 +114,6 @@ const listedCount = (page) => page.evaluate((selector) => document.querySelector
 const distinctCount = (page) =>
   page.evaluate((selector) => new Set([...document.querySelectorAll(selector)].map((a) => a.getAttribute("href"))).size, ROW_LINK);
 
-/** O total de vistorias que o contador da lista diz ("10.000 vistorias", "50 de 10.000 vistorias"), ou null. */
-const listedTotal = (page) =>
-  page.evaluate(() => {
-    for (const p of document.querySelectorAll("main p")) {
-      const match = p.textContent.match(/^(?:[\d.]+ de )?([\d.]+) vistorias?$/);
-      if (match) return Number(match[1].replaceAll(".", ""));
-    }
-    return null;
-  });
-
-/**
- * Em todo documento novo do contexto, marca em `window.__listReadyAt` o `performance.now()` do primeiro quadro com
- * `rows` linhas na lista: depois de um reload, o tempo desde o começo da navegação. Vale a partir do próximo documento.
- */
-const markListReady = (context, rows) =>
-  context.addInitScript(
-    ([selector, expected]) => {
-      const check = () => {
-        if (document.querySelectorAll(selector).length >= expected) window.__listReadyAt = performance.now();
-        else requestAnimationFrame(check);
-      };
-      requestAnimationFrame(check);
-    },
-    [TABLE_LINK, rows],
-  );
-
-/** Espera um valor que a página grava em `window[name]` e o devolve. */
-async function pageValue(page, name, what) {
-  let value;
-  await until(
-    async () => (value = await page.evaluate((key) => window[key], name).catch(() => undefined)) !== undefined,
-    what,
-    120_000,
-  );
-  return value;
-}
-
 /** Guarda, na página, o `responseEnd` de cada resposta do delta de vistorias. */
 const watchDeltaEnds = (page) =>
   page.evaluate(() => {
@@ -236,18 +142,6 @@ function watchSync(page) {
     );
   });
   return answers;
-}
-
-const NETWORK = { latency: 0, downloadThroughput: -1, uploadThroughput: -1 };
-
-/**
- * Liga e desliga a rede do aparelho. Com a CPU limitada, a página tem uma sessão CDP a mais, e nela o `setOffline` do
- * contexto corta as requisições, mas deixa o `navigator.onLine` verdadeiro (e o app acha que tem rede): a sessão CDP
- * também emula a rede, para o app ver o modo avião como num aparelho de verdade.
- */
-async function setOffline(context, cdp, offline) {
-  await cdp?.send("Network.emulateNetworkConditions", { offline, ...NETWORK });
-  await context.setOffline(offline);
 }
 
 /** Mede um aparelho do começo ao fim, num contexto limpo; devolve as medidas. */
@@ -376,7 +270,7 @@ async function measure(browser, device, user, server) {
   }
 }
 
-/** A tabela final: cada medida, a meta e se cumpriu. Devolve as que não cumpriram, fora as pendentes. */
+/** A tabela final: cada medida, a meta e se cumpriu. Devolve as que não cumpriram. */
 function report(measured) {
   const missed = [];
   console.log("\nResultado (mediana de 3 nas medidas de tela):\n");
@@ -385,13 +279,12 @@ function report(measured) {
     const cells = DEVICES.map(({ name }) => {
       const value = measured[name][key];
       const met = value <= target[name];
-      if (!met && !target.pending) {
+      if (!met) {
         missed.push(`${target.label} no ${name}: ${format(value, target.unit)} > ${format(target[name], target.unit)}`);
       }
       return `${met ? "✓" : "✗"} ${format(value, target.unit)} (≤ ${format(target[name], target.unit)})`;
     });
-    const note = target.pending ? `  (meta pendente, ${target.pending})` : "";
-    console.log(`  ${target.label.padEnd(32)}${cells[0].padEnd(30)}${cells[1].padEnd(30)}${note}`);
+    console.log(`  ${target.label.padEnd(32)}${cells[0].padEnd(30)}${cells[1]}`);
   }
   return missed;
 }

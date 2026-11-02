@@ -25,7 +25,8 @@ import { isNewer } from "./version";
 // A resposta tem o servidor da hora em que ele a leu. Um item mais velho que a store confirmada (o envio daqui confirmou
 // com a página em voo) é tratado como pendência e ganha a marca: aplicar a página voltaria a versão (ADR 0044). A
 // idade vem do rowversion, e a página lê da store só os ids dela (ADR 0047). A varredura do resync, rara, compara com
-// a store inteira do começo dele.
+// a store inteira do começo dele. A collection de vistorias não abre inteira (ADR 0048): a pendência de um registro
+// que ela não tem na memória se confere com o confirmado lido por chave.
 
 /** Uma página do delta (`SyncPageDto` do backend.md, "Leitura por delta"). */
 export interface SyncPage<D> {
@@ -130,7 +131,9 @@ export async function pullOnce(
  */
 async function resolveMarks(state: PullState, entity: PullEntity): Promise<PullOutcome> {
   for (const id of state.marks.list(entity.name)) {
-    if (hasPending(entity.store, state.drafts, id) || (await state.queued()).has(id)) continue;
+    const known = (await confirmedByIds(entity.store, [id])).get(id);
+    const queued = await state.queued();
+    if (hasPending(entity.store, state.drafts, id, known) || queued.has(id)) continue;
     const outcome = await refetchById({
       store: entity.store,
       drafts: state.drafts,
@@ -233,7 +236,7 @@ async function applyPage(
     ...page.deletedIds,
   ]);
   const queued = await state.queued();
-  const held = (id: string) => hasPending(store, drafts, id) || queued.has(id);
+  const held = (id: string) => hasPending(store, drafts, id, confirmed.get(id)) || queued.has(id);
   const skipped: string[] = [];
   const mutations: Mutation[] = [];
   const rewritten: Persisting[] = [];
@@ -282,7 +285,7 @@ async function sweep(
   for (const known of confirmed) {
     if (seen.has(known.id)) continue;
     if (
-      hasPending(store, drafts, known.id) ||
+      hasPending(store, drafts, known.id, known) ||
       queued.has(known.id) ||
       atResync.get(known.id) !== known.version
     )

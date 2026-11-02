@@ -124,6 +124,9 @@ export async function enqueueRemoval<T extends SyncRecord>({
   mutationFnName: string;
   id: string;
 }): Promise<void> {
+  // A collection por id (vistorias, ADR 0048) pode não ter o registro na memória: a exclusão pela linha da lista o põe
+  // lá antes de marcar.
+  await store.utils.load?.([id]);
   const confirmed = await confirmedOf(store, id);
   if (drafts.has(id)) drafts.delete(id);
   if (!store.has(id) || store.get(id)?.deleting) return;

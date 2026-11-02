@@ -50,6 +50,14 @@ vi.mock("@/features/local-store/hooks/useLocalStore", () => ({
   useLocalStore: () => local.value,
 }));
 
+vi.mock("@/features/inspections/hooks/useInspectionRecord", () => ({
+  // A vistoria completa só carrega por id (ADR 0048): aqui, a do banco simulado.
+  useInspectionRecord: (_store: unknown, id: string | null) => ({
+    record: local.value.inspections.find((inspection) => inspection.id === id),
+    ready: true,
+  }),
+}));
+
 vi.mock("@/features/inspections/services/inspections.sync", () => ({
   saveInspection: vi.fn<() => string>(() => "i1"),
   saveInspectionDraft: vi.fn<() => void>(),

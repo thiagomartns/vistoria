@@ -12,7 +12,7 @@ import { chromium } from "playwright-core";
 import { VIEWPORTS, candidateFiles } from "../screens/lib.mjs";
 
 export const root = resolve(import.meta.dirname, "../..");
-const outDir = join(root, "apps/web/out");
+let outDir = join(root, "apps/web/out");
 const api = new URL(process.env.API_URL ?? "http://localhost:8080");
 export const route = "/clients";
 
@@ -27,6 +27,15 @@ const TYPES = {
   ".woff2": "font/woff2",
   ".txt": "text/plain; charset=utf-8",
 };
+
+/**
+ * Troca o static export que o `serve()` entrega, na mesma origem: o roteiro da migração serve o build antigo e depois o
+ * novo, e o banco local do navegador é o mesmo.
+ */
+export function serveDir(dir) {
+  if (!existsSync(join(dir, "index.html"))) throw new Error(`${dir} não tem um static export`);
+  outDir = dir;
+}
 
 /** Confere o build e a API, e serve o static export numa porta livre (`base`). */
 export async function serve() {

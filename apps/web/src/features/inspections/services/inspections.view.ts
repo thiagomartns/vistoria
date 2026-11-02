@@ -4,7 +4,7 @@ import {
   draftSyncState,
   needsAction,
 } from "@/shared/sync/drafts";
-import type { RecordSyncState } from "@/shared/sync/sync-view";
+import type { PendingRecord, RecordSyncState } from "@/shared/sync/sync-view";
 
 import {
   INSPECTION_ENTITY,
@@ -14,6 +14,7 @@ import {
   type ItemRecord,
   type RoomRecord,
 } from "../models/inspection";
+import type { InspectionSummary } from "../models/inspection-summary";
 import { CONDITIONS, roomOfError } from "../schemas/inspection.schemas";
 import type { InspectionCollision } from "./inspections.merge";
 import { type ChangeSummary, type InspectionConflict, collisionKey } from "./inspections.resolve";
@@ -70,6 +71,17 @@ const isStatus = (value: unknown): value is InspectionStatus =>
 const list = (value: unknown): Record<string, unknown>[] =>
   Array.isArray(value) ? value.filter((entry) => typeof entry === "object" && entry !== null) : [];
 
+const count = (value: unknown) => (typeof value === "number" ? value : 0);
+
+/** Itens avaliados e o total: contados nos ambientes de um registro, ou já contados num resumo. */
+function itemCounts(record: Record<string, unknown>): { evaluated: number; items: number } {
+  if (!Array.isArray(record.rooms)) {
+    return { evaluated: count(record.evaluated), items: count(record.items) };
+  }
+  const items = list(record.rooms).flatMap((room) => list(room.items));
+  return { evaluated: items.filter((item) => item.condition != null).length, items: items.length };
+}
+
 function fieldsOf(
   record: Record<string, unknown>,
   id: string,
@@ -77,7 +89,6 @@ function fieldsOf(
 ): Omit<InspectionRow, "sync"> {
   const propertyId = text(record.propertyId) ?? "";
   const place = places.get(propertyId);
-  const items = list(record.rooms).flatMap((room) => list(room.items));
   const status = isStatus(record.status) ? record.status : null;
   return {
     id,
@@ -88,10 +99,12 @@ function fieldsOf(
     status,
     statusLabel: status ? INSPECTION_STATUSES[status] : null,
     startedAt: text(record.startedAt) ?? "",
-    evaluated: items.filter((item) => item.condition != null).length,
-    items: items.length,
+    ...itemCounts(record),
   };
 }
+
+/** Uma vistoria na lista: o resumo confirmado, ou a vistoria como a fila a deixa (ADR 0048). */
+type ListedInspection = (InspectionSummary | InspectionRecord) & { deleting?: true };
 
 /**
  * Uma vistoria como a lista mostra. Com a exclusão na fila, ela fica "Excluindo" até o 204. Fora isso, o rascunho
@@ -99,7 +112,7 @@ function fieldsOf(
  * único lugar onde a vistoria ainda existe). O rascunho que só guarda o passo da tela de campo (`draft`) não muda nada.
  */
 export function inspectionRowOf(
-  inspection: InspectionRecord | undefined,
+  inspection: ListedInspection | undefined,
   draft: DraftRecord | undefined,
   syncState: RecordSyncState | undefined,
   places: ReadonlyMap<string, PlaceView> = new Map(),
@@ -113,31 +126,77 @@ export function inspectionRowOf(
 }
 
 /**
- * As linhas da lista: vistorias e rascunhos (recusados ou em conflito) de vistoria. Em andamento primeiro, depois a
- * mais recente (nota do wireframe 67:1491).
+ * As linhas da lista: os resumos confirmados, com a vistoria como a fila a deixa por cima (criada, alterada, saindo ou
+ * excluída antes de o servidor a conhecer), e os rascunhos (recusados ou em conflito) de vistoria. A lista nunca abre
+ * as vistorias completas (ADR 0048). Em andamento primeiro, depois a mais recente (nota do wireframe 67:1491).
  */
 export function inspectionRows(
-  inspections: readonly InspectionRecord[],
+  summaries: readonly InspectionSummary[],
+  pending: ReadonlyMap<string, PendingRecord>,
   allDrafts: readonly DraftRecord[],
   states: ReadonlyMap<string, RecordSyncState>,
   places: ReadonlyMap<string, PlaceView>,
 ): InspectionRow[] {
+  return inspectionPage(summaries, pending, allDrafts, states, places, Infinity).rows;
+}
+
+/**
+ * As primeiras `limit` linhas da lista e quantas ela tem. A ordem sai de uma chave leve (status e início, do resumo, da
+ * fila ou do rascunho que vence), e só as linhas da página são montadas: com 10 mil vistorias, montar todas a cada
+ * render custava 200 ms no celular (ADR 0048).
+ */
+export function inspectionPage(
+  summaries: readonly InspectionSummary[],
+  pending: ReadonlyMap<string, PendingRecord>,
+  allDrafts: readonly DraftRecord[],
+  states: ReadonlyMap<string, RecordSyncState>,
+  places: ReadonlyMap<string, PlaceView>,
+  limit: number,
+): { rows: InspectionRow[]; total: number } {
   const drafts = allDrafts.filter((draft) => draft.entity === INSPECTION_ENTITY);
   const draftById = new Map(drafts.map((draft) => [draft.id, draft]));
-  const rows = inspections.map((inspection) =>
-    inspectionRowOf(inspection, draftById.get(inspection.id), states.get(inspection.id), places),
-  );
-  const known = new Set(inspections.map((inspection) => inspection.id));
-  for (const draft of drafts) {
-    if (!known.has(draft.id)) rows.push(inspectionRowOf(undefined, draft, undefined, places));
+  const listed = new Map<string, ListedInspection>(summaries.map((summary) => [summary.id, summary]));
+  for (const [id, entry] of pending) {
+    if (entry.removed) listed.delete(id);
+    else listed.set(id, entry.record as InspectionRecord);
   }
-  const rank = (row: InspectionRow) => (row.status === "completed" ? 1 : 0);
+  type Entry = {
+    id: string;
+    inspection: ListedInspection | undefined;
+    draft: DraftRecord | undefined;
+    completed: boolean;
+    startedAt: string;
+  };
+  // A mesma escolha do `inspectionRowOf`: saindo, a vistoria; com rascunho recusado ou em conflito, ele; senão, ela.
+  const entryOf = (
+    id: string,
+    inspection: ListedInspection | undefined,
+    draft: DraftRecord | undefined,
+  ): Entry => {
+    const source: Record<string, unknown> =
+      !inspection?.deleting && needsAction(draft) ? draft.data : (inspection ?? {});
+    return {
+      id,
+      inspection,
+      draft,
+      completed: source.status === "completed",
+      startedAt: text(source.startedAt) ?? "",
+    };
+  };
+  const entries: Entry[] = [];
+  for (const [id, inspection] of listed) entries.push(entryOf(id, inspection, draftById.get(id)));
+  for (const draft of drafts) {
+    if (!listed.has(draft.id) && needsAction(draft)) entries.push(entryOf(draft.id, undefined, draft));
+  }
   // `startedAt` é ISO 8601 em UTC: a ordem das strings é a das datas, sem o custo do `localeCompare` em 10 mil linhas.
-  const newest = (a: InspectionRow, b: InspectionRow) =>
+  const newest = (a: Entry, b: Entry) =>
     a.startedAt === b.startedAt ? 0 : a.startedAt < b.startedAt ? 1 : -1;
-  return rows
-    .filter((row) => row !== undefined)
-    .toSorted((a, b) => rank(a) - rank(b) || newest(a, b));
+  entries.sort((a, b) => Number(a.completed) - Number(b.completed) || newest(a, b));
+  const rows = entries
+    .slice(0, limit)
+    .map((entry) => inspectionRowOf(entry.inspection, entry.draft, states.get(entry.id), places))
+    .filter((row) => row !== undefined);
+  return { rows, total: entries.length };
 }
 
 /**

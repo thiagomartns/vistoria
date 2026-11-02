@@ -43,9 +43,15 @@ vi.mock("@/features/properties/services/properties.collection", () => ({
 }));
 
 vi.mock("@/features/inspections/services/inspections.collection", () => ({
-  createInspectionsCollection: () => ({
-    cleanup: vi.fn<() => Promise<void>>(async () => {}),
-    preload: vi.fn<() => Promise<void>>(async () => {}),
+  createInspectionCollections: () => ({
+    inspections: {
+      cleanup: vi.fn<() => Promise<void>>(async () => {}),
+      preload: vi.fn<() => Promise<void>>(async () => {}),
+    },
+    inspectionSummaries: {
+      cleanup: vi.fn<() => Promise<void>>(async () => {}),
+      preload: vi.fn<() => Promise<void>>(async () => {}),
+    },
   }),
 }));
 
@@ -110,12 +116,16 @@ describe("openLocalStore", () => {
     expect(vi.mocked(startPull).mock.calls[0]?.[0]).toMatchObject({ ownerId: "ana" });
   });
 
-  it("o pull carrega as collections e puxa na ordem de criação: clientes, imóveis e vistorias", async () => {
+  it("o pull carrega as collections, menos as vistorias, e puxa na ordem de criação: clientes, imóveis e vistorias", async () => {
     const store = await openLocalStore("ana");
 
     await vi.mocked(startPull).mock.calls[0]![0].run();
 
-    expect(store.inspections.preload).toHaveBeenCalledOnce();
+    expect(store.clients.preload).toHaveBeenCalledOnce();
+    expect(store.drafts.preload).toHaveBeenCalledOnce();
+    // A vistoria completa só carrega por id (ADR 0048): abrir a store inteira a cada ciclo era o custo do spike 2.
+    expect(store.inspections.preload).not.toHaveBeenCalled();
+    expect(store.inspectionSummaries.preload).not.toHaveBeenCalled();
     const [, entities] = vi.mocked(pullOnce).mock.calls[0]!;
     expect(entities.map((entity) => entity.name)).toEqual(["clients", "properties", "inspections"]);
     expect(entities[2]!.store).toBe(store.inspections);
@@ -151,6 +161,7 @@ describe("openLocalStore", () => {
     expect(ana.clients.cleanup).toHaveBeenCalledOnce();
     expect(ana.properties.cleanup).toHaveBeenCalledOnce();
     expect(ana.inspections.cleanup).toHaveBeenCalledOnce();
+    expect(ana.inspectionSummaries.cleanup).toHaveBeenCalledOnce();
     expect(ana.drafts.cleanup).toHaveBeenCalledOnce();
     expect(ana.cursors.cleanup).toHaveBeenCalledOnce();
     expect(ana.skipped.cleanup).toHaveBeenCalledOnce();

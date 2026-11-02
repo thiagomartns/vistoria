@@ -3,7 +3,13 @@ import { readFailure } from "../api/client";
 import { handleProblem } from "../api/problems";
 import { type DraftsCollection, rebaseDraft } from "./drafts";
 import { isOwnWrite } from "./merge";
-import { type LocalCollection, type SyncRecord, adoptServer, dropConfirmed } from "./upsert";
+import {
+  type LocalCollection,
+  type SyncRecord,
+  adoptServer,
+  confirmedOf,
+  dropConfirmed,
+} from "./upsert";
 
 // A leitura por id (frontend.md, "Leitura (pull)"; ADR 0038): abrir um registro que não está no banco local busca o
 // `GET` dele e grava a resposta na store confirmada, com a `version`, como depois de um envio aceito. Ela vira a
@@ -26,22 +32,32 @@ export type GetCall<D> = (request: {
   path: { id: string };
 }) => Promise<{ data?: D; error?: unknown; response?: Response }>;
 
-/** Registro com pendência nunca é sobrescrito: a camada otimista (a fila) e o rascunho vencem o `GET`. */
-const isLocal = (store: { has: (id: string) => boolean }, drafts: DraftsCollection, id: string) =>
-  store.has(id) || drafts.has(id);
+/**
+ * O registro já está no aparelho: na memória (a camada otimista, com a fila), num rascunho ou na store confirmada, que
+ * uma collection por id não abre inteira (ADR 0048). Ele nunca é sobrescrito pelo `GET`.
+ */
+const isLocal = (
+  store: { has: (id: string) => boolean },
+  drafts: DraftsCollection,
+  id: string,
+  confirmed?: unknown,
+) => store.has(id) || drafts.has(id) || confirmed !== undefined;
 
 /**
  * O registro tem pendência (ADR 0041): uma transação na fila, inclusive a que está em voo e a exclusão (`deleting`), ou
  * um rascunho. A fila se lê da camada otimista (`$hasPendingWrites`), que vale na hora: uma escrita de agora já conta,
  * antes de a outbox a gravar. O rascunho `draft` do formulário profundo sem nada a enviar (os valores dele são os do
- * registro) não conta: a tela de campo o grava ao abrir, e ele seguraria o pull até concluir (ADR 0043).
+ * registro) não conta: a tela de campo o grava ao abrir, e ele seguraria o pull até concluir (ADR 0043). Para saber se o
+ * rascunho é só o registro, vale o da memória ou, se a collection não o carregou (vistorias, ADR 0048), o `confirmed`
+ * lido da store por chave.
  */
 export const hasPending = (
   store: { get: (id: string) => unknown },
   drafts: Pick<DraftsCollection, "get">,
   id: string,
+  confirmed?: unknown,
 ): boolean => {
-  const record = store.get(id) as { $hasPendingWrites?: boolean } | undefined;
+  const record = (store.get(id) ?? confirmed) as { $hasPendingWrites?: boolean } | undefined;
   if (record?.$hasPendingWrites === true) return true;
   const draft = drafts.get(id);
   return draft !== undefined && !(draft.status === "draft" && isOwnWrite(record, draft.data));
@@ -132,23 +148,28 @@ export function refetchById<T extends SyncRecord, D>({
 
 async function fetchInto<T extends SyncRecord, D>(
   { store, drafts, id, get, shape }: FetchArgs<T, D>,
-  keep: (store: LocalCollection<T>, drafts: DraftsCollection, id: string) => boolean,
+  keep: (store: LocalCollection<T>, drafts: DraftsCollection, id: string, confirmed?: T) => boolean,
   { before, synced, queued }: FetchOptions<T, D> = {},
 ): Promise<FetchOutcome> {
-  if (keep(store, drafts, id)) return "local";
+  const confirmed = await confirmedOf(store, id);
+  if (keep(store, drafts, id, confirmed)) return "local";
   if (synced?.()) return "not-found";
   if (globalThis.navigator?.onLine === false) return "offline";
   // A resposta tem o servidor da hora em que ele a leu: se o registro mudou aqui durante o `GET` (um envio daqui
-  // confirmou), ela é descartada, como a pendência que voltou (ADR 0044).
-  const seen = store.get(id)?.version;
-  // A fila é lida antes da conferência, que fica no mesmo tick da gravação.
-  const moved = (inQueue?: ReadonlySet<string>) =>
-    keep(store, drafts, id) || inQueue?.has(id) === true || store.get(id)?.version !== seen;
+  // confirmou), ela é descartada, como a pendência que voltou (ADR 0044). A versão é a da store confirmada, lida por
+  // chave: a collection pode não ter o registro na memória (ADR 0048).
+  const seen = confirmed?.version;
+  // A fila e a store são lidas antes da conferência, que fica no mesmo tick da gravação.
+  const moved = async () => {
+    const inQueue = await queued?.();
+    const now = await confirmedOf(store, id);
+    return () => keep(store, drafts, id, now) || inQueue?.has(id) === true || now?.version !== seen;
+  };
   const result = await get({ path: { id } });
   if (result.data !== undefined) {
     const record = shape(result.data);
     await before?.(record);
-    if (moved(await queued?.())) return "local";
+    if ((await moved())()) return "local";
     await adoptPulled(store, drafts, record);
     return "found";
   }
@@ -156,7 +177,7 @@ async function fetchInto<T extends SyncRecord, D>(
   if (failure.kind === "network") return "offline";
   switch (handleProblem(failure)) {
     case "remove-local":
-      if (moved(await queued?.())) return "local";
+      if ((await moved())()) return "local";
       await dropPulled(store, drafts, id);
       return "not-found";
     case "renew-session":

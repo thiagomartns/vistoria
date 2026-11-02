@@ -6,7 +6,8 @@ import type { PropertyRecord } from "@/features/properties/models/property";
 import { addressOf } from "@/features/properties/services/properties.view";
 
 import { conflictHref } from "../services/inspections.resolve";
-import { deleteInspection } from "../services/inspections.sync";
+import { DELETE_INSPECTION, UPSERT_INSPECTION, deleteInspection } from "../services/inspections.sync";
+import { useInspectionSummaries } from "./useInspectionSummaries";
 import {
   LIST_PAGE_SIZE,
   type PlaceView,
@@ -14,7 +15,7 @@ import {
   dateOf,
   deletionSubject,
   hasUnsent,
-  inspectionRows,
+  inspectionPage,
   isDeletable,
   startedLabel,
 } from "../services/inspections.view";
@@ -42,21 +43,34 @@ export function placesOf(
 /**
  * As vistorias do banco local para a lista de /inspections, com o imóvel, o cliente e o estado de sync. A linha abre a
  * tela de campo, ou o ConflictResolver quando a vistoria está em conflito. `remove` põe a exclusão na fila (ADR 0039).
- * A lista monta `LIST_PAGE_SIZE` linhas por vez; `showMore` monta mais uma página (ADR 0047).
+ * A lista monta `LIST_PAGE_SIZE` linhas por vez; `showMore` monta mais uma página (ADR 0047). Ela lê o resumo de cada
+ * vistoria e a fila, nunca as vistorias completas (ADR 0048): só fica pronta depois da primeira leitura da fila.
  */
 export function useInspections() {
-  const { store, ready, inspections, properties, clients, drafts, states } = useLocalStore();
+  const { store, ready, properties, clients, drafts, states, pending, outboxRead } =
+    useLocalStore();
+  const summaries = useInspectionSummaries(store);
   const [limit, setLimit] = useState(LIST_PAGE_SIZE);
-  const all = inspectionRows(inspections, drafts, states, placesOf(properties, clients));
-  const rows = all.slice(0, limit);
+  // As transações da fila que são de vistoria.
+  const queued = new Map(
+    [...pending].filter(
+      ([, entry]) =>
+        entry.mutationFnName === UPSERT_INSPECTION || entry.mutationFnName === DELETE_INSPECTION,
+    ),
+  );
+  const listReady = ready && summaries.isReady && outboxRead;
+  // Antes de pronta, a lista não mostra nada: montar as linhas seria custo à toa.
+  const { rows, total } = listReady
+    ? inspectionPage(summaries.data, queued, drafts, states, placesOf(properties, clients), limit)
+    : { rows: [], total: 0 };
   return {
-    ready,
+    ready: listReady,
     /** O aparelho não tem nenhuma vistoria. */
-    empty: all.length === 0,
+    empty: total === 0,
     /** "6 vistorias", ou "50 de 10.000 vistorias" com a lista cortada. */
-    count: countLabel(rows.length, all.length),
+    count: countLabel(rows.length, total),
     /** Quantas vistorias ainda não estão na lista. */
-    hidden: all.length - rows.length,
+    hidden: total - rows.length,
     showMore() {
       setLimit((current) => current + LIST_PAGE_SIZE);
     },
