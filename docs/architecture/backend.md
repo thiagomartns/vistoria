@@ -152,7 +152,7 @@ public abstract class SyncEntity
 
 - `CreatedAt` e `UpdatedAt` saem do `TimeProvider` num override de `SaveChangesAsync`, nunca do cliente.
 - Exclusão é sempre `DeletedAt = now`: o `SaveChangesAsync` transforma o `Remove` de uma `SyncEntity` em update, então a linha muda de versão. O filtro global nomeado `SoftDelete` esconde o registro; o delta usa `IgnoreQueryFilters()` para devolver o tombstone.
-- Tombstones com mais de 90 dias são apagados fisicamente pelo `CleanupService`.
+- Tombstones com mais de 90 dias são apagados fisicamente pelo `CleanupService`. Na vistoria, ambientes e itens saem junto, pelo `ON DELETE CASCADE`; os excluídos de uma vistoria viva ficam, e uma excluída que outra referencia (`referenceInspectionId`) também. Depois da purga, um `PUT` no id cria a vistoria de novo (201): quem ainda a tinha recebe `cursor-expired` e refaz o sync ([ADR 0049](../decisions/0049-a-limpeza-apaga-a-vistoria-excluida-ha-mais-de-90-dias-com-os-filhos-e-os-filhos-excluidos-de-uma-vistoria-viva-ficam.md)).
 - UUID v7 é ordenável no tempo no cliente e em logs (`Guid.CreateVersion7()` no .NET). O SQL Server ordena `uniqueidentifier` pelos últimos bytes, então lá dentro ele não é sequencial; no volume de estudo isso não pesa. Se pesar: PK *nonclustered* em `Id` + índice clusterizado em `CreatedAt`.
 
 ## Contrato da API
@@ -274,7 +274,7 @@ A ordem importa: idempotência primeiro (um retry nunca reexecuta nada), depois 
 - O filtro (`IdempotencyFilter`, global em `PUT` e `DELETE`) roda depois da autenticação e antes do model binding, e insere a chave como `processing` antes da action. Quem perde o `INSERT` lê a linha: hash diferente → 422 `idempotency-key-reused`; `processing` → 409 `idempotency-in-progress`; `done` → a resposta gravada. O "em processamento" é essa linha, nunca um lock em memória, então vale entre instâncias da API.
 - Chave vencida que o `CleanupService` ainda não apagou conta como inexistente: a linha sai e o pedido executa de novo.
 - Respostas finais (2xx e 4xx, exceto 401 e 429) são gravadas, inclusive o `ProblemDetails` de um erro, com o mesmo `traceId`. Em 5xx a linha é apagada, para o retry executar de novo.
-- O `CleanupService` roda a cada hora e apaga chaves com mais de 7 dias e tombstones com mais de 90 (estes quando houver `DELETE`). É um `DELETE` só por ciclo, sem trava: em duas instâncias, a que chega depois não acha mais as linhas.
+- O `CleanupService` roda a cada hora e apaga chaves com mais de 7 dias e tombstones com mais de 90 (hoje, só de vistoria: a única com `DELETE`). É um `DELETE` só por tabela, sem trava: em duas instâncias, a que chega depois não acha mais as linhas.
 
 **Escrita repetida depois que a chave venceu.** O servidor reexecuta e responde 412, porque a primeira execução já mudou a versão. O `current` devolvido é igual ao corpo enviado. O servidor não tenta detectar isso; o front compara e trata como sucesso.
 
@@ -378,6 +378,8 @@ O setup do curso (`WebApplicationFactory` + Testcontainers com SQL Server real) 
 | Idempotência | Mesma chave, corpo diferente | 422 `idempotency-key-reused` |
 | Idempotência | Chave vencida reenviada | 412 com `current` igual ao corpo |
 | Limpeza | `CleanupService` rodando em duas instâncias ao mesmo tempo | Sem erro; cada registro vencido é removido uma vez |
+| Limpeza | Vistoria excluída há mais de 90 dias, outra há 90 exatos e uma viva | A primeira some com ambientes e itens; as outras e as chaves válidas ficam como estavam |
+| Limpeza | `PUT` num id já purgado | 201: cria de novo |
 | Delta | Paginação com `limit` pequeno | Nenhum registro pulado ou repetido |
 | Delta | Transação aberta durante a leitura | Linha aparece na página seguinte, não é pulada |
 | Delta | `DELETE` e depois delta | Id em `deletedIds` |
