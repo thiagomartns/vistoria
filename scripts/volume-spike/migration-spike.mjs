@@ -1,9 +1,10 @@
 // `pnpm spike:migration [--from REF]`
-// Roteiro da migração do banco local da versão 5 para a 6 (#154, ADR 0048), num navegador de verdade e na mesma origem:
-// 1. o build de `REF` (a `main` de antes da #154, com o banco na versão 5) entra como o usuário de dev do `pnpm seed`,
+// Roteiro da migração do banco local da versão anterior para a deste build (desde a #154, ADR 0048: da 5 para a 6), num
+// navegador de verdade e na mesma origem. É o upgrade que os aparelhos fazem de fato:
+// 1. o build de `REF` (o último commit com o banco na versão anterior) entra como o usuário de dev do `pnpm seed`,
 //    baixa todas as vistorias pelo delta e marca um item numa vistoria, com o envio barrado: a transação fica na outbox;
 // 2. o servidor passa a servir este build, e o service worker novo assume quando o aparelho fecha e abre o app de novo;
-// 3. o banco sobe para a versão 6, os resumos são montados a partir das vistorias, e a lista abre com todas;
+// 3. o banco sobe para a versão deste build, cada vistoria tem o seu resumo, e a lista abre com todas;
 // 4. o envio é liberado, e a transação feita no build antigo sai, chega ao servidor e entra na vistoria e no resumo;
 // 5. em modo avião, o reload abre a lista e a tela de campo com o que foi marcado.
 // O build de `REF` sai de um `git worktree` e fica em `node_modules/.cache/migration-spike/REF`.
@@ -12,7 +13,7 @@
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -46,16 +47,25 @@ import {
 } from "./lib.mjs";
 
 /**
- * A `main` antes da #154: o banco local na versão 5, com as vistorias na collection IndexedDB do TanStack DB. O sha
- * inteiro: o checkout raso do CI só busca um commit pelo sha completo.
+ * O último commit com o banco local na versão anterior à deste build (a `main` de antes da #154: a 5). Subir a versão
+ * em `local-db.ts` é trocar este sha no mesmo PR, pelo último commit da versão que fica para trás; o passo 1 quebra se
+ * esquecer. O sha inteiro: o checkout raso do CI só busca um commit pelo sha completo.
  */
-const V5_REF = "b36213291a51b5c11b84256e71e95a4da80dd5a8";
+const PREVIOUS_REF = "b36213291a51b5c11b84256e71e95a4da80dd5a8";
+
+/** A versão do banco local deste build, lida de `local-db.ts`. */
+function currentDbVersion() {
+  const source = readFileSync(join(root, "apps", "web", "src", "shared", "db", "local-db.ts"), "utf8");
+  const match = source.match(/const LOCAL_DB_VERSION = (\d+);/);
+  assert.ok(match, "local-db.ts sem `const LOCAL_DB_VERSION = N;`");
+  return Number(match[1]);
+}
 /** As condições que o roteiro alterna no item marcado. */
 const CONDITIONS = { good: "Bom", poor: "Ruim" };
 
 function parseArgs(argv) {
   const args = argv.filter((arg) => arg !== "--");
-  if (args.length === 0) return { from: V5_REF };
+  if (args.length === 0) return { from: PREVIOUS_REF };
   if (args.length === 2 && args[0] === "--from" && /^[\w./-]+$/.test(args[1])) return { from: args[1] };
   throw new Error("Uso: pnpm spike:migration [--from REF]");
 }
@@ -170,7 +180,8 @@ const server = await serve();
 const newOut = join(root, "apps", "web", "out");
 const browser = await launch();
 try {
-  step(1, `O build de ${options.from.slice(0, 12)} (banco na versão 5) baixa tudo e guarda uma marcação sem enviar`);
+  const current = currentDbVersion();
+  step(1, `O build de ${options.from.slice(0, 12)} (banco na versão ${current - 1}) baixa tudo e guarda uma marcação sem enviar`);
   const oldOut = oldBuild(options.from);
   const password = devPassword();
   const user = { email: DEV_EMAIL, password, ...(await apiSignIn({ email: DEV_EMAIL, password })) };
@@ -188,10 +199,18 @@ try {
     120_000,
   );
   const before = await localDb(page, user.id);
-  assert.equal(before.version, 5, "o build antigo usa o banco na versão 5");
-  assert.ok(!before.stores.includes("inspectionSummaries"), "o build antigo não tem a store de resumos");
-  assert.ok(before.versions.includes("inspections"), "a collection IndexedDB antiga guarda as vistorias no _versions");
-  ok(`banco na versão 5: ${before.counts.inspections} vistorias, sem resumos`);
+  assert.equal(
+    before.version,
+    current - 1,
+    `o build de origem está com o banco na versão ${before.version}, e este build é a ${current}: aponte o PREVIOUS_REF ` +
+      `de scripts/volume-spike/migration-spike.mjs para o último commit da versão ${current - 1}`,
+  );
+  // Da 5 para a 6, o resumo nasce: o build de origem ainda guarda as vistorias na collection IndexedDB do TanStack DB.
+  if (before.version === 5) {
+    assert.ok(!before.stores.includes("inspectionSummaries"), "o build antigo não tem a store de resumos");
+    assert.ok(before.versions.includes("inspections"), "a collection IndexedDB antiga guarda as vistorias no _versions");
+  }
+  ok(`banco na versão ${before.version}: ${before.counts.inspections} vistorias`);
 
   // O envio da vistoria barrado até o passo 4: a marcação fica na outbox do build antigo, e o build novo é quem a envia.
   // Só o `PUT`: a sessão e o pull seguem, como com a rede boa e o servidor recusando a conexão do envio.
@@ -217,14 +236,14 @@ try {
     await page.goto(new URL("/inspections", base).href);
     await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor({ timeout: 60_000 });
     // O build novo abre o banco logo depois do shell: espera um pouco antes de concluir que ainda é o antigo.
-    const db = await until(async () => (await localDb(page, user.id))?.version === 6, "o banco na versão 6", 5_000)
+    const db = await until(async () => (await localDb(page, user.id))?.version === current, "o banco subiu", 5_000)
       .then(() => localDb(page, user.id))
       .catch(() => null);
-    if (db?.version === 6) migrated = { db, attempt };
+    if (db?.version === current) migrated = { db, attempt };
     else await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r?.update())).catch(() => {});
   }
   assert.ok(migrated, "o build novo não assumiu depois de fechar e abrir o app 5 vezes");
-  ok(`o service worker novo assumiu na ${migrated.attempt}ª abertura, e o banco subiu para a versão 6`);
+  ok(`o service worker novo assumiu na ${migrated.attempt}ª abertura, e o banco subiu para a versão ${current}`);
 
   step(3, "A migração: os resumos saem das vistorias, e a lista abre com todas");
   await listShows(page, total, `o build novo lista as ${total} vistorias`);
