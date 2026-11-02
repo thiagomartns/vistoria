@@ -316,7 +316,7 @@ function idsOf(name: string, options: LoadSubsetOptions): string[] {
 
 /**
  * A primeira abertura depois da store de resumos existir (banco na versão 6): a store tem registros e nenhum resumo.
- * Monta os resumos de uma vez, por cursor, e tira as entradas que a collection IndexedDB do TanStack DB deixou no
+ * Monta os resumos de uma vez e tira as entradas que a collection IndexedDB do TanStack DB deixou no
  * `_versions` para esta store. Depois, toda gravação leva os dois, e isto não acha mais nada a fazer.
  */
 async function migrate<T extends { id: string }, S>(
@@ -343,33 +343,12 @@ async function migrate<T extends { id: string }, S>(
     : [name, summaryName];
   await executeTransaction(db.db, scope, "readwrite", async (_, stores) => {
     if ((await requestOf(stores[summaryName]!.count())) > 0) return;
-    await new Promise<void>((resolve, reject) => {
-      const cursor = stores[name]!.openCursor();
-      cursor.onerror = () => reject(cursor.error);
-      cursor.onsuccess = () => {
-        const current = cursor.result;
-        if (!current) {
-          resolve();
-          return;
-        }
-        stores[summaryName]!.put(summarize(current.value as T), current.key);
-        current.continue();
-      };
-    });
-    const versions = stores[VERSIONS_STORE];
-    if (!versions) return;
-    await new Promise<void>((resolve, reject) => {
-      const cursor = versions.openCursor();
-      cursor.onerror = () => reject(cursor.error);
-      cursor.onsuccess = () => {
-        const current = cursor.result;
-        if (!current) {
-          resolve();
-          return;
-        }
-        if (Array.isArray(current.key) && current.key[0] === name) current.delete();
-        current.continue();
-      };
-    });
+    // Um `getAll` só, como o `restore` da collection IndexedDB fazia a cada abertura: um cursor, registro a registro,
+    // levava 10 s com 10 mil vistorias no desktop.
+    const records = await requestOf(stores[name]!.getAll() as IDBRequest<T[]>);
+    for (const record of records) stores[summaryName]!.put(summarize(record), record.id);
+    // As chaves do `_versions` são `[store, id]`: as desta store vão de `[name]` até `[name, []]` (um array vem depois
+    // de qualquer string).
+    stores[VERSIONS_STORE]?.delete(IDBKeyRange.bound([name], [name, []]));
   });
 }

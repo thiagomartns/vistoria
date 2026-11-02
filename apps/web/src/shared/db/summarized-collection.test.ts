@@ -9,7 +9,7 @@ import {
   inArray,
   indexedDBCollectionOptions,
 } from "@tanstack/db";
-import { IDBFactory } from "fake-indexeddb";
+import { IDBFactory, IDBKeyRange } from "fake-indexeddb";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createSummarizedCollections } from "./summarized-collection";
@@ -84,6 +84,9 @@ const byId = (records: ReturnType<typeof open>["records"], id: string) =>
       .where(({ row }) => eq(row.id, id))
       .findOne(),
   );
+
+// O navegador tem o IDBKeyRange global; o jsdom, não.
+vi.stubGlobal("IDBKeyRange", IDBKeyRange);
 
 afterEach(() => {
   for (const db of opened.splice(0)) db.close();
