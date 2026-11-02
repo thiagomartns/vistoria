@@ -47,6 +47,7 @@ import {
   roomViews,
   roomsSummary,
 } from "../services/inspections.view";
+import { useInspectionRecord } from "./useInspectionRecord";
 import { placesOf } from "./useInspections";
 
 /** Depois da última mudança, o rascunho é gravado; fechar a aba depois disso não perde nada. */
@@ -169,9 +170,10 @@ function initialStep(draft: DraftRecord | undefined, rooms: number): number {
  *   recusada porque a vistoria mudou, fica só leitura com o que o servidor tem, até "Excluir mesmo assim?" (ADR 0040).
  */
 export function useInspectionDraft(id: string | null) {
-  const { store, ready, inspections, properties, clients, drafts, states, bases } = useLocalStore();
-
-  const record = id ? inspections.find((candidate) => candidate.id === id) : undefined;
+  const { store, ready: storeReady, properties, clients, drafts, states, bases } = useLocalStore();
+  // A vistoria completa só carrega por id (ADR 0048).
+  const { record, ready: recordReady } = useInspectionRecord(store, id);
+  const ready = storeReady && recordReady;
   const draft = id
     ? drafts.find((candidate) => candidate.id === id && candidate.entity === INSPECTION_ENTITY)
     : undefined;

@@ -255,6 +255,31 @@ export function recordSyncStates(snapshot: SyncSnapshot): Map<string, RecordSync
   return states;
 }
 
+/** O registro como a fila o deixa: o da transação mais nova dele; `removed` se ela o tira da camada otimista. */
+export interface PendingRecord {
+  mutationFnName: string;
+  record: Record<string, unknown>;
+  removed: boolean;
+}
+
+/**
+ * O que a fila põe por cima da store confirmada, por id: o registro da transação mais nova de cada um. A lista de
+ * vistorias soma isso aos resumos confirmados, sem abrir as vistorias completas (ADR 0048).
+ */
+export function pendingRecords(snapshot: SyncSnapshot): Map<string, PendingRecord> {
+  const pending = new Map<string, PendingRecord>();
+  for (const entry of snapshot.entries) {
+    const id = entry.record?.id;
+    if (typeof id !== "string" || !entry.record) continue;
+    pending.set(id, {
+      mutationFnName: entry.mutationFnName,
+      record: entry.record,
+      removed: entry.type === "delete",
+    });
+  }
+  return pending;
+}
+
 /**
  * A base de cada registro com transação na outbox: o `original` da transação mais antiga dele, que é o que o servidor
  * confirmou por último (vazio numa criação). Serve ao "Não enviado" por campo.

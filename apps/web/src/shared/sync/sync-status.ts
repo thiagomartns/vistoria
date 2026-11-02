@@ -8,6 +8,8 @@ import type { Outbox } from "./outbox";
 export interface OutboxEntry {
   id: string;
   mutationFnName: string;
+  /** O tipo da mutação: numa exclusão (`delete`), o registro sai da camada otimista. */
+  type?: "insert" | "update" | "delete";
   /** O registro enviado (o `modified` da mutação), para dar nome ao item. */
   record: Record<string, unknown> | undefined;
   /**
@@ -69,6 +71,7 @@ async function readOutbox() {
     .map((entry) => ({
       id: entry.id,
       mutationFnName: entry.mutationFnName,
+      type: entry.mutations[0]?.type,
       record: entry.mutations[0]?.modified as Record<string, unknown> | undefined,
       original: entry.mutations[0]?.original as Record<string, unknown> | undefined,
       createdAt: new Date(entry.createdAt),

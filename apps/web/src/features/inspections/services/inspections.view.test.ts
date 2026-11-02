@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { DraftRecord } from "@/shared/sync/drafts";
+import type { PendingRecord } from "@/shared/sync/sync-view";
 
 import type { InspectionRecord } from "../models/inspection";
 import {
@@ -13,6 +14,7 @@ import {
   fieldHeader,
   hasUnsent,
   inspectionRowOf,
+  inspectionPage,
   inspectionRows,
   isDeletable,
   pendingItemIds,
@@ -20,6 +22,7 @@ import {
   roomsSummary,
   startedLabel,
 } from "./inspections.view";
+import { summaryOf } from "./inspections.summary";
 
 const inspection = (id: string, over: Partial<InspectionRecord> = {}): InspectionRecord => ({
   id,
@@ -52,6 +55,14 @@ const rejected = (record: InspectionRecord): DraftRecord => ({
   errors: { propertyId: ["Imóvel não encontrado."] },
   updatedAt: "2026-10-26T13:10:00.000Z",
 });
+
+/** Nada na fila. */
+const NONE = new Map<string, PendingRecord>();
+
+const queued = (record: InspectionRecord, over: Partial<PendingRecord> = {}): [string, PendingRecord] => [
+  record.id,
+  { mutationFnName: "upsertInspection", record, removed: false, ...over },
+];
 
 const addresses = new Map([
   ["p1", { address: "Rua das Flores, 120 · ap 32", clientName: "Imobiliária Horizonte" }],
@@ -136,7 +147,13 @@ describe("inspectionRows", () => {
     };
 
     expect(
-      inspectionRows([inspection("i1")], [draft], new Map([["i1", "local"]]), addresses),
+      inspectionRows(
+        [summaryOf(inspection("i1"))],
+        NONE,
+        [draft],
+        new Map([["i1", "local"]]),
+        addresses,
+      ),
     ).toMatchObject([{ id: "i1", kindLabel: "Entrada", sync: "local" }]);
   });
 
@@ -145,7 +162,7 @@ describe("inspectionRows", () => {
     const open = inspection("i2", { startedAt: "2026-10-20T09:00:00.000Z" });
 
     expect(
-      inspectionRows([done, open], [], new Map(), addresses).map((row) => [
+      inspectionRows([done, open].map(summaryOf), NONE, [], new Map(), addresses).map((row) => [
         row.id,
         row.statusLabel,
       ]),
@@ -162,7 +179,8 @@ describe("inspectionRows", () => {
     const otherEntity: DraftRecord = { ...rejected(inspection("x1")), entity: "property" };
 
     const rows = inspectionRows(
-      [older, newer],
+      [older, newer].map(summaryOf),
+      NONE,
       [rejected(onlyDraft), otherEntity],
       new Map(),
       addresses,
@@ -172,6 +190,75 @@ describe("inspectionRows", () => {
       ["i3", "rejeitado"],
       ["i2", "sincronizado"],
       ["i1", "sincronizado"],
+    ]);
+  });
+});
+
+describe("inspectionRows pelo resumo e pela fila (ADR 0048)", () => {
+  it("a linha do resumo conta os itens avaliados como a da vistoria completa", () => {
+    const full = inspection("i1");
+
+    expect(inspectionRows([summaryOf(full)], NONE, [], new Map(), addresses)).toEqual([
+      inspectionRowOf(full, undefined, undefined, addresses),
+    ]);
+    expect(summaryOf(full)).toMatchObject({ evaluated: 1, items: 2 });
+  });
+
+  it("a fila vence o resumo: a criada no aparelho aparece, e a alterada mostra o que a fila tem", () => {
+    const created = inspection("i2", { version: null, startedAt: "2026-10-27T09:00:00.000Z" });
+    const changed = inspection("i1", { kind: "moveOut" });
+
+    const rows = inspectionRows(
+      [summaryOf(inspection("i1"))],
+      new Map([queued(created), queued(changed)]),
+      [],
+      new Map([
+        ["i1", "local"],
+        ["i2", "enviando"],
+      ]),
+      addresses,
+    );
+
+    expect(rows.map((row) => [row.id, row.kindLabel, row.sync])).toEqual([
+      ["i2", "Entrada", "enviando"],
+      ["i1", "Saída", "local"],
+    ]);
+  });
+
+  it("a exclusão na fila deixa a linha \"Excluindo\", e a da criada no aparelho a tira da lista", () => {
+    const leaving = inspection("i1", { deleting: true });
+    const created = inspection("i2", { version: null });
+
+    const rows = inspectionRows(
+      [summaryOf(inspection("i1"))],
+      new Map([
+        queued(leaving, { mutationFnName: "deleteInspection" }),
+        queued(created, { mutationFnName: "deleteInspection", removed: true }),
+      ]),
+      [],
+      new Map([
+        ["i1", "local"],
+        ["i2", "local"],
+      ]),
+      addresses,
+    );
+
+    expect(rows.map((row) => [row.id, row.sync])).toEqual([["i1", "excluindo"]]);
+  });
+
+  it("o rascunho recusado vence o resumo e a fila", () => {
+    const sent = inspection("i1", { kind: "moveOut" });
+
+    const rows = inspectionRows(
+      [summaryOf(inspection("i1"))],
+      new Map([queued(sent)]),
+      [rejected(sent)],
+      new Map([["i1", "local"]]),
+      addresses,
+    );
+
+    expect(rows.map((row) => [row.id, row.kindLabel, row.sync])).toEqual([
+      ["i1", "Saída", "rejeitado"],
     ]);
   });
 });
@@ -192,7 +279,7 @@ describe("lista longa (spike 2, ADR 0047)", () => {
       }),
     );
 
-    const rows = inspectionRows(records, [], new Map(), addresses);
+    const rows = inspectionRows(records.map(summaryOf), NONE, [], new Map(), addresses);
 
     expect(rows).toHaveLength(10_000);
     const firstDone = rows.findIndex((row) => row.status === "completed");
@@ -201,6 +288,23 @@ describe("lista longa (spike 2, ADR 0047)", () => {
       const dates = part.map((row) => row.startedAt);
       expect(dates).toEqual(dates.toSorted().toReversed());
     }
+  });
+
+  it("a página monta só as linhas dela, na ordem da lista inteira, e diz o total (ADR 0048)", () => {
+    const records = Array.from({ length: 300 }, (_, n) =>
+      inspection(`i${n}`, {
+        status: n % 3 === 0 ? "completed" : "inProgress",
+        startedAt: new Date(Date.UTC(2026, 0, 1) + n * 60_000).toISOString(),
+      }),
+    );
+    const onlyDraft = rejected(inspection("d1", { startedAt: "2027-01-01T00:00:00.000Z" }));
+    const args = [records.map(summaryOf), NONE, [onlyDraft], new Map(), addresses] as const;
+
+    const page = inspectionPage(...args, LIST_PAGE_SIZE);
+
+    expect(page.total).toBe(301);
+    expect(page.rows).toEqual(inspectionRows(...args).slice(0, LIST_PAGE_SIZE));
+    expect(page.rows[0]).toMatchObject({ id: "d1", sync: "rejeitado" });
   });
 
   it("as datas saem como o toLocaleDateString e o toLocaleTimeString de pt-BR", () => {

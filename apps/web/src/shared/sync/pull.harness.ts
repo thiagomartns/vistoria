@@ -1,4 +1,12 @@
-import { createCollection, localOnlyCollectionOptions } from "@tanstack/db";
+import {
+  type IndexedDBInstance,
+  createCollection,
+  createIndexedDB,
+  executeTransaction,
+  getAll,
+  localOnlyCollectionOptions,
+} from "@tanstack/db";
+import { IDBFactory } from "fake-indexeddb";
 import { expect, vi } from "vitest";
 
 import { configureClient } from "@/shared/api/client";
@@ -13,7 +21,12 @@ import {
   upsertClientMutation,
 } from "@/features/clients/services/clients.sync";
 import type { InspectionRecord } from "@/features/inspections/models/inspection";
-import type { InspectionsCollection } from "@/features/inspections/services/inspections.collection";
+import type { InspectionSummary } from "@/features/inspections/models/inspection-summary";
+import {
+  type InspectionsCollection,
+  createInspectionCollections,
+} from "@/features/inspections/services/inspections.collection";
+import { summaryOf } from "@/features/inspections/services/inspections.summary";
 import {
   DELETE_INSPECTION,
   UPSERT_INSPECTION,
@@ -159,6 +172,16 @@ export function fakeApi({ pageSize = 500 } = {}) {
         ? Response.json(dtoOf(current))
         : problem("not-found", 404);
     }
+    if (request.method === "DELETE") {
+      // Como a API: o que já sumiu responde 204, e o If-Match de outra versão, 412 com o current.
+      if (!current || current.deleted) return new Response(null, { status: 204 });
+      if (request.headers.get("If-Match") !== `"${current.version}"`) {
+        return problem("version-conflict", 412, { current: dtoOf(current) });
+      }
+      const { seq: _seq, deleted: _deleted, ...row } = current;
+      write(entity, row, true);
+      return new Response(null, { status: 204 });
+    }
     if (current?.deleted) return problem("deleted", 410, { deletedAt: DELETED_AT });
     const body = (await request.json()) as Record<string, unknown>;
     if (current && request.headers.get("If-Match") !== `"${current.version}"`) {
@@ -281,6 +304,66 @@ export const localOnly = <T extends { id: string }>(name: string) => {
 
 let open: Outbox[] = [];
 const stops: (() => void)[] = [];
+const databases: IndexedDBInstance[] = [];
+
+/** Sem as props virtuais do TanStack DB (`$synced` e afins). */
+const plain = <T extends object>(row: T) =>
+  Object.fromEntries(Object.entries(row).filter(([key]) => !key.startsWith("$")));
+
+/**
+ * As vistorias como no aparelho (ADR 0048): a collection por id e a do resumo, sobre um IndexedDB em memória
+ * (`fake-indexeddb`), com `initial` já confirmadas. `stores()` lê as duas stores do IndexedDB.
+ */
+export async function indexedDbInspections(initial: InspectionRecord[]) {
+  const db = await createIndexedDB({
+    name: `harness-${crypto.randomUUID()}`,
+    version: 1,
+    stores: ["inspections", "inspectionSummaries"],
+    idbFactory: new IDBFactory(),
+  });
+  databases.push(db);
+  const { inspections, inspectionSummaries } = createInspectionCollections(db);
+  if (initial.length > 0) {
+    await inspections.utils.acceptMutations({
+      mutations: initial.map((record) => ({
+        type: "insert",
+        key: record.id,
+        modified: record,
+        collection: inspections,
+      })),
+    } as never);
+  }
+  await inspectionSummaries.preload();
+  const read = <T>(name: string) =>
+    executeTransaction(db.db, name, "readonly", (_, stores) => getAll<T>(stores[name]!));
+  return {
+    collection: inspections,
+    summaries: inspectionSummaries,
+    /** As duas stores no IndexedDB: as vistorias completas e os resumos, por id. */
+    async stores() {
+      const [records, summaries] = await Promise.all([
+        read<InspectionRecord>("inspections"),
+        read<InspectionSummary>("inspectionSummaries"),
+      ]);
+      const byId = <T extends { id: string }>(rows: T[]) =>
+        rows.toSorted((a, b) => (a.id < b.id ? -1 : 1));
+      return { records: byId(records), summaries: byId(summaries) };
+    },
+    /**
+     * Confere que o resumo nunca diverge da vistoria: cada uma tem o seu, igual ao `summaryOf` dela, e a collection do
+     * resumo tem o mesmo que a store.
+     */
+    async expectInSync() {
+      const { records, summaries } = await this.stores();
+      expect(summaries).toEqual(records.map(summaryOf));
+      await vi.waitFor(() =>
+        expect(
+          inspectionSummaries.toArray.map(plain).toSorted((a, b) => (a.id! < b.id! ? -1 : 1)),
+        ).toEqual(summaries),
+      );
+    },
+  };
+}
 
 /** Para os gatilhos do pull no fim do teste. */
 export const stopLater = (stop: () => void) => {
@@ -290,6 +373,7 @@ export const stopLater = (stop: () => void) => {
 /** O `afterEach` de quem usa o harness: fecha as outboxes e os gatilhos e limpa o estado de sync. */
 export function closeDevices() {
   for (const outbox of open) outbox.dispose();
+  for (const db of databases.splice(0)) db.close();
   for (const stop of stops.splice(0)) stop();
   open = [];
   resetSyncStatus();
@@ -307,12 +391,16 @@ export async function device(
     properties = [] as PropertyRecord[],
     inspections = [] as InspectionRecord[],
     cursors = undefined as CursorStore | undefined,
+    /** As vistorias na collection por id de verdade, sobre IndexedDB (`indexedDbInspections`), e não na falsa. */
+    indexedDb = undefined as Awaited<ReturnType<typeof indexedDbInspections>> | undefined,
   } = {},
 ) {
   vi.spyOn(console, "warn").mockImplementation(() => {});
   const clientStore = await syncedStore(clients);
   const propertyStore = await syncedStore(properties);
-  const inspectionStore = await syncedStore(inspections);
+  const inspectionStore = indexedDb
+    ? (indexedDb as unknown as Awaited<ReturnType<typeof syncedStore<InspectionRecord>>>)
+    : await syncedStore(inspections);
   const drafts = localOnly<DraftRecord>("drafts") as unknown as DraftsCollection;
   const cursorRows = localOnly<{ id: string; cursor?: string }>("cursors");
   const skipped = localOnly<{ id: string; entity: string; recordId: string }>("skipped");

@@ -16,6 +16,7 @@ import {
   resolveInspectionConflict,
 } from "../services/inspections.sync";
 import { conflictGroups, deletedConflictView, fieldHeader } from "../services/inspections.view";
+import { useInspectionRecord } from "./useInspectionRecord";
 import { placesOf } from "./useInspections";
 
 /**
@@ -27,7 +28,9 @@ import { placesOf } from "./useInspections";
  * - `removal`: alterada antes da exclusão; excluir mesmo assim ou ficar com o servidor.
  */
 export function useInspectionConflict(id: string | null) {
-  const { store, ready, inspections, properties, clients, drafts } = useLocalStore();
+  const { store, ready: storeReady, properties, clients, drafts } = useLocalStore();
+  const { record, ready: recordReady } = useInspectionRecord(store, id);
+  const ready = storeReady && recordReady;
 
   const draft = id
     ? drafts.find((candidate) => candidate.id === id && candidate.entity === INSPECTION_ENTITY)
@@ -68,7 +71,7 @@ export function useInspectionConflict(id: string | null) {
           ? ("found" as const)
           : ("none" as const),
     /** A vistoria existe neste aparelho (para "Abrir a vistoria" quando não há conflito). */
-    known: id !== null && (draft !== undefined || inspections.some((entry) => entry.id === id)),
+    known: id !== null && (draft !== undefined || record !== undefined),
     description: header
       ? `${header.title} · ${header.compactSubtitle}. Ela foi alterada em outro aparelho enquanto você editava. O que só um lado mudou já foi mesclado; escolha o valor que fica em cada campo abaixo.`
       : "",

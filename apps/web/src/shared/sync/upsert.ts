@@ -41,6 +41,11 @@ export interface ConfirmedStore<T> {
     /** Só os registros de `ids` que a store tem, lidos por chave (`readConfirmed` de `shared/db/local-db.ts`). */
     readConfirmed: (ids: readonly string[]) => Promise<T[]>;
     acceptMutations: (transaction: { mutations: PendingMutation[] }) => Promise<void>;
+    /**
+     * Só na collection por id (vistorias, ADR 0048): põe na memória os registros de `ids` que a store tem, para uma
+     * mudança otimista de um registro que nenhuma consulta abriu.
+     */
+    load?: (ids: readonly string[]) => Promise<void>;
   };
 }
 

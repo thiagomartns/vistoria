@@ -6,11 +6,13 @@ import type { ClientRecord } from "@/features/clients/models/client";
 import type { InspectionRecord } from "@/features/inspections/models/inspection";
 import type { PropertyRecord } from "@/features/properties/models/property";
 import type { DraftRecord } from "@/shared/sync/drafts";
-import type { RecordSyncState } from "@/shared/sync/sync-view";
+import type { PendingRecord, RecordSyncState } from "@/shared/sync/sync-view";
+import { summaryOf } from "@/features/inspections/services/inspections.summary";
 
 import { InspectionsScreen } from "./inspections-screen";
 
-// /inspections (wireframe 67:1490 e 67:1649), com o banco local simulado no hook.
+// /inspections (wireframe 67:1490 e 67:1649), com o banco local simulado no hook. A lista lê o resumo de cada vistoria
+// confirmada e a fila por cima (ADR 0048): `inspections` são as confirmadas, e as com `deleting` estão na fila.
 
 const EMPTY = {
   store: {},
@@ -20,12 +22,32 @@ const EMPTY = {
   inspections: [] as InspectionRecord[],
   drafts: [] as DraftRecord[],
   states: new Map<string, RecordSyncState>(),
+  pending: new Map<string, PendingRecord>(),
+  outboxRead: true,
 };
 
 const local = vi.hoisted(() => ({ value: {} as typeof EMPTY }));
 
 vi.mock("@/features/local-store/hooks/useLocalStore", () => ({
-  useLocalStore: () => local.value,
+  useLocalStore: () => ({
+    ...local.value,
+    pending: new Map([
+      ...local.value.pending,
+      ...local.value.inspections
+        .filter((inspection) => inspection.deleting)
+        .map((inspection): [string, PendingRecord] => [
+          inspection.id,
+          { mutationFnName: "deleteInspection", record: inspection, removed: false },
+        ]),
+    ]),
+  }),
+}));
+
+vi.mock("@/features/inspections/hooks/useInspectionSummaries", () => ({
+  useInspectionSummaries: () => ({
+    data: local.value.inspections.filter((inspection) => !inspection.deleting).map(summaryOf),
+    isReady: local.value.ready,
+  }),
 }));
 
 const deleteInspection = vi.hoisted(() =>
@@ -97,6 +119,30 @@ describe("InspectionsScreen", () => {
     const { container } = open({ ready: false });
 
     expect(container.textContent).toBe("");
+  });
+
+  it("antes da primeira leitura da fila, nada: a criada no aparelho ainda não entrou na lista (ADR 0048)", () => {
+    const { container } = open({ inspections: [inspection("i1")], outboxRead: false });
+
+    expect(container.textContent).toBe("");
+  });
+
+  it("a vistoria que só a fila tem (criada no aparelho) entra na lista, ao lado das confirmadas", () => {
+    const created = inspection("i2", { version: null, startedAt: new Date(2026, 9, 21, 7).toISOString() });
+    open({
+      inspections: [inspection("i1")],
+      pending: new Map([
+        [created.id, { mutationFnName: "upsertInspection", record: created, removed: false }],
+      ]),
+      states: new Map([["i2", "local"]]),
+    });
+
+    const links = within(screen.getByRole("table")).getAllByRole("link");
+    expect(links.map((link) => link.getAttribute("href"))).toEqual([
+      "/inspections/edit?id=i2",
+      "/inspections/edit?id=i1",
+    ]);
+    expect(screen.getAllByText("Salvo no aparelho").length).toBeGreaterThan(0);
   });
 
   it("lista: imóvel, cliente, tipo, status, início; SyncBadge só fora do sincronizado; a linha abre a tela de campo", () => {

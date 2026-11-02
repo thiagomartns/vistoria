@@ -25,8 +25,9 @@ import {
   upsertClientMutation,
 } from "@/features/clients/services/clients.sync";
 import {
+  type InspectionSummaryStore,
   type InspectionsCollection,
-  createInspectionsCollection,
+  createInspectionCollections,
 } from "@/features/inspections/services/inspections.collection";
 import {
   DELETE_INSPECTION,
@@ -52,7 +53,9 @@ import {
 export interface LocalStore {
   clients: ClientsCollection;
   properties: PropertiesCollection;
+  /** Por id, sob demanda: a lista lê `inspectionSummaries` (ADR 0048). */
   inspections: InspectionsCollection;
+  inspectionSummaries: InspectionSummaryStore;
   drafts: DraftsCollection;
   outbox: Outbox;
   cursors: CursorsCollection;
@@ -66,7 +69,7 @@ async function open(ownerId: string): Promise<LocalStore> {
   const db = await openLocalDb(ownerId);
   const clients = createClientsCollection(db);
   const properties = createPropertiesCollection(db);
-  const inspections = createInspectionsCollection(db);
+  const { inspections, inspectionSummaries } = createInspectionCollections(db);
   const drafts = createDraftsCollection(db);
   const outbox = startOutbox({
     ownerId,
@@ -94,15 +97,26 @@ async function open(ownerId: string): Promise<LocalStore> {
     ownerId,
     drafts,
     // Sem tela aberta, as collections podem ter sido recolhidas: o ciclo só confere pendência e cursor com elas
-    // carregadas (um rascunho que não carregou não pode deixar o pull sobrescrever o registro).
+    // carregadas (um rascunho que não carregou não pode deixar o pull sobrescrever o registro). As vistorias não
+    // abrem inteiras: o pull as lê da store por id, e a pendência delas está na camada otimista e na fila (ADR 0048).
     run: async () => {
       await Promise.all(
-        [clients, properties, inspections, drafts, cursors, skipped].map((c) => c.preload()),
+        [clients, properties, drafts, cursors, skipped].map((c) => c.preload()),
       );
       return pullOnce(state, entities);
     },
   });
-  return { clients, properties, inspections, drafts, outbox, cursors, skipped, pull };
+  return {
+    clients,
+    properties,
+    inspections,
+    inspectionSummaries,
+    drafts,
+    outbox,
+    cursors,
+    skipped,
+    pull,
+  };
 }
 
 async function close(ownerId: string, opening: Promise<LocalStore>): Promise<void> {
@@ -112,6 +126,7 @@ async function close(ownerId: string, opening: Promise<LocalStore>): Promise<voi
   await store?.clients.cleanup();
   await store?.properties.cleanup();
   await store?.inspections.cleanup();
+  await store?.inspectionSummaries.cleanup();
   await store?.drafts.cleanup();
   await store?.cursors.cleanup();
   await store?.skipped.cleanup();
