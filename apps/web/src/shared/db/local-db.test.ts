@@ -23,6 +23,7 @@ describe("banco local por usuário", () => {
       "clients",
       "properties",
       "inspections",
+      "inspectionSummaries",
       "drafts",
       "cursors",
       "skipped",
