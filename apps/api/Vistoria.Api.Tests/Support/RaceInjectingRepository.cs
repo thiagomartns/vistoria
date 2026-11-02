@@ -169,6 +169,9 @@ public sealed class RaceInjectingInspectionRepository : RaceInjectingRepository<
         CancellationToken cancellationToken) =>
         _inner.FindChildIdsOfOtherInspectionsAsync(inspectionId, roomIds, itemIds, cancellationToken);
 
+    public Task<int> PurgeDeletedBeforeAsync(DateTimeOffset cutoff, CancellationToken cancellationToken) =>
+        _inner.PurgeDeletedBeforeAsync(cutoff, cancellationToken);
+
     protected override Inspection CompetingCopy(Inspection entity)
     {
         var copy = base.CompetingCopy(entity);
