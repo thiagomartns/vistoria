@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node volume-spike.mjs"
+    "start": "node volume-spike.mjs",
+    "migration": "node migration-spike.mjs"
   },
   "devDependencies": {
     "playwright-core": "1.64.1"

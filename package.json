@@ -20,6 +20,7 @@
     "spike:conflict": "pnpm --filter conflict-spike start",
     "spike:shell": "pnpm --filter shell-spike start",
     "spike:device": "pnpm --filter device-spike start",
-    "spike:volume": "pnpm --filter volume-spike start"
+    "spike:volume": "pnpm --filter volume-spike start",
+    "spike:migration": "pnpm --filter volume-spike migration"
   }
 }
