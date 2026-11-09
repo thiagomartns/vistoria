@@ -10,6 +10,7 @@ import { OFFLINE_WINDOW_MS } from "@/shared/auth/offline-window";
 import { resetSession } from "@/shared/auth/session";
 import { clock } from "@/shared/clock";
 import { reloadAt } from "@/shared/navigation";
+import { notify } from "@/shared/sync/notices";
 import type { Outbox } from "@/shared/sync/outbox";
 import { resetSyncStatus, trackOutbox } from "@/shared/sync/sync-status";
 import type { OutboxItemView } from "@/shared/sync/sync-view";
@@ -222,6 +223,27 @@ describe("AppShell", () => {
 
     expect(navigation.push).toHaveBeenCalledWith("/inspections/conflict?id=i1");
     expect(screen.queryByRole("dialog", { name: "Pendências" })).toBeNull();
+  });
+
+  it("um aviso do sync vira toast no Toaster do shell, uma vez por id", async () => {
+    render(<AppShell>conteúdo</AppShell>);
+
+    const notice = {
+      id: "locked:i1",
+      tone: "warning",
+      title: "Esta vistoria foi concluída em outro aparelho",
+      description: "As alterações feitas aqui depois disso foram descartadas.",
+    } as const;
+    act(() => {
+      notify(notice);
+      notify(notice);
+    });
+
+    expect(await screen.findByText("Esta vistoria foi concluída em outro aparelho")).toBeDefined();
+    expect(screen.getAllByText("Esta vistoria foi concluída em outro aparelho")).toHaveLength(1);
+    expect(
+      screen.getByText("As alterações feitas aqui depois disso foram descartadas."),
+    ).toBeDefined();
   });
 
   it("sem sessão, Entrar leva ao login", async () => {

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { configureClient } from "@/shared/api/client";
 import { createClient, createConfig } from "@/shared/api/generated/client";
 import type { DraftsCollection } from "@/shared/sync/drafts";
+import { type SyncNotice, subscribeNotices } from "@/shared/sync/notices";
 import { type Outbox, enqueue, startOutbox } from "@/shared/sync/outbox";
 
 import type { PropertyRecord } from "@/features/properties/models/property";
@@ -13,10 +14,17 @@ import { UPSERT_PROPERTY, upsertPropertyMutation } from "@/features/properties/s
 import type { InspectionRecord } from "../models/inspection";
 import type { InspectionsCollection } from "./inspections.collection";
 import { newMoveInInspection } from "./inspections.factory";
-import { UPSERT_INSPECTION, upsertInspectionMutation } from "./inspections.sync";
+import {
+  LOCKED_DESCRIPTION,
+  LOCKED_TITLE,
+  UPSERT_INSPECTION,
+  completeInspection,
+  upsertInspectionMutation,
+} from "./inspections.sync";
 
 // A vistoria na outbox única, com o executor de verdade e as mutationFns de verdade de properties e inspections,
-// contra um servidor falso que, como a API, recusa a vistoria de um imóvel que ele não conhece (ADR 0034).
+// contra um servidor falso que, como a API, recusa a vistoria de um imóvel que ele não conhece (ADR 0034). A conclusão
+// (#179) passa pelo mesmo `PUT`: o servidor falso grava o `completedAt`, recusa item sem condição ou responde `locked`.
 
 let canSend = true;
 
@@ -78,12 +86,33 @@ const validation = (errors: Record<string, string[]>) =>
     { status: 400, headers: { "content-type": "application/problem+json" } },
   );
 
+const COMPLETED_AT = "2026-10-19T14:32:00+00:00";
+
+/** A resposta 409 `locked`, com o `current` da vistoria concluída em outro aparelho. */
+const locked = (current: Record<string, unknown>) =>
+  Response.json(
+    {
+      type: "urn:vistoria:problem:locked",
+      title: "Vistoria concluída",
+      status: 409,
+      detail: "A vistoria já foi concluída e não aceita mais alterações.",
+      traceId: "00-trace",
+      current,
+    },
+    { status: 409, headers: { "content-type": "application/problem+json" } },
+  );
+
 /**
  * O servidor falso: grava o imóvel (ou o recusa, com `rejectProperty`) e só aceita a vistoria de um imóvel gravado.
- * Anota cada `PUT` com a entidade, o id e a chave.
+ * Como a API, a conclusão exige condição em todos os itens e ganha o `completedAt`; com `lockedBy`, toda vistoria já
+ * está concluída por outro aparelho (409 `locked` com esse `current`). Anota cada `PUT` com a entidade, o id, a chave e
+ * o corpo.
  */
-function fakeServer({ rejectProperty = false } = {}) {
-  const sent: { entity: string; id: string; key: string | null }[] = [];
+function fakeServer({
+  rejectProperty = false,
+  lockedBy,
+}: { rejectProperty?: boolean; lockedBy?: Record<string, unknown> } = {}) {
+  const sent: { entity: string; id: string; key: string | null; body?: Record<string, unknown> }[] = [];
   const known = new Set<string>();
   const client = configureClient(createClient(createConfig()), {
     baseUrl: "http://api.test",
@@ -91,15 +120,28 @@ function fakeServer({ rejectProperty = false } = {}) {
     fetch: async (input) => {
       const request = input as Request;
       const [, , , entity, id] = new URL(request.url).pathname.split("/");
-      sent.push({ entity: entity!, id: id!, key: request.headers.get("Idempotency-Key") });
       const body = await request.json();
+      sent.push({ entity: entity!, id: id!, key: request.headers.get("Idempotency-Key"), body });
       if (entity === "properties") {
         if (rejectProperty) return validation({ zipCode: ["Informe o CEP com 8 dígitos, sem hífen."] });
         known.add(id!);
         return Response.json({ ...body, id, version: "AAAAAAAAB9M=" }, { status: 201 });
       }
       if (!known.has(body.propertyId)) return validation({ propertyId: ["Imóvel não encontrado."] });
-      return Response.json({ ...body, id, version: "AAAAAAAAB9Q=" }, { status: 201 });
+      if (lockedBy) return locked(lockedBy);
+      if (body.status === "completed") {
+        const errors: Record<string, string[]> = {};
+        (body.rooms as InspectionRecord["rooms"]).forEach((room, r) =>
+          room.items.forEach((each, i) => {
+            if (each.condition === null) {
+              errors[`rooms[${r}].items[${i}].condition`] = ["Para concluir, avalie a condição do item."];
+            }
+          }),
+        );
+        if (Object.keys(errors).length > 0) return validation(errors);
+        return Response.json({ ...body, id, version: "AAAAAAAAB9R=", completedAt: COMPLETED_AT });
+      }
+      return Response.json({ ...body, id, version: "AAAAAAAAB9Q=", completedAt: null }, { status: 201 });
     },
   });
   return { client, sent };
@@ -251,8 +293,162 @@ describe("vistoria na outbox", () => {
 
     await vi.waitFor(async () => expect(await reloaded.outbox.peekOutbox()).toHaveLength(0), { timeout: 5_000 });
     await new Promise((done) => setTimeout(done, 300));
-    const inspectionPuts = server.sent.filter(({ entity }) => entity === "inspections");
+    const inspectionPuts = server.sent
+      .filter(({ entity }) => entity === "inspections")
+      .map(({ entity, id, key }) => ({ entity, id, key }));
     expect(inspectionPuts).toEqual([{ entity: "inspections", id: inspection.id, key: pending?.idempotencyKey }]);
     expect(local.confirmed.get(inspection.id)).toEqual({ ...inspection, version: "AAAAAAAAB9Q=" });
+  });
+});
+
+describe("concluir pela outbox (#179)", () => {
+  /** O imóvel e a vistoria já no servidor; a vistoria com tudo avaliado, menos o que `pending` deixar sem condição. */
+  async function synced(server: ReturnType<typeof fakeServer>, local: ReturnType<typeof localStores>) {
+    const started = await start(server, local);
+    const inspection = newMoveInInspection(property.id);
+    enqueue(started.outbox, UPSERT_PROPERTY, () => started.properties.insert(property));
+    enqueue(started.outbox, UPSERT_INSPECTION, () => started.inspections.insert(inspection));
+    await vi.waitFor(() => expect(local.confirmed.has(inspection.id)).toBe(true), { timeout: 5_000 });
+    await vi.waitFor(async () => expect(await started.outbox.peekOutbox()).toHaveLength(0), { timeout: 5_000 });
+    return { ...started, inspection: { ...inspection, version: "AAAAAAAAB9Q=" } };
+  }
+
+  const evaluated = (inspection: InspectionRecord): Omit<InspectionRecord, "version"> => {
+    const { version: _version, ...values } = inspection;
+    return {
+      ...values,
+      rooms: values.rooms.map((room) => ({
+        ...room,
+        items: room.items.map((each) => ({ ...each, condition: "good" as const })),
+      })),
+    };
+  };
+
+  function draftOfScreen(local: ReturnType<typeof localStores>, values: Omit<InspectionRecord, "version">) {
+    local.drafts.set(values.id, {
+      id: values.id,
+      entity: "inspection",
+      data: values,
+      status: "draft",
+      step: 4,
+      errors: {},
+      updatedAt: "2026-10-19T14:30:00.000Z",
+    });
+  }
+
+  it("offline: o PUT com status completed fica na fila; com a rede, sai uma vez só e a store fica concluída com o completedAt", async () => {
+    const server = fakeServer();
+    const local = localStores();
+    const { outbox, inspections, inspection } = await synced(server, local);
+    const values = evaluated(inspection);
+    draftOfScreen(local, values);
+
+    canSend = false;
+    completeInspection(
+      { inspections: inspections as unknown as InspectionsCollection, drafts: local.draftsCollection, outbox },
+      values,
+    );
+
+    // Na hora, concluída na camada otimista, e o rascunho saiu.
+    expect(inspections.get(inspection.id)?.status).toBe("completed");
+    expect(local.drafts.has(inspection.id)).toBe(false);
+    const [queued] = await vi.waitFor(async () => {
+      const entries = await outbox.peekOutbox();
+      expect(entries).toHaveLength(1);
+      return entries;
+    });
+    expect(queued?.mutations[0]?.modified).toMatchObject({ status: "completed" });
+    reconnect(outbox);
+
+    await vi.waitFor(async () => expect(await outbox.peekOutbox()).toHaveLength(0), { timeout: 5_000 });
+    await new Promise((done) => setTimeout(done, 300));
+    const completions = server.sent.filter(({ body }) => body?.status === "completed");
+    expect(completions).toHaveLength(1);
+    expect(completions[0]?.key).toBe(queued?.idempotencyKey);
+    expect(completions[0]?.body).not.toHaveProperty("completedAt");
+    expect(local.confirmed.get(inspection.id)).toEqual({
+      ...values,
+      status: "completed",
+      version: "AAAAAAAAB9R=",
+      completedAt: COMPLETED_AT,
+    });
+    expect(local.drafts.has(inspection.id)).toBe(false);
+  });
+
+  it("400 da conclusão: volta ao rascunho em andamento, com o erro no caminho do item", async () => {
+    const server = fakeServer();
+    const local = localStores();
+    const { outbox, inspections, inspection } = await synced(server, local);
+    const values = evaluated(inspection);
+    values.rooms[0]!.items[1]!.condition = null;
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    completeInspection(
+      { inspections: inspections as unknown as InspectionsCollection, drafts: local.draftsCollection, outbox },
+      values,
+    );
+
+    await vi.waitFor(() => expect(local.drafts.get(inspection.id)?.status).toBe("rejected"), {
+      timeout: 5_000,
+    });
+    expect(local.drafts.get(inspection.id)).toMatchObject({
+      entity: "inspection",
+      data: { ...values, status: "inProgress" },
+      errors: { "rooms[0].items[1].condition": ["Para concluir, avalie a condição do item."] },
+    });
+    // A store confirmada segue com a vistoria em andamento: a recusa desfaz a conclusão otimista.
+    expect(local.confirmed.get(inspection.id)).toEqual(inspection);
+  });
+
+  it("409 locked: adota o current, tira o rascunho e avisa uma vez que foi concluída em outro aparelho", async () => {
+    const local = localStores();
+    const notices: SyncNotice[] = [];
+    const stop = subscribeNotices((notice) => notices.push(notice));
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    // O imóvel e a vistoria chegam ao servidor; depois, outro aparelho a conclui.
+    const first = fakeServer();
+    const { outbox, inspection } = await synced(first, local);
+    outbox.dispose();
+    open = [];
+    await new Promise((done) => setTimeout(done, 0));
+    const current = {
+      ...evaluated(inspection),
+      id: inspection.id,
+      status: "completed",
+      version: "AAAAAAAAB9S=",
+      completedAt: COMPLETED_AT,
+      createdAt: "2026-10-19T09:12:00+00:00",
+      updatedAt: COMPLETED_AT,
+      referenceInspectionId: null,
+    };
+    const server = fakeServer({ lockedBy: current });
+    const again = await start(server, local);
+    enqueue(again.outbox, UPSERT_PROPERTY, () => again.properties.insert(property));
+    await vi.waitFor(() => expect(server.sent).toHaveLength(1), { timeout: 5_000 });
+
+    // Aqui, a pessoa ainda edita a vistoria em andamento.
+    const edited = structuredClone(inspection);
+    edited.rooms[0]!.items[0]!.condition = "poor";
+    draftOfScreen(local, edited);
+    enqueue(again.outbox, UPSERT_INSPECTION, () => again.inspections.insert(edited));
+
+    await vi.waitFor(() => expect(local.drafts.has(inspection.id)).toBe(false), { timeout: 5_000 });
+    expect(local.confirmed.get(inspection.id)).toEqual({
+      ...evaluated(inspection),
+      status: "completed",
+      version: "AAAAAAAAB9S=",
+      completedAt: COMPLETED_AT,
+    });
+    expect(local.drafts.has(inspection.id)).toBe(false);
+    await new Promise((done) => setTimeout(done, 300));
+    expect(notices).toEqual([
+      {
+        id: `locked:${inspection.id}`,
+        tone: "warning",
+        title: LOCKED_TITLE,
+        description: LOCKED_DESCRIPTION,
+      },
+    ]);
+    stop();
   });
 });

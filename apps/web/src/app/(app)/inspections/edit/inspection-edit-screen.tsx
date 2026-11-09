@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 
+import { CompleteInspection } from "@/features/inspections/components/complete-inspection";
 import { DeleteInspection } from "@/features/inspections/components/delete-inspection";
 import { RoomStep } from "@/features/inspections/components/room-step";
 import { INSPECTIONS_HREF } from "@/features/inspections/hooks/useInspections";
@@ -14,8 +15,10 @@ import { PageHeader } from "../../shell-header";
 // /inspections/edit?id= (Figma 43:1748, estados 0, 2, 3, 4, 5 e 6): a tela de campo, um passo por ambiente, com a
 // condição em chips e a observação sob demanda. No celular, modo foco: sem a barra inferior, com "Voltar" no header e
 // Anterior/Próximo no rodapé. Editável com transação na fila; só leitura com o envio no ar (ADR 0021). No último
-// ambiente, Próximo fica desabilitado: concluir chega no M5. Em andamento, o "···" do header exclui a vistoria (#107):
-// confirmada, a exclusão vai para a fila e a tela volta para a lista; aberta com a exclusão na fila, fica só leitura.
+// ambiente, Próximo vira "Concluir vistoria" (Figma 164:12824): o que falta marca os chips e abre o ambiente do primeiro;
+// sem nada faltando, o Dialog confirma, e a conclusão vai para a fila. Concluída, só leitura e sem o "···". Em
+// andamento, o "···" do header exclui a vistoria (#107): confirmada, a exclusão vai para a fila e a tela volta para a
+// lista; aberta com a exclusão na fila, fica só leitura.
 // Uma vistoria que o aparelho não tem é buscada no servidor, com o imóvel e o cliente (#101).
 
 export function InspectionEditScreen() {
@@ -71,6 +74,7 @@ export function InspectionEditScreen() {
         current={field.step}
         onStepChange={field.goTo}
         position={field.position}
+        finish={field.finish}
       >
         <RoomStep
           key={room.id}
@@ -85,8 +89,16 @@ export function InspectionEditScreen() {
           rejection={field.rejection}
           conflict={field.conflict}
           deletion={field.deletion}
+          completion={field.completion}
         />
       </StepperForm>
+      <CompleteInspection
+        open={field.confirming}
+        onOpenChange={field.setConfirming}
+        subject={field.deleteSubject}
+        pending={field.unsent}
+        onConfirm={field.complete}
+      />
     </>
   );
 }

@@ -39,8 +39,52 @@ const itemSchema = z.object({
   notes: z.string().max(NOTES_MAX, NOTES_TOO_LONG),
 });
 
-/** Avançar de ambiente: confere os itens do ambiente atual. Não exige condição (isso é do concluir, M5). */
+/** Avançar de ambiente: confere os itens do ambiente atual. Não exige condição (isso é do concluir). */
 export const roomStepSchema = z.object({ items: z.array(itemSchema) });
+
+// As mensagens da conclusão são as do .NET (InspectionService.cs), que confere tudo de novo no `PUT`.
+export const NO_ROOMS = "Para concluir, a vistoria precisa de ao menos um ambiente.";
+export const NO_ITEMS = "Para concluir, o ambiente precisa de ao menos um item.";
+export const NO_CONDITION = "Para concluir, avalie a condição do item.";
+
+/**
+ * Concluir (vision.md, "Regras de negócio"): ao menos um ambiente, ao menos um item em cada um e a condição em todos os
+ * itens. Confere a vistoria com os valores do formulário por cima (`recordWith`), na forma do corpo do `PUT`.
+ */
+export const completeInspectionSchema = z.object({
+  rooms: z
+    .array(
+      z.object({
+        items: z
+          .array(
+            z.object({
+              condition: zItemCondition.nullable().refine((value) => value !== null, NO_CONDITION),
+            }),
+          )
+          .min(1, NO_ITEMS),
+      }),
+    )
+    .min(1, NO_ROOMS),
+});
+
+/**
+ * O que falta para concluir, com as chaves no caminho do backend (`rooms[2].items[4].condition`, `rooms[1].items`,
+ * `rooms`) e a mensagem do .NET: a recusa conferida no aparelho e a que vem do servidor passam pelo mesmo `formPathOf` e
+ * `roomOfError`. Vazio: pode concluir.
+ */
+export function completionErrors(
+  record: Pick<InspectionRecord, "rooms">,
+): Record<string, string[]> {
+  const result = completeInspectionSchema.safeParse(record);
+  const errors: Record<string, string[]> = {};
+  for (const issue of result.error?.issues ?? []) {
+    const key = issue.path
+      .map((part, index) => (typeof part === "number" ? `[${part}]` : index === 0 ? String(part) : `.${String(part)}`))
+      .join("");
+    (errors[key] ??= []).push(issue.message);
+  }
+  return errors;
+}
 
 /** Os valores do formulário a partir do registro (ou do rascunho, que tem o mesmo formato). */
 export function formValuesOf(record: Pick<InspectionRecord, "rooms">): InspectionFormValues {

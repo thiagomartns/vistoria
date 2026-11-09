@@ -6,6 +6,10 @@ import { newMoveInInspection } from "../services/inspections.factory";
 import {
   NOTES_MAX,
   NOTES_TOO_LONG,
+  NO_CONDITION,
+  NO_ITEMS,
+  NO_ROOMS,
+  completionErrors,
   formPathOf,
   formValuesOf,
   recordWith,
@@ -112,5 +116,38 @@ describe("roomStepSchema", () => {
       [["items", 0, "notes"], NOTES_TOO_LONG],
     ]);
     expect(NOTES_TOO_LONG).toBe("As observações podem ter até 1000 caracteres.");
+  });
+});
+
+describe("completeInspectionSchema (concluir, vision.md \"Regras de negócio\")", () => {
+  it("tudo avaliado: nada falta", () => {
+    const record = newMoveInInspection("p1");
+    const done = {
+      rooms: record.rooms.map((room) => ({
+        ...room,
+        items: room.items.map((item) => ({ ...item, condition: "good" as const })),
+      })),
+    };
+
+    expect(completionErrors(done)).toEqual({});
+  });
+
+  it("item sem condição e ambiente sem item: as chaves no caminho do backend, com as mensagens do .NET", () => {
+    const record = newMoveInInspection("p1");
+    const rooms = record.rooms.map((room) => ({
+      ...room,
+      items: room.items.map((item) => ({ ...item, condition: "good" as const })),
+    }));
+    rooms[1]!.items[3] = { ...rooms[1]!.items[3]!, condition: null as never };
+    rooms[2] = { ...rooms[2]!, items: [] };
+
+    expect(completionErrors({ rooms })).toEqual({
+      "rooms[1].items[3].condition": [NO_CONDITION],
+      "rooms[2].items": [NO_ITEMS],
+    });
+  });
+
+  it("sem ambiente", () => {
+    expect(completionErrors({ rooms: [] })).toEqual({ rooms: [NO_ROOMS] });
   });
 });

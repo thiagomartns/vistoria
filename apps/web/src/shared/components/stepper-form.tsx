@@ -1,5 +1,6 @@
 import { Button } from "@sanjou/ui/button";
 import {
+  Check,
   ChevronLeft,
   ChevronRight,
   Circle,
@@ -15,7 +16,8 @@ import { type ReactNode, useEffect, useRef } from "react";
 // de chips no topo (a atual sempre à vista), o conteúdo e a barra com Anterior e Próximo de largura cheia, as duas
 // presas à tela enquanto o conteúdo rola. Etapa: ícone + texto em todo estado; a atual leva aria-current="step".
 // Alt+← e Alt+→ trocam de etapa. Quem usa decide se Próximo valida; o sync da entidade inteira fica no cabeçalho da
-// tela, não aqui. Candidato ao Sanjou.
+// tela, não aqui. Na última etapa, `finish` troca Próximo pela ação de terminar ("Concluir vistoria", com Check). Candidato
+// ao Sanjou.
 
 export type StepState = "pendente" | "completa" | "erro" | "conflito";
 
@@ -87,8 +89,10 @@ type StepperFormProps = {
   onStepChange: (index: number) => void;
   /** "Cozinha · 3 de 7". */
   position: string;
-  /** Próximo indisponível (última etapa sem ação de concluir). */
+  /** Próximo indisponível. */
   nextDisabled?: boolean;
+  /** A ação da última etapa, no lugar de Próximo. Sem ela, Próximo fica desabilitado na última etapa. */
+  finish?: { label: string; onClick: () => void };
   children: ReactNode;
 };
 
@@ -100,12 +104,14 @@ export function StepperForm({
   onStepChange,
   position,
   nextDisabled = false,
+  finish,
   children,
 }: StepperFormProps) {
   const strip = useRef<HTMLElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const hasPrevious = current > 0;
   const hasNext = current < steps.length - 1 && !nextDisabled;
+  const finishing = finish !== undefined && current === steps.length - 1;
 
   // Ao trocar de etapa: a atual fica à vista na faixa do celular (no desktop a coluna já mostra todas), e o conteúdo
   // volta ao topo, onde quer que ele role (a página no celular, o painel no desktop).
@@ -171,15 +177,26 @@ export function StepperForm({
               <ChevronLeft aria-hidden="true" />
               Anterior
             </Button>
-            <Button
-              size="lg"
-              className="flex-1 md:order-3 md:h-8 md:flex-none md:px-3"
-              disabled={!hasNext}
-              onClick={() => onStepChange(current + 1)}
-            >
-              Próximo
-              <ChevronRight aria-hidden="true" />
-            </Button>
+            {finishing ? (
+              <Button
+                size="lg"
+                className="flex-1 md:order-3 md:h-8 md:flex-none md:px-3"
+                onClick={finish.onClick}
+              >
+                {finish.label}
+                <Check aria-hidden="true" />
+              </Button>
+            ) : (
+              <Button
+                size="lg"
+                className="flex-1 md:order-3 md:h-8 md:flex-none md:px-3"
+                disabled={!hasNext}
+                onClick={() => onStepChange(current + 1)}
+              >
+                Próximo
+                <ChevronRight aria-hidden="true" />
+              </Button>
+            )}
           </div>
         </div>
       </div>

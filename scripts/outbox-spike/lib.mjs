@@ -313,6 +313,51 @@ export async function changeOnServer(user, id, change) {
   return body.version;
 }
 
+/**
+ * Outro aparelho conclui a vistoria (`PUT` direto na API, com `status: completed`): avalia como "good" o que estiver sem
+ * condição. Devolve o corpo da resposta, com o `completedAt` do servidor.
+ */
+export async function completeOnServer(user, id) {
+  const seen = (await serverInspection(user, id)).body;
+  const { status, body } = await callApi(`/api/v1/inspections/${id}`, {
+    method: "PUT",
+    headers: { authorization: `Bearer ${user.token}`, "if-match": `"${seen.version}"`, "idempotency-key": uuidv7() },
+    body: JSON.stringify({
+      propertyId: seen.propertyId,
+      kind: seen.kind,
+      status: "completed",
+      startedAt: seen.startedAt,
+      generalNotes: seen.generalNotes,
+      rooms: seen.rooms.map((room) => ({
+        id: room.id,
+        name: room.name,
+        position: room.position,
+        notes: room.notes,
+        items: room.items.map(({ id: itemId, name, position, condition, notes }) => ({
+          id: itemId,
+          name,
+          position,
+          condition: condition ?? "good",
+          notes,
+        })),
+      })),
+    }),
+  });
+  assert.equal(status, 200, `a conclusão do outro aparelho respondeu ${status}`);
+  return body;
+}
+
+/** Marca "Bom" em todos os itens do ambiente aberto, menos os de `except`. */
+export async function markRoom(page, except = []) {
+  const labels = await page
+    .getByRole("radiogroup")
+    .evaluateAll((groups) => groups.map((group) => group.getAttribute("aria-label")));
+  for (const label of labels) {
+    const item = label.replace(/^Condição: /, "");
+    if (!except.includes(item)) await mark(page, item, "Bom");
+  }
+}
+
 /** Todo PUT de client, imóvel e vistoria que a página dispara, com o que interessa ao roteiro. */
 export function watchPuts(page) {
   const puts = [];

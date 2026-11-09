@@ -249,21 +249,107 @@ export function startedLabel(iso: string): string {
 
 // --- Tela de campo ---
 
-/** O cabeçalho da tela de campo (Figma 43:1751): o endereço e "Vistoria de entrada · cliente · iniciada em …". */
+/** Uma data ISO válida, ou `null`. */
+function parsedDate(iso: string | undefined): Date | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/**
+ * O cabeçalho da tela de campo (Figma 43:1751): o endereço e "Vistoria de entrada · cliente · iniciada em …". Concluída
+ * (Figma 164:12824, estados 4 e 5), a data é a da conclusão; com a conclusão ainda na fila, "concluída neste aparelho".
+ */
 export function fieldHeader(
-  inspection: Pick<InspectionRecord, "kind" | "startedAt">,
+  inspection: Pick<InspectionRecord, "kind" | "startedAt" | "status" | "completedAt">,
   place: PlaceView | undefined,
 ): { title: string; subtitle: string; compactSubtitle: string } {
   const kind = `Vistoria de ${inspection.kind === "moveOut" ? "saída" : "entrada"}`;
-  const date = new Date(inspection.startedAt);
-  const started = Number.isNaN(date.getTime())
-    ? null
-    : `iniciada em ${dayAndTime(date).day} às ${dayAndTime(date).time}`;
+  const completed = inspection.status === "completed";
+  const date = parsedDate(completed ? inspection.completedAt : inspection.startedAt);
+  const when = date
+    ? `${completed ? "concluída" : "iniciada"} em ${dayAndTime(date).day} às ${dayAndTime(date).time}`
+    : completed
+      ? "concluída neste aparelho"
+      : null;
   return {
     title: place?.address ?? "Vistoria",
-    subtitle: [kind, place?.clientName, started].filter(Boolean).join(" · "),
-    compactSubtitle: kind,
+    subtitle: [kind, place?.clientName, when].filter(Boolean).join(" · "),
+    compactSubtitle: completed ? `${kind} · concluída` : kind,
   };
+}
+
+export const COMPLETED_DESCRIPTION = "O registro está travado e não pode mais ser editado.";
+export const COMPLETION_PENDING_TITLE = "Conclusão aguardando envio";
+export const COMPLETION_PENDING_DESCRIPTION =
+  "A vistoria está travada neste aparelho e será concluída no servidor quando a conexão voltar.";
+
+/** O aviso de uma vistoria concluída na tela de campo (Figma 164:12824, estados 4 e 5), ou `null` em andamento. */
+export interface CompletionView {
+  /** "success": o servidor confirmou; "pending": a conclusão está na fila. */
+  tone: "success" | "pending";
+  title: string;
+  description: string;
+}
+
+/**
+ * Concluída e confirmada: "Vistoria concluída em 19/10/2026 às 14:32" (sem a data, de uma concluída baixada antes de o
+ * aparelho guardá-la, só "Vistoria concluída"). Com a conclusão na fila (`pending`), o aviso de envio.
+ */
+export function completionView(
+  inspection: Pick<InspectionRecord, "status" | "completedAt">,
+  pending: boolean,
+): CompletionView | null {
+  if (inspection.status !== "completed") return null;
+  if (pending) {
+    return {
+      tone: "pending",
+      title: COMPLETION_PENDING_TITLE,
+      description: COMPLETION_PENDING_DESCRIPTION,
+    };
+  }
+  const date = parsedDate(inspection.completedAt);
+  return {
+    tone: "success",
+    title: date
+      ? `Vistoria concluída em ${DATE.format(date)} às ${TIME.format(date)}`
+      : "Vistoria concluída",
+    description: COMPLETED_DESCRIPTION,
+  };
+}
+
+/**
+ * "Faltam itens para concluir" (Figma 164:12824, estado 3): o que a conclusão conferida no aparelho achou, por ambiente,
+ * a partir das chaves de `completionErrors`.
+ */
+export const INCOMPLETE_TITLE = "Faltam itens para concluir";
+
+export function incompleteDescription(
+  errors: Readonly<Record<string, string[]>>,
+  roomNames: readonly string[],
+): string {
+  const keys = Object.keys(errors);
+  const missing = keys.filter((key) => key.endsWith(".condition"));
+  const empty = keys.filter((key) => /^rooms\[\d+\]\.items$/.test(key));
+  const parts: string[] = [];
+  if (keys.includes("rooms")) parts.push("A vistoria não tem nenhum ambiente.");
+  if (missing.length > 0) {
+    const rooms = [...new Set(missing.map(roomOfError))];
+    const where =
+      rooms.length === 1 && rooms[0] !== undefined
+        ? `${plural(missing.length, "item", "itens")} da ${roomNames[rooms[0]] ?? "vistoria"}`
+        : `${plural(missing.length, "item", "itens")} em ${rooms.length} ambientes`;
+    parts.push(
+      `${where} ${missing.length === 1 ? "está" : "estão"} sem condição. Escolha a condição e conclua de novo.`,
+    );
+  }
+  if (empty.length > 0) {
+    const names = empty.map((key) => roomNames[roomOfError(key) ?? -1]).filter(Boolean);
+    parts.push(
+      `${empty.length === 1 ? "Um ambiente está" : `${empty.length} ambientes estão`} sem itens${names.length > 0 ? ` (${names.join(", ")})` : ""}.`,
+    );
+  }
+  return parts.join(" ");
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;

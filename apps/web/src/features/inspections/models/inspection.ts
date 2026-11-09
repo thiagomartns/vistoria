@@ -8,8 +8,9 @@ import type {
 } from "@/shared/api/generated";
 
 // Os nuláveis do DTO de entrada são nuláveis só para o `[Required]` do .NET pegar o campo ausente; aqui eles sempre
-// existem. Os campos que o servidor define (`completedAt`, `referenceInspectionId`, `referenceCondition`,
-// `referenceNotes` e as datas) não existem no registro, então nunca vão no `PUT`.
+// existem. Os campos que o servidor define (`referenceInspectionId`, `referenceCondition`, `referenceNotes` e as datas)
+// não existem no registro, então nunca vão no `PUT`. A exceção é o `completedAt` da concluída (ADR 0050): ele fica no
+// registro para a tela e o laudo, e o envio o tira do corpo.
 
 /** Item no banco local: o corpo do `PUT`, com o `id` gerado no aparelho. */
 export type ItemRecord = Required<Omit<UpsertInspectionItemDto, "id" | "position">> & {
@@ -33,6 +34,11 @@ export type InspectionRecord = {
   version: string | null;
   /** Só na camada otimista, com a exclusão na fila (ADR 0039): "Excluindo", só leitura. Nunca vai no `PUT`. */
   deleting?: true;
+  /**
+   * Quando o servidor concluiu a vistoria (ADR 0050): só existe na concluída que ele confirmou (a resposta do `PUT`, o
+   * pull ou o `current` de um `locked`). A concluída que ainda está na fila não tem. Nunca vai no `PUT`.
+   */
+  completedAt?: string;
 } & Required<
   Omit<UpsertInspectionDto, "propertyId" | "kind" | "status" | "startedAt" | "rooms">
 > & {

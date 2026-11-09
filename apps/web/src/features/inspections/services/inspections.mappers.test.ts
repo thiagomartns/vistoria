@@ -60,4 +60,26 @@ describe("inspectionRecordOf", () => {
       ],
     });
   });
+
+  it("concluída: o completedAt do servidor fica no registro (ADR 0050); em andamento, a chave nem existe", () => {
+    const dto: InspectionDto = {
+      id: "i2",
+      propertyId: "p1",
+      kind: "moveIn",
+      status: "completed",
+      referenceInspectionId: null,
+      startedAt: "2026-10-19T09:12:00Z",
+      completedAt: "2026-10-19T14:32:00Z",
+      generalNotes: null,
+      rooms: [],
+      version: "AAAAAAAAB9M=",
+      createdAt: "2026-10-19T09:12:01Z",
+      updatedAt: "2026-10-19T14:32:00Z",
+    };
+
+    expect(inspectionRecordOf(dto).completedAt).toBe("2026-10-19T14:32:00Z");
+    expect(inspectionRecordOf({ ...dto, status: "inProgress", completedAt: null })).not.toHaveProperty(
+      "completedAt",
+    );
+  });
 });

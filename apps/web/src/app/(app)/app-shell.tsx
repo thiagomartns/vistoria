@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@sanjou/ui/button";
+import { Toaster } from "@sanjou/ui/sonner";
 import { ChevronLeft } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -18,6 +19,7 @@ import { SignOutDialog } from "@/shared/components/sign-out-dialog";
 import { SyncBadge } from "@/shared/components/sync-badge";
 import { SyncStatus } from "@/shared/components/sync-status";
 import { UserMenu } from "@/shared/components/user-menu";
+import { useSyncNotices } from "@/shared/sync/useSyncNotices";
 import { useSyncStatus } from "@/shared/sync/useSyncStatus";
 
 import { NAV_ITEMS, navItemFor } from "./nav-items";
@@ -28,7 +30,8 @@ import { type ShellHeader, ShellHeaderContext } from "./shell-header";
 // (tela de campo), o celular fica sem a barra inferior e sem o avatar. Sem sessão vai para /login; com a sessão expirada, fica offline com os dados
 // locais e vai para /login quando a rede volta. Vencida a janela offline de 72 h, o conteúdo vira o bloqueio
 // "Reconecte para continuar", sem apagar nada, até um refresh aceito (frame 8 da #128). "Sair" passa pelo useSignOut:
-// sem pendências limpa direto; com pendências, o SignOutDialog pede confirmação (frames 4 e 5).
+// sem pendências limpa direto; com pendências, o SignOutDialog pede confirmação (frames 4 e 5). Os avisos passageiros do
+// sync (o `locked`, Figma 164:12824 estado 6) saem no Toaster do Sanjou (ADR 0033).
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -40,6 +43,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const offlineWindow = useOfflineWindow();
   const signOut = useSignOut();
   useSessionGuard(sync.offline);
+  useSyncNotices();
 
   const current = navItemFor(pathname);
   const user = (layout: "sidebar" | "avatar") => (
@@ -151,6 +155,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           if (item.href) router.push(item.href);
         }}
       />
+      <Toaster />
     </div>
   );
 }

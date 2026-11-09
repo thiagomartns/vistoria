@@ -1,6 +1,7 @@
 import type { PendingMutation } from "@tanstack/db";
 
 import { type DraftsCollection, recordConflict } from "./drafts";
+import type { SyncNotice } from "./notices";
 import {
   type Outbox,
   type OutboxMutationFn,
@@ -15,6 +16,7 @@ import {
   type LocalCollection,
   type MergeStrategy,
   type SyncRecord,
+  acceptLocked,
   adoptServer,
   confirmedOf,
   dropConfirmed,
@@ -25,7 +27,8 @@ import {
 // entra na fila única atrás do que já estava lá, e o `DELETE` só se decide no envio, pela store confirmada: o que o
 // servidor nunca aceitou sai do aparelho sem requisição. Até o 204, o registro fica com `deleting` na camada otimista,
 // e a tela o mostra "Excluindo", só leitura. Um `DELETE` num registro alterado em outro aparelho pede a pessoa
-// ("Excluir mesmo assim?", ADR 0040).
+// ("Excluir mesmo assim?", ADR 0040). Um `DELETE` numa vistoria concluída em outro aparelho (`locked`) adota o que o
+// servidor tem e avisa.
 
 /** A chamada gerada do `DELETE /api/v1/<entidade>/{id}`. */
 export type DeleteCall = (request: {
@@ -50,8 +53,9 @@ async function forget<T extends SyncRecord>(
  * servidor. Nos dois casos, o registro e o rascunho saem do aparelho. Uma recusa sai da fila pelo `syncFailure` e desfaz
  * o `deleting`. No `version-conflict` (frontend.md, "Conflito", passo 5), o `current` já vai para a store confirmada,
  * para a tela mostrar o que mudou, e o rascunho fica em conflito `removal`: a pessoa decide se exclui mesmo assim
- * (`enqueueRemoval` de novo, com a versão nova e chave nova) ou fica com o servidor (`keepServer`). A reação ao
- * `locked` é do M5.
+ * (`enqueueRemoval` de novo, com a versão nova e chave nova) ou fica com o servidor (`keepServer`). No `locked`, o
+ * registro foi concluído em outro aparelho: o `current` vai para a store confirmada, o rascunho sai e sai o aviso
+ * (`locked`); a recusa desfaz o `deleting`, e ele fica como o servidor o tem.
  */
 export function removeMutation<T extends SyncRecord>({
   store,
@@ -59,6 +63,7 @@ export function removeMutation<T extends SyncRecord>({
   entity,
   shape,
   send,
+  locked,
 }: {
   store: LocalCollection<T>;
   drafts: DraftsCollection;
@@ -66,6 +71,8 @@ export function removeMutation<T extends SyncRecord>({
   /** O `current` do servidor na forma do registro local (o mesmo do merge). */
   shape: MergeStrategy<T>["shape"];
   send: DeleteCall;
+  /** O aviso de um `locked` (só a vistoria trava). */
+  locked?: (record: T) => SyncNotice;
 }): OutboxMutationFn<T> {
   return async ({ transaction, idempotencyKey }) => {
     const [mutation, ...rest] = transaction.mutations;
@@ -94,6 +101,13 @@ export function removeMutation<T extends SyncRecord>({
           const server = shape(current, like as T);
           await adoptServer(store, server);
           recordConflict(drafts, entity, server, { type: "removal", current, collisions: [] });
+        }
+        if (error instanceof RejectedSyncError && error.group === "accept-server") {
+          await acceptLocked(
+            { drafts, shape, locked, write: (server) => adoptServer(store, server) },
+            mutation.modified,
+            error.failure,
+          );
         }
         await waitRetryAfter(error);
         throw error;
