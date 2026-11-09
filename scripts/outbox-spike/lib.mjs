@@ -95,7 +95,10 @@ export async function launch() {
   browser.newContext = async (options) => {
     const context = await newContext(options);
     const name = `contexto ${++contexts}`;
-    context.on("page", (page) => trace(page, name));
+    context.on("page", (page) => {
+      trace(page, name);
+      trackPrefetch(page);
+    });
     if (chaos) {
       await context.addInitScript((interval) => {
         const setInterval = window.setInterval;
@@ -123,6 +126,69 @@ function trace(page, name) {
   page.on("request", (req) => api(req.url()) && note(`→ ${req.method()} ${pathOf(req.url())}`));
   page.on("response", (res) => api(res.url()) && note(`← ${res.status()} ${res.request().method()} ${pathOf(res.url())}`));
   page.on("requestfailed", (req) => api(req.url()) && note(`✗ ${req.method()} ${pathOf(req.url())}`));
+}
+
+/**
+ * A rota de um payload RSC do static export, pela URL: o segmento do prefetch
+ * (`/clients/edit/__next.!KGFwcCk.clients.edit.__PAGE__.txt?_rsc=…` → `/clients/edit`) ou a página inteira, que a
+ * navegação busca sem prefetch (`/properties/edit.txt?_rsc=…` → `/properties/edit`). Fora do RSC (API, `_next/static`,
+ * HTML), `null`. `page` diz se o payload traz a tela em si (o `__PAGE__` ou a página inteira) ou outro segmento, como o
+ * `_tree`.
+ */
+export function rscRouteOf(url) {
+  const { pathname, searchParams } = new URL(url, "http://local");
+  if (!searchParams.has("_rsc") || !pathname.endsWith(".txt")) return null;
+  const at = pathname.lastIndexOf("/__next.");
+  if (at >= 0) return { route: pathname.slice(0, at) || "/", page: pathname.endsWith(".__PAGE__.txt") };
+  const route = pathname.slice(0, -".txt".length);
+  return { route: route === "/index" ? "/" : route, page: true };
+}
+
+// Os payloads RSC de cada página: os em voo e as rotas cujo `__PAGE__` já chegou (#145).
+const prefetches = new WeakMap();
+
+function trackPrefetch(page) {
+  const state = { inFlight: new Set(), loaded: new Set(), lastChange: Date.now() };
+  prefetches.set(page, state);
+  const done = (req, ok) => {
+    if (!state.inFlight.delete(req)) return;
+    state.lastChange = Date.now();
+    const rsc = rscRouteOf(req.url());
+    if (ok && rsc?.page) state.loaded.add(rsc.route);
+  };
+  page.on("request", (req) => {
+    if (!rscRouteOf(req.url())) return;
+    state.inFlight.add(req);
+    state.lastChange = Date.now();
+  });
+  page.on("requestfinished", async (req) => {
+    const res = await req.response().catch(() => null);
+    done(req, res !== null && res.ok());
+  });
+  page.on("requestfailed", (req) => done(req, false));
+}
+
+/**
+ * Espera o prefetch do Next assentar: nenhum payload RSC em voo há 300 ms, e o `__PAGE__` de cada rota de `routes` já
+ * baixado. É o que a navegação offline usa, antes do modo avião. O `networkidle` do Playwright não serve: ele vale para
+ * a navegação de documento, e uma página que já ficou ociosa (60 s no /login esperando o 429) não espera de novo depois
+ * de um `router.push` (#145).
+ */
+export async function prefetched(page, routes = []) {
+  const state = prefetches.get(page);
+  assert.ok(state, "a página não veio de um contexto do launch()");
+  const missing = () => routes.filter((r) => !state.loaded.has(r));
+  try {
+    await until(
+      async () => state.inFlight.size === 0 && Date.now() - state.lastChange >= 300 && missing().length === 0,
+      "o prefetch do Next",
+      15_000,
+    );
+  } catch {
+    throw new Error(
+      `Tempo esgotado esperando o prefetch do Next: ${state.inFlight.size} em voo; sem o payload de ${missing().join(", ") || "nenhuma rota pedida"}`,
+    );
+  }
 }
 
 /** Imprime as últimas requisições da API (o roteiro chama na falha). */

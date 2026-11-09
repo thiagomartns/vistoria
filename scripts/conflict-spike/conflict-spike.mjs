@@ -31,6 +31,7 @@ import {
   ok,
   openRoom,
   outboxCount,
+  prefetched,
   printTrace,
   pullNow,
   root,
@@ -120,9 +121,12 @@ async function backToList(page) {
   await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
 }
 
-/** Modo avião sem cortar o prefetch do Next no meio: a navegação offline depende dele. */
+/**
+ * Modo avião sem cortar o prefetch do Next no meio: a navegação offline depende dele. O `networkidle` não serve, porque
+ * só vale para a navegação de documento e não espera de novo depois de um `router.push` (#145).
+ */
 async function goOffline(context, page) {
-  await page.waitForLoadState("networkidle");
+  await prefetched(page);
   await context.setOffline(true);
   await page.getByText("Você está offline").first().waitFor();
 }
