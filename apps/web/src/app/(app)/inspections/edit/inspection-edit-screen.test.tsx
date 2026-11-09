@@ -4,7 +4,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ClientRecord } from "@/features/clients/models/client";
 import type { InspectionRecord } from "@/features/inspections/models/inspection";
+import { NO_CONDITION } from "@/features/inspections/schemas/inspection.schemas";
 import {
+  completeInspection,
   deleteInspection,
   fetchInspection,
   saveInspection,
@@ -20,7 +22,7 @@ import type { RecordSyncState } from "@/shared/sync/sync-view";
 import { AppShell } from "../../app-shell";
 import { InspectionEditScreen } from "./inspection-edit-screen";
 
-// A tela de campo dentro do shell (Figma 43:1748, estados 0, 2, 3, 4 e 6), com o banco local simulado no hook e o
+// A tela de campo dentro do shell (Figma 43:1748, estados 0, 2, 3, 4 e 6; concluir, 164:12824), com o banco local simulado no hook e o
 // rascunho e a fila espionados. Os debounces são os de verdade: 300 ms para o rascunho, 1,5 s para a fila.
 
 const navigation = vi.hoisted(() => ({ search: "", push: vi.fn<(href: string) => void>() }));
@@ -59,6 +61,7 @@ vi.mock("@/features/inspections/hooks/useInspectionRecord", () => ({
 }));
 
 vi.mock("@/features/inspections/services/inspections.sync", () => ({
+  completeInspection: vi.fn<() => string>(() => "i1"),
   saveInspection: vi.fn<() => string>(() => "i1"),
   saveInspectionDraft: vi.fn<() => void>(),
   deleteInspection: vi.fn<() => Promise<void>>(async () => {}),
@@ -163,7 +166,20 @@ const draftOf = (over: Partial<DraftRecord>): DraftRecord => ({
   ...over,
 });
 
+/** A vistoria com tudo avaliado: pode concluir. */
+const pronta: InspectionRecord = {
+  ...structuredClone(vistoria),
+  rooms: vistoria.rooms.map((room) => ({
+    ...room,
+    items: (room.items.length > 0 ? room.items : [item("t6", "Piso", 0)]).map((each) => ({
+      ...each,
+      condition: each.condition ?? "good",
+    })),
+  })),
+};
+
 afterEach(() => {
+  vi.mocked(completeInspection).mockClear();
   vi.mocked(saveInspection).mockClear();
   vi.mocked(saveInspectionDraft).mockClear();
   vi.mocked(deleteInspection).mockClear();
@@ -206,7 +222,7 @@ describe("InspectionEditScreen", () => {
     expect(screen.getByRole("button", { name: "Adicionar observação: Bancada" })).toBeDefined();
   });
 
-  it("estado 2: ambiente sem itens mostra o EmptyState, sem ação; no último ambiente, Próximo desabilitado", async () => {
+  it("estado 2: ambiente sem itens mostra o EmptyState, sem ação; no último ambiente, Próximo vira 'Concluir vistoria'", async () => {
     const user = userEvent.setup();
     open();
 
@@ -215,9 +231,8 @@ describe("InspectionEditScreen", () => {
     expect(screen.getByText("Nenhum item neste ambiente")).toBeDefined();
     expect(screen.getByText("Nenhum item ainda")).toBeDefined();
     expect(within(steps()).getByText("0 itens")).toBeDefined();
-    expect((screen.getByRole("button", { name: "Próximo" }) as HTMLButtonElement).disabled).toBe(
-      true,
-    );
+    expect(screen.queryByRole("button", { name: "Próximo" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Concluir vistoria" })).toBeDefined();
   });
 
   it("marcar um chip: vai para o rascunho, depois para a fila, e o item fica 'Não enviado'", async () => {
@@ -593,10 +608,180 @@ describe("InspectionEditScreen", () => {
     expect(screen.getByRole("dialog").textContent).not.toContain("não enviadas");
   });
 
-  it("concluída: sem o ···", () => {
-    open({ inspections: [{ ...vistoria, status: "completed" }] });
+  describe("concluir (#179, Figma 164:12824)", () => {
+    const toLastRoom = async (user: ReturnType<typeof userEvent.setup>) =>
+      user.click(within(steps()).getByRole("button", { name: /Varanda/ }));
 
-    expect(screen.queryByRole("button", { name: "Mais ações" })).toBeNull();
+    it("estado 3: com item sem condição, não enfileira nada, abre o ambiente do primeiro erro e marca o chip", async () => {
+      const user = userEvent.setup();
+      open();
+      await toLastRoom(user);
+
+      await user.click(screen.getByRole("button", { name: "Concluir vistoria" }));
+
+      expect(currentStep().textContent).toContain("Cozinha");
+      expect(chips("Bancada").getAttribute("aria-invalid")).toBe("true");
+      expect(chips("Piso").getAttribute("aria-invalid")).toBe("false");
+      expect(screen.getByText(NO_CONDITION)).toBeDefined();
+      expect(screen.getByText("Faltam itens para concluir")).toBeDefined();
+      expect(
+        screen.getByText(
+          "1 item da Cozinha está sem condição. Escolha a condição e conclua de novo. Um ambiente está sem itens (Varanda).",
+        ),
+      ).toBeDefined();
+      expect(within(steps()).getByRole("button", { name: /Varanda/ }).dataset.state).toBe("erro");
+      expect(screen.queryByRole("dialog")).toBeNull();
+      await new Promise((done) => setTimeout(done, 1700));
+      expect(completeInspection).not.toHaveBeenCalled();
+      expect(saveInspection).not.toHaveBeenCalled();
+    });
+
+    it("marcar o que faltava encolhe o aviso; sem nada faltando, ele some", async () => {
+      const user = userEvent.setup();
+      open({ inspections: [{ ...pronta, rooms: [vistoria.rooms[0]!, vistoria.rooms[1]!] }] });
+      await user.click(within(steps()).getByRole("button", { name: /Cozinha/ }));
+      await user.click(screen.getByRole("button", { name: "Concluir vistoria" }));
+      expect(screen.getByText("Faltam itens para concluir")).toBeDefined();
+
+      await user.click(chip("Bancada", "Bom"));
+
+      expect(screen.queryByText(NO_CONDITION)).toBeNull();
+      expect(screen.queryByText("Faltam itens para concluir")).toBeNull();
+    });
+
+    it("estado 2: sem nada faltando, o Dialog; confirmado, a conclusão leva o que está na tela e nada mais vai para a fila", async () => {
+      const user = userEvent.setup();
+      const view = open({ inspections: [pronta] });
+      await toLastRoom(user);
+      await user.click(chip("Piso", "Ruim"));
+
+      await user.click(screen.getByRole("button", { name: "Concluir vistoria" }));
+      const dialog = screen.getByRole("dialog", { name: "Concluir esta vistoria?" });
+      expect(dialog.textContent).toContain(
+        "R. das Flores, 120 · Apto 302 · Vistoria de entrada. Depois de concluída, ela fica travada e não pode mais ser editada. Sem rede, a conclusão sai quando a conexão voltar.",
+      );
+      await user.click(within(dialog).getByRole("button", { name: "Concluir vistoria" }));
+
+      expect(completeInspection).toHaveBeenCalledOnce();
+      const [store, values] = vi.mocked(completeInspection).mock.calls[0]!;
+      expect(store).toBe(local.value.store);
+      expect(values).not.toHaveProperty("version");
+      expect(values.rooms[2]?.items[0]?.condition).toBe("poor");
+      const drafted = vi.mocked(saveInspectionDraft).mock.calls.length;
+      view.unmount();
+      await new Promise((done) => setTimeout(done, 1700));
+      expect(saveInspection).not.toHaveBeenCalled();
+      expect(vi.mocked(saveInspectionDraft).mock.calls).toHaveLength(drafted);
+    });
+
+    it("Cancelar no Dialog não conclui; sem alteração não enviada, ele não fala de rede", async () => {
+      const user = userEvent.setup();
+      open({ inspections: [pronta] });
+      await toLastRoom(user);
+
+      await user.click(screen.getByRole("button", { name: "Concluir vistoria" }));
+      expect(screen.getByRole("dialog").textContent).not.toContain("Sem rede");
+      await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancelar" }));
+
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(completeInspection).not.toHaveBeenCalled();
+    });
+
+    it("estado 4 (conclusão na fila): só leitura, o aviso de envio, sem o ··· e sem 'Concluir vistoria'", async () => {
+      const user = userEvent.setup();
+      open({
+        inspections: [{ ...pronta, status: "completed" }],
+        states: new Map([["i1", "local"]]),
+      });
+
+      const notice = screen.getByRole("status");
+      expect(notice.textContent).toContain("Conclusão aguardando envio");
+      expect(notice.textContent).toContain(
+        "A vistoria está travada neste aparelho e será concluída no servidor quando a conexão voltar.",
+      );
+      expect((chip("Piso", "Novo") as HTMLButtonElement).disabled).toBe(true);
+      expect(screen.queryByRole("button", { name: "Mais ações" })).toBeNull();
+      expect(screen.queryByText("Não enviado")).toBeNull();
+      expect(
+        screen.getByText("Vistoria de entrada · Imobiliária Lar · concluída neste aparelho"),
+      ).toBeDefined();
+      await toLastRoom(user);
+      expect(screen.queryByRole("button", { name: "Concluir vistoria" })).toBeNull();
+      expect((screen.getByRole("button", { name: "Próximo" }) as HTMLButtonElement).disabled).toBe(
+        true,
+      );
+    });
+
+    it("estado 5 (concluída e confirmada): o aviso com a data da conclusão, só leitura e sem o ···", async () => {
+      const completedAt = new Date(2026, 9, 19, 14, 32).toISOString();
+      open({ inspections: [{ ...pronta, status: "completed", completedAt }] });
+
+      expect(screen.getByRole("status").textContent).toContain(
+        "Vistoria concluída em 19/10/2026 às 14:32",
+      );
+      expect(
+        screen.getByText("Vistoria de entrada · Imobiliária Lar · concluída em 19/10 às 14:32"),
+      ).toBeDefined();
+      expect((chip("Piso", "Novo") as HTMLButtonElement).disabled).toBe(true);
+      expect(screen.queryByRole("button", { name: "Mais ações" })).toBeNull();
+      await new Promise((done) => setTimeout(done, 400));
+      expect(saveInspectionDraft).not.toHaveBeenCalled();
+    });
+
+    it("o 400 da conclusão chega com a tela aberta: volta ao ambiente e ao chip certos, com o aviso da recusa", async () => {
+      const user = userEvent.setup();
+      const view = open();
+      await toLastRoom(user);
+
+      local.value = {
+        ...local.value,
+        drafts: [
+          draftOf({
+            status: "rejected",
+            errors: { "rooms[1].items[2].condition": [NO_CONDITION] },
+          }),
+        ],
+      };
+      view.rerender(
+        <AppShell>
+          <InspectionEditScreen />
+        </AppShell>,
+      );
+
+      await vi.waitFor(() => expect(currentStep().textContent).toContain("Cozinha"));
+      expect(chips("Bancada").getAttribute("aria-invalid")).toBe("true");
+      expect(screen.getByText(NO_CONDITION)).toBeDefined();
+      expect(screen.getByText("Não foi possível concluir a vistoria")).toBeDefined();
+      expect(
+        screen.getByText("1 item da Cozinha está sem condição. Escolha a condição e conclua de novo."),
+      ).toBeDefined();
+      expect((chip("Bancada", "Bom") as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    it("concluída em outro aparelho com a tela aberta (locked adotado): o formulário mostra o servidor e fica só leitura", async () => {
+      const user = userEvent.setup();
+      const view = open();
+      await user.click(chip("Piso", "Ruim"));
+
+      const completedAt = new Date(2026, 9, 19, 14, 32).toISOString();
+      local.value = {
+        ...local.value,
+        inspections: [{ ...pronta, status: "completed", completedAt, version: "AAAAAAAAB9Q=" }],
+      };
+      view.rerender(
+        <AppShell>
+          <InspectionEditScreen />
+        </AppShell>,
+      );
+
+      await vi.waitFor(() =>
+        expect(chip("Piso", "Bom").getAttribute("aria-checked")).toBe("true"),
+      );
+      expect((chip("Piso", "Novo") as HTMLButtonElement).disabled).toBe(true);
+      expect(screen.getByRole("status").textContent).toContain("Vistoria concluída em 19/10/2026");
+      await new Promise((done) => setTimeout(done, 1700));
+      expect(saveInspection).not.toHaveBeenCalled();
+    });
   });
 
   it("estado 6 do #107 (exclusão na fila): só leitura, com o aviso, 'Excluindo' e sem o ···", () => {

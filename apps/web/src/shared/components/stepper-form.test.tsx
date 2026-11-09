@@ -12,7 +12,11 @@ const STEPS: StepperStep[] = [
   { id: "r3", label: "Banheiro", state: "erro", meta: "2 erros" },
 ];
 
-function open(current: number, onStepChange = vi.fn<(index: number) => void>()) {
+function open(
+  current: number,
+  onStepChange = vi.fn<(index: number) => void>(),
+  finish?: { label: string; onClick: () => void },
+) {
   render(
     <StepperForm
       title="Ambientes"
@@ -21,6 +25,7 @@ function open(current: number, onStepChange = vi.fn<(index: number) => void>()) 
       current={current}
       onStepChange={onStepChange}
       position={`${STEPS[current]?.label} · ${current + 1} de 3`}
+      finish={finish}
     >
       <p>conteúdo</p>
     </StepperForm>,
@@ -68,6 +73,24 @@ describe("StepperForm", () => {
     open(2);
     expect((screen.getByRole("button", { name: "Próximo" }) as HTMLButtonElement).disabled).toBe(
       true,
+    );
+  });
+
+  it("com finish, a última etapa troca Próximo pela ação de terminar; antes dela, Próximo segue", async () => {
+    const onClick = vi.fn<() => void>();
+    open(2, undefined, { label: "Concluir vistoria", onClick });
+
+    expect(screen.queryByRole("button", { name: "Próximo" })).toBeNull();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Concluir vistoria" }));
+    expect(onClick).toHaveBeenCalledOnce();
+  });
+
+  it("com finish, fora da última etapa, só Próximo", () => {
+    open(1, undefined, { label: "Concluir vistoria", onClick: vi.fn<() => void>() });
+
+    expect(screen.queryByRole("button", { name: "Concluir vistoria" })).toBeNull();
+    expect((screen.getByRole("button", { name: "Próximo" }) as HTMLButtonElement).disabled).toBe(
+      false,
     );
   });
 

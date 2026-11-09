@@ -166,6 +166,14 @@ export function clearDraft(drafts: DraftsCollection, id: string): void {
 }
 
 /**
+ * Apaga o rascunho, também o do formulário profundo: a vistoria foi concluída (aqui ou em outro aparelho) e não há mais
+ * passo nem valores a guardar (ADR 0036, "fica até concluir"; ADR 0050).
+ */
+export function dropDraft(drafts: DraftsCollection, id: string): void {
+  if (drafts.has(id)) drafts.delete(id);
+}
+
+/**
  * Um merge sem colisão foi para a fila: o rascunho do formulário profundo passa a ter o registro mesclado, sem recusa
  * nem conflito, e marca `rebasedAt` para a tela aberta recarregar o formulário (senão o próximo envio levaria os
  * valores de antes por cima do que veio do servidor). Rascunho sem `step` é apagado, como em `clearDraft`. O pull faz o

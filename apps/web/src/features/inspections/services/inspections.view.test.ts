@@ -7,6 +7,11 @@ import type { PendingRecord } from "@/shared/sync/sync-view";
 
 import type { InspectionRecord } from "../models/inspection";
 import {
+  COMPLETED_DESCRIPTION,
+  COMPLETION_PENDING_DESCRIPTION,
+  COMPLETION_PENDING_TITLE,
+  completionView,
+  incompleteDescription,
   LIST_PAGE_SIZE,
   countLabel,
   dateOf,
@@ -225,6 +230,20 @@ describe("inspectionRows pelo resumo e pela fila (ADR 0048)", () => {
     ]);
   });
 
+  it("com a conclusão na fila, a linha já mostra 'Concluída', com o SyncBadge local (Figma 164:12824, estado 7)", () => {
+    const completing = inspection("i1", { status: "completed" });
+
+    const [row] = inspectionRows(
+      [summaryOf(inspection("i1"))],
+      new Map([queued(completing)]),
+      [],
+      new Map([["i1", "local"]]),
+      addresses,
+    );
+
+    expect(row).toMatchObject({ statusLabel: "Concluída", status: "completed", sync: "local" });
+  });
+
   it("a exclusão na fila deixa a linha \"Excluindo\", e a da criada no aparelho a tira da lista", () => {
     const leaving = inspection("i1", { deleting: true });
     const created = inspection("i2", { version: null });
@@ -395,7 +414,7 @@ describe("tela de campo", () => {
 
     expect(
       fieldHeader(
-        { kind: "moveIn", startedAt },
+        { kind: "moveIn", startedAt, status: "inProgress" },
         { address: "Apto 302 · R. das Flores, 120", clientName: "Imobiliária Lar" },
       ),
     ).toEqual({
@@ -403,7 +422,61 @@ describe("tela de campo", () => {
       subtitle: "Vistoria de entrada · Imobiliária Lar · iniciada em 19/10 às 09:12",
       compactSubtitle: "Vistoria de entrada",
     });
-    expect(fieldHeader({ kind: "moveIn", startedAt }, undefined).title).toBe("Vistoria");
+    expect(fieldHeader({ kind: "moveIn", startedAt, status: "inProgress" }, undefined).title).toBe(
+      "Vistoria",
+    );
     expect(startedLabel(startedAt)).toBe("Iniciada em 19/10, 09:12");
+  });
+
+  it("cabeçalho da concluída: a data da conclusão; com a conclusão na fila, 'concluída neste aparelho'", () => {
+    const startedAt = new Date(2026, 9, 19, 9, 12).toISOString();
+    const completedAt = new Date(2026, 9, 19, 14, 32).toISOString();
+    const place = { address: "Apto 302 · R. das Flores, 120", clientName: "Imobiliária Lar" };
+
+    expect(fieldHeader({ kind: "moveIn", startedAt, status: "completed", completedAt }, place)).toEqual({
+      title: "Apto 302 · R. das Flores, 120",
+      subtitle: "Vistoria de entrada · Imobiliária Lar · concluída em 19/10 às 14:32",
+      compactSubtitle: "Vistoria de entrada · concluída",
+    });
+    expect(fieldHeader({ kind: "moveIn", startedAt, status: "completed" }, place).subtitle).toBe(
+      "Vistoria de entrada · Imobiliária Lar · concluída neste aparelho",
+    );
+  });
+
+  it("aviso da concluída: confirmada com a data, sem a data, na fila; em andamento, nenhum", () => {
+    const completedAt = new Date(2026, 9, 19, 14, 32).toISOString();
+
+    expect(completionView({ status: "completed", completedAt }, false)).toEqual({
+      tone: "success",
+      title: "Vistoria concluída em 19/10/2026 às 14:32",
+      description: COMPLETED_DESCRIPTION,
+    });
+    expect(completionView({ status: "completed" }, false)?.title).toBe("Vistoria concluída");
+    expect(completionView({ status: "completed", completedAt }, true)).toEqual({
+      tone: "pending",
+      title: COMPLETION_PENDING_TITLE,
+      description: COMPLETION_PENDING_DESCRIPTION,
+    });
+    expect(completionView({ status: "inProgress" }, true)).toBeNull();
+  });
+
+  it("faltam itens: num ambiente, em vários, e ambiente sem itens", () => {
+    const names = ["Sala", "Cozinha", "Banheiro"];
+
+    expect(
+      incompleteDescription(
+        { "rooms[1].items[0].condition": ["x"], "rooms[1].items[3].condition": ["x"] },
+        names,
+      ),
+    ).toBe("2 itens da Cozinha estão sem condição. Escolha a condição e conclua de novo.");
+    expect(
+      incompleteDescription(
+        { "rooms[0].items[0].condition": ["x"], "rooms[2].items[1].condition": ["x"] },
+        names,
+      ),
+    ).toBe("2 itens em 2 ambientes estão sem condição. Escolha a condição e conclua de novo.");
+    expect(incompleteDescription({ "rooms[2].items": ["x"] }, names)).toBe(
+      "Um ambiente está sem itens (Banheiro).",
+    );
   });
 });

@@ -6,12 +6,14 @@ import {
   clearDraft,
   currentOf,
   deletedAtOf,
+  dropDraft,
   rebaseDraft,
   recordConflict,
   recordRejection,
   workingCopy,
 } from "./drafts";
 import { isOwnWrite, mergeFields, recordShape, sameValue } from "./merge";
+import { type SyncNotice, notify } from "./notices";
 import {
   type Outbox,
   type OutboxMutationFn,
@@ -138,23 +140,63 @@ async function recordDeleted<T extends SyncRecord>(
   });
 }
 
-/** O `current` de um `version-conflict`. `deleted` e uma resposta sem `current` (fora do contrato) não têm. */
-export function versionConflictCurrent(failure: ApiFailure): Record<string, unknown> | undefined {
-  if (
-    failure.kind !== "problem" ||
-    failure.problem.type !== "urn:vistoria:problem:version-conflict"
-  )
-    return;
+/** O `current` de uma falha do `type` pedido. `deleted` e uma resposta sem `current` (fora do contrato) não têm. */
+function problemCurrent(
+  failure: ApiFailure,
+  type: "urn:vistoria:problem:version-conflict" | "urn:vistoria:problem:locked",
+): Record<string, unknown> | undefined {
+  if (failure.kind !== "problem" || failure.problem.type !== type) return;
   const current = failure.problem.current;
   return typeof current === "object" && current !== null && !Array.isArray(current)
     ? (current as Record<string, unknown>)
     : undefined;
 }
 
+/** O `current` de um `version-conflict`. */
+export const versionConflictCurrent = (failure: ApiFailure) =>
+  problemCurrent(failure, "urn:vistoria:problem:version-conflict");
+
+/** O `current` de um `locked`: o registro travado como o servidor o tem. */
+export const lockedCurrent = (failure: ApiFailure) =>
+  problemCurrent(failure, "urn:vistoria:problem:locked");
+
+/**
+ * A reação "Aceitar o servidor" (`locked`, frontend.md, "Reação aos erros"): o registro foi travado em outro aparelho.
+ * O `current` vai para a store confirmada (pela mutação da transação, com `confirm`, ou fora dela, com `adoptServer`),
+ * o rascunho sai e, se o que este aparelho tinha não era o mesmo que o servidor tem, sai o aviso: o que foi feito aqui
+ * depois da trava foi descartado. Devolve se havia `current` (sem ele, a resposta está fora do contrato).
+ */
+export async function acceptLocked<T extends SyncRecord>(
+  {
+    drafts,
+    shape,
+    locked,
+    write,
+  }: {
+    drafts: DraftsCollection;
+    shape: MergeStrategy<T>["shape"];
+    locked?: (record: T) => SyncNotice;
+    write: (server: T) => Promise<void>;
+  },
+  sent: T,
+  failure: ApiFailure,
+): Promise<boolean> {
+  const current = lockedCurrent(failure);
+  if (!current) return false;
+  const { deleting: _deleting, ...like } = sent;
+  const server = shape(current, like as T);
+  await write(server);
+  dropDraft(drafts, sent.id);
+  if (locked && !isOwnWrite(current, like)) notify(locked(server));
+  return true;
+}
+
 /**
  * Envia a transação pelo `PUT` com o registro completo, a chave da transação e `If-Match` quando o registro já está
- * no servidor. Só depois do 2xx o registro vai para a store local, com a `version` da resposta; antes disso ele vive
- * na outbox. Um 400 `validation` vira rascunho recusado da `entity`, para o formulário reabrir com os erros por campo.
+ * no servidor. Só depois do 2xx o registro vai para a store local, com a `version` da resposta (e o que `accepted`
+ * tirar dela); antes disso ele vive na outbox. Um 400 `validation` vira rascunho recusado da `entity` (o registro passa
+ * antes pelo `reopen`), para o formulário reabrir com os erros por campo. Um `locked` adota o `current` e avisa
+ * (`acceptLocked`).
  * Um `version-conflict` (409 ou 412) passa pelo `settleConflict`; `deleted` vira rascunho em conflito e sai da fila
  * sem laço. Com uma exclusão do registro na fila, os dois só saem da fila: um merge reenviado sairia depois dela, e o
  * que pede a pessoa passa a ser a exclusão (ADR 0039). Uma falha com `Retry-After` só volta para a fila depois dele.
@@ -165,12 +207,21 @@ export function upsertMutation<T extends SyncRecord>({
   entity,
   send,
   strategy = flatMerge,
+  accepted = (data, sent) => ({ ...sent, version: data.version }),
+  reopen = (sent) => sent,
+  locked,
 }: {
   store: LocalCollection<T>;
   drafts: DraftsCollection;
   entity: string;
   send: UpsertCall<T>;
   strategy?: MergeStrategy<T>;
+  /** O registro que vai para a store depois do 2xx, a partir da resposta. Padrão: o enviado com a `version` dela. */
+  accepted?: (data: { version: string }, sent: T) => T;
+  /** O registro que vai para o rascunho recusado. Na vistoria, uma conclusão recusada volta a estar em andamento. */
+  reopen?: (sent: T) => T;
+  /** O aviso de um `locked` (só a vistoria trava). */
+  locked?: (record: T) => SyncNotice;
 }): OutboxMutationFn<T> {
   return async ({ transaction, idempotencyKey, requeue, removalQueued }) => {
     // Uma chave vale para um corpo só; enqueue nunca junta dois registros na mesma transação.
@@ -191,7 +242,23 @@ export function upsertMutation<T extends SyncRecord>({
     if (!result.data) {
       const error = syncFailure({ error: result.error, response: result.response });
       if (error instanceof RejectedSyncError && error.group === "back-to-draft") {
-        recordRejection(drafts, entity, mutation.modified, error.failure);
+        recordRejection(drafts, entity, reopen(mutation.modified), error.failure);
+      }
+      if (
+        error instanceof RejectedSyncError &&
+        error.group === "accept-server" &&
+        (await acceptLocked(
+          {
+            drafts,
+            shape: strategy.shape,
+            locked,
+            write: (server) => confirm(store, mutation, server),
+          },
+          mutation.modified,
+          error.failure,
+        ))
+      ) {
+        return;
       }
       if (error instanceof RejectedSyncError && error.group === "user-decision") {
         if (await removalQueued?.()) return;
@@ -212,7 +279,7 @@ export function upsertMutation<T extends SyncRecord>({
       await waitRetryAfter(error);
       throw error;
     }
-    await confirm(store, mutation, { ...mutation.modified, version: result.data.version });
+    await confirm(store, mutation, accepted(result.data, mutation.modified));
     clearDraft(drafts, id);
     recordSyncSuccess();
   };

@@ -6,9 +6,10 @@ import {
   upsertInspection,
 } from "@/shared/api/generated";
 import type { Client } from "@/shared/api/generated/client";
-import { type DraftsCollection, clearDraft, saveDraftValues } from "@/shared/sync/drafts";
+import { type DraftsCollection, clearDraft, dropDraft, saveDraftValues } from "@/shared/sync/drafts";
 import { type FetchOutcome, fetchMissing } from "@/shared/sync/fetch";
 import { type Outbox, type OutboxMutationFn, enqueue } from "@/shared/sync/outbox";
+import type { SyncNotice } from "@/shared/sync/notices";
 import { type CursorsCollection, type PullEntity, pulledOnce } from "@/shared/sync/pull";
 import { discardDeleted, enqueueRemoval, keepServer, removeMutation } from "@/shared/sync/remove";
 import { registerConflictView, registerRecordLabel } from "@/shared/sync/sync-view";
@@ -48,12 +49,38 @@ const inspectionMerge: MergeStrategy<InspectionRecord> = {
   merge: mergeInspection,
 };
 
+/** O aviso do `locked` (frontend.md, "Reação aos erros"): a vistoria foi concluída em outro aparelho. */
+export const LOCKED_TITLE = "Esta vistoria foi concluída em outro aparelho";
+export const LOCKED_DESCRIPTION = "As alterações feitas aqui depois disso foram descartadas.";
+
+const lockedNotice = (record: InspectionRecord): SyncNotice => ({
+  id: `locked:${record.id}`,
+  tone: "warning",
+  title: LOCKED_TITLE,
+  description: LOCKED_DESCRIPTION,
+});
+
+/** O registro depois do 2xx: o enviado, com a `version` e, na conclusão, o `completedAt` que o servidor gravou. */
+function acceptedInspection(data: { version: string }, sent: InspectionRecord): InspectionRecord {
+  const { completedAt } = data as Partial<Pick<InspectionDto, "completedAt">>;
+  return { ...sent, version: data.version, ...(completedAt && { completedAt }) };
+}
+
+/**
+ * Uma conclusão recusada (400 `validation`) volta ao rascunho em andamento: a pessoa corrige e conclui de novo. Se o
+ * rascunho guardasse `completed`, a correção a reenviaria como conclusão sem ela pedir (ADR 0050).
+ */
+const reopenedInspection = (sent: InspectionRecord): InspectionRecord =>
+  sent.status === "completed" ? { ...sent, status: "inProgress" } : sent;
+
 /**
  * Envia a transação como `PUT /api/v1/inspections/{id}` (`upsertMutation`), com o agregado inteiro: a lista de
  * ambientes e itens é completa, e o que não vier o servidor exclui. A outbox é serial (ADR 0034): uma vistoria de um
  * imóvel ainda pendente só sai depois dele; se o imóvel for recusado, ela volta com `propertyId` "Imóvel não
  * encontrado." e vira rascunho recusado, como qualquer `validation` (os erros de ambiente e item chegam no caminho do
- * servidor, `rooms[0].items[1].condition`, e ficam assim no rascunho).
+ * servidor, `rooms[0].items[1].condition`, e ficam assim no rascunho). A conclusão é o mesmo `PUT`, com `status:
+ * completed`: o 2xx traz o `completedAt`, a recusa volta ao rascunho em andamento e o `locked` (concluída em outro
+ * aparelho) adota o `current` e avisa. O `completedAt` do registro nunca vai no corpo.
  */
 export function upsertInspectionMutation(
   inspections: InspectionsCollection,
@@ -64,8 +91,12 @@ export function upsertInspectionMutation(
     store: inspections,
     drafts,
     entity: INSPECTION_ENTITY,
-    send: (request) => upsertInspection({ client, ...request }),
+    send: ({ body: { completedAt: _completedAt, ...body }, ...request }) =>
+      upsertInspection({ client, ...request, body }),
     strategy: inspectionMerge,
+    accepted: acceptedInspection,
+    reopen: reopenedInspection,
+    locked: lockedNotice,
   });
 }
 
@@ -85,6 +116,7 @@ export function deleteInspectionMutation(
     entity: INSPECTION_ENTITY,
     shape: inspectionMerge.shape,
     send: (request) => sendDelete({ client, ...request }),
+    locked: lockedNotice,
   });
 }
 
@@ -139,6 +171,21 @@ export function saveInspection(
     }
   });
   clearDraft(drafts, id);
+  return id;
+}
+
+/**
+ * Conclui a vistoria (frontend.md, "Formulários profundos"): o `PUT` do agregado com `status: completed` vai para a
+ * fila, offline também, e a vistoria fica concluída na hora na camada otimista, então a tela fica só leitura antes da
+ * confirmação. O rascunho sai: a conclusão encerra o formulário (ADR 0036 e 0050). Quem chama já conferiu o
+ * `completeInspectionSchema`; o .NET confere de novo.
+ */
+export function completeInspection(
+  store: { inspections: InspectionsCollection; drafts: DraftsCollection; outbox: Outbox },
+  values: Omit<InspectionRecord, "version">,
+): string {
+  const id = saveInspection(store, { ...values, status: "completed" });
+  dropDraft(store.drafts, id);
   return id;
 }
 

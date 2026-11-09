@@ -1,7 +1,7 @@
 import { Alert, AlertDescription, AlertTitle } from "@sanjou/ui/alert";
 import { Form, FormControl, FormField, FormItem, FormMessage } from "@sanjou/ui/form";
 import { Textarea } from "@sanjou/ui/textarea";
-import { CircleAlert, ListChecks, Trash2 } from "lucide-react";
+import { CircleAlert, Info, ListChecks, Trash2 } from "lucide-react";
 import type { UseFormReturn } from "react-hook-form";
 
 import { ConflictNotice } from "@/shared/components/conflict-notice";
@@ -13,8 +13,9 @@ import { ToggleGroup, ToggleGroupItem } from "@/shared/components/toggle-group";
 import type { InspectionFormValues, ItemFormValues } from "../schemas/inspection.schemas";
 
 // Um ambiente da tela de campo (Figma 43:1751): o nome e o progresso, os itens com a condição em chips e a observação
-// sob demanda, e no topo o aviso de recusa do servidor (55:5920), o de conflito, com "Resolver conflito" (55:5132), ou o
-// da exclusão na fila (estado 6 do #107). Ambiente sem itens mostra o EmptyState (52:4071),
+// sob demanda, e no topo o aviso de recusa do servidor (55:5920) ou do que falta para concluir (164:12824, estado 3), o
+// de conflito, com "Resolver conflito" (55:5132), o da exclusão na fila (estado 6 do #107) ou o da concluída, confirmada
+// ou com a conclusão na fila (164:12824, estados 4 e 5). Ambiente sem itens mostra o EmptyState (52:4071),
 // sem ação: incluir itens chega com o editor de roteiros (M5). O `form` vem do hook da página.
 
 export interface RoomItemView {
@@ -44,6 +45,8 @@ type RoomStepProps = {
   conflict?: { title: string; description: string; href: string } | null;
   /** A exclusão está na fila: a tela é só leitura. */
   deletion?: { title: string; description: string } | null;
+  /** Concluída: "success" confirmada pelo servidor, "pending" com a conclusão na fila. A tela é só leitura. */
+  completion?: { tone: "success" | "pending"; title: string; description: string } | null;
 };
 
 export function RoomStep({
@@ -58,6 +61,7 @@ export function RoomStep({
   rejection,
   conflict,
   deletion,
+  completion,
 }: RoomStepProps) {
   return (
     <Form {...form}>
@@ -78,6 +82,17 @@ export function RoomStep({
             <Trash2 aria-hidden="true" />
             <AlertTitle>{deletion.title}</AlertTitle>
             <AlertDescription>{deletion.description}</AlertDescription>
+          </Alert>
+        ) : null}
+        {completion ? (
+          <Alert
+            variant={completion.tone === "success" ? "success" : "neutral"}
+            role="status"
+            className="mb-2"
+          >
+            <Info aria-hidden="true" />
+            <AlertTitle>{completion.title}</AlertTitle>
+            <AlertDescription>{completion.description}</AlertDescription>
           </Alert>
         ) : null}
         <div className="flex flex-col gap-0.5">

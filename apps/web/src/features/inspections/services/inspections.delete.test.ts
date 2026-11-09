@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { configureClient } from "@/shared/api/client";
 import { createClient, createConfig } from "@/shared/api/generated/client";
 import type { DraftsCollection } from "@/shared/sync/drafts";
+import { type SyncNotice, subscribeNotices } from "@/shared/sync/notices";
 import { type Outbox, enqueue, startOutbox } from "@/shared/sync/outbox";
 
 import type { InspectionRecord } from "../models/inspection";
@@ -11,6 +12,7 @@ import type { InspectionsCollection } from "./inspections.collection";
 import { newMoveInInspection } from "./inspections.factory";
 import {
   DELETE_INSPECTION,
+  LOCKED_TITLE,
   UPSERT_INSPECTION,
   deleteInspection,
   deleteInspectionMutation,
@@ -73,11 +75,16 @@ type PutAnswer = "ok" | "network" | "conflict";
 
 /**
  * O servidor falso. Cada `PUT` responde pelo `put` da vez (200 com a versão "v2", falha de rede ou 412) e cada
- * `DELETE`, pelo `remove` (204 ou 412). Anota o método, a chave e o If-Match de cada requisição que chegou.
+ * `DELETE`, pelo `remove` (204, 412 ou 409 `locked`, com a vistoria concluída em outro aparelho). Anota o método, a
+ * chave e o If-Match de cada requisição que chegou.
  */
 function fakeServer() {
   const sent: { method: string; key: string | null; ifMatch: string | null }[] = [];
-  const answers = { put: "ok" as PutAnswer, remove: 204 as 204 | 412 };
+  const answers = {
+    put: "ok" as PutAnswer,
+    remove: 204 as 204 | 412 | "locked",
+    lockedCurrent: undefined as Record<string, unknown> | undefined,
+  };
   const client = configureClient(createClient(createConfig()), {
     baseUrl: "http://api.test",
     token: { get: () => "t0k3n" },
@@ -94,6 +101,7 @@ function fakeServer() {
         ifMatch: request.headers.get("If-Match"),
       });
       if (request.method === "DELETE") {
+        if (answers.remove === "locked") return problem("locked", 409, { current: answers.lockedCurrent });
         return answers.remove === 204
           ? new Response(null, { status: 204 })
           : problem("version-conflict", 412, { current: { id, version: "v9" } });
@@ -235,6 +243,41 @@ describe("exclusão da vistoria na outbox", () => {
     ]);
     expect(local.confirmed.has(record.id)).toBe(false);
     expect(local.inspections.has(record.id)).toBe(false);
+  });
+
+  it("409 locked (concluída em outro aparelho): adota o current, sai do 'Excluindo' e avisa", async () => {
+    const server = fakeServer();
+    const local = await start(server);
+    const record = local.known();
+    const { version: _version, ...values } = record;
+    const completedAt = "2026-10-19T14:32:00+00:00";
+    server.answers.remove = "locked";
+    server.answers.lockedCurrent = {
+      ...values,
+      status: "completed",
+      version: "v7",
+      completedAt,
+      createdAt: completedAt,
+      updatedAt: completedAt,
+      referenceInspectionId: null,
+    };
+    const notices: SyncNotice[] = [];
+    const stop = subscribeNotices((notice) => notices.push(notice));
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await deleteInspection(local.store, record.id);
+    await drained(local.outbox);
+    stop();
+
+    expect(local.confirmed.get(record.id)).toEqual({
+      ...values,
+      status: "completed",
+      version: "v7",
+      completedAt,
+    });
+    await vi.waitFor(() => expect(local.inspections.get(record.id)?.deleting).toBeUndefined());
+    expect(local.inspections.get(record.id)?.status).toBe("completed");
+    expect(notices.map((notice) => notice.title)).toEqual([LOCKED_TITLE]);
   });
 
   it("offline: nada sai até a rede voltar; aí sai o DELETE e a vistoria some", async () => {

@@ -20,6 +20,10 @@ import {
   CONDITION_VALUES,
   type InspectionFormValues,
   NOTES_MAX,
+  NO_CONDITION,
+  NO_ITEMS,
+  NO_ROOMS,
+  completionErrors,
   formPathOf,
   formValuesOf,
   recordWith,
@@ -33,16 +37,20 @@ import {
   inspectionConflictOf,
 } from "../services/inspections.resolve";
 import {
+  completeInspection,
   deleteInspection,
   fetchInspection,
   saveInspection,
   saveInspectionDraft,
 } from "../services/inspections.sync";
 import {
+  INCOMPLETE_TITLE,
   INSPECTION_KINDS,
+  completionView,
   conflictPlaces,
   deletionSubject,
   fieldHeader,
+  incompleteDescription,
   pendingItemIds,
   roomViews,
   roomsSummary,
@@ -56,6 +64,12 @@ export const DRAFT_DEBOUNCE_MS = 300;
 export const QUEUE_DEBOUNCE_MS = 1500;
 
 export const REJECTED_TITLE = "O servidor recusou esta vistoria";
+/** A recusa de uma conclusão (Figma 55:5920): o servidor achou item sem condição ou ambiente sem item. */
+export const COMPLETION_REJECTED_TITLE = "Não foi possível concluir a vistoria";
+/** "Concluir vistoria": o Próximo do último ambiente (Figma 164:12824, estado 1). */
+export const FINISH_LABEL = "Concluir vistoria";
+
+const COMPLETION_MESSAGES: readonly string[] = [NO_ROOMS, NO_ITEMS, NO_CONDITION];
 
 /** O aviso do estado 5 (Figma 55:5132). */
 export const CONFLICT_TITLE = "Esta vistoria foi alterada em outro aparelho";
@@ -122,14 +136,15 @@ function errorKeys(errors: FieldErrors<InspectionFormValues>): Record<string, st
 /**
  * Recarrega o formulário aberto com `next` (um merge sem colisão ou a versão que o pull trouxe): ela vira a base, e o
  * que a pessoa marcou e não chegou ao rascunho fica por cima, sujo (`withUnsaved`). `shown` guarda a estrutura que o
- * formulário mostra, para casar os itens pelo id.
+ * formulário mostra, para casar os itens pelo id. Uma concluída (em outro aparelho) não muda mais: o formulário mostra
+ * só o que ela tem.
  */
 function reloadForm(
   form: UseFormReturn<InspectionFormValues>,
   shown: { current: InspectionRecord | undefined },
   next: InspectionRecord,
 ) {
-  const previous = shown.current;
+  const previous = next.status === "completed" ? undefined : shown.current;
   const values = previous
     ? withUnsaved(
         next,
@@ -168,6 +183,10 @@ function initialStep(draft: DraftRecord | undefined, rooms: number): number {
  *   `PUT` depois do `DELETE` não pode sair (ADR 0039). Com a exclusão na fila, a tela fica só leitura (estado 6 do #107).
  * - Excluída em outro aparelho, segue como no conflito de edição, com o aviso do tipo excluído. Com a exclusão
  *   recusada porque a vistoria mudou, fica só leitura com o que o servidor tem, até "Excluir mesmo assim?" (ADR 0040).
+ * - "Concluir vistoria" no último ambiente (`requestCompletion`) confere o `completeInspectionSchema`: com algo
+ *   faltando, marca os chips, vai para o ambiente do primeiro erro e não enfileira nada; sem nada faltando, abre o
+ *   Dialog. Confirmado (`complete`), a conclusão vai para a fila e o rascunho sai. Concluída (aqui, com a conclusão na
+ *   fila, ou em outro aparelho), a tela fica só leitura e nada mais vai para o rascunho nem para a fila (ADR 0050).
  */
 export function useInspectionDraft(id: string | null) {
   const { store, ready: storeReady, properties, clients, drafts, states, bases } = useLocalStore();
@@ -200,6 +219,10 @@ export function useInspectionDraft(id: string | null) {
   const removalConflict = conflictKind === "removal";
   /** A pessoa confirmou a exclusão nesta tela: nada mais vai para o rascunho nem para a fila. */
   const removed = useRef(false);
+  /** A pessoa concluiu nesta tela: nada mais vai para o rascunho nem para a fila, nem no flush de sair. */
+  const completed = useRef(false);
+  /** Concluída: confirmada, na fila ou adotada de outro aparelho. Uma conclusão recusada volta em andamento. */
+  const concluded = record?.status === "completed" && draft?.status !== "rejected";
 
   const form = useForm<InspectionFormValues>({ defaultValues: { rooms: [] } });
   const watched = useWatch({ control: form.control }) as InspectionFormValues;
@@ -271,13 +294,24 @@ export function useInspectionDraft(id: string | null) {
   useEffect(() => {
     if (!hydrated || applied.current === rejectedKey) return;
     applied.current = rejectedKey;
-    for (const [key, messages] of Object.entries(
+    const entries = Object.entries(
       rejectedKey ? (JSON.parse(rejectedKey) as Record<string, string[]>) : {},
-    )) {
+    );
+    for (const [key, messages] of entries) {
       const path = formPathOf(key);
       if (path) form.setError(path, { type: "server", message: messages[0] });
     }
   }, [hydrated, rejectedKey, form]);
+  // A recusa que chega com a tela aberta leva ao ambiente do primeiro erro (frontend.md, "Formulários profundos"); na
+  // abertura, quem leva é o passo inicial. Trocado no render, como a vistoria aberta.
+  const [rejectionShown, setRejectionShown] = useState<string | null>(null);
+  if (hydrated && rejectionShown !== rejectedKey) {
+    setRejectionShown(rejectedKey);
+    const errorRooms = Object.keys(rejected ?? {})
+      .map(roomOfError)
+      .filter((index) => index !== undefined);
+    if (errorRooms.length > 0) setStep(Math.min(...errorRooms));
+  }
   /** Erros do servidor em chaves que o formulário não tem (o imóvel, por exemplo). */
   const outsideErrors = Object.entries(rejected ?? {})
     .filter(([key]) => !formPathOf(key))
@@ -298,7 +332,7 @@ export function useInspectionDraft(id: string | null) {
    * apagaria os erros antes da correção.
    */
   function persist(values: InspectionFormValues, at: number, enqueue: boolean) {
-    if (!store || !hydrated || !source || removed.current) return;
+    if (!store || !hydrated || !source || removed.current || completed.current || concluded) return;
     const next = withoutVersion(recordWith(source, values));
     saveInspectionDraft(store, next, at);
     const untouchedRejection = rejected !== null && JSON.stringify(values) === openedWith.current;
@@ -344,7 +378,19 @@ export function useInspectionDraft(id: string | null) {
   // Em conflito, o merge refeito com o rascunho de agora diz quais ambientes e itens estão em disputa.
   const conflict = inspectionConflictOf(draft);
   const disputed = conflictPlaces(conflict);
-  const rooms = current ? roomViews(current.rooms, errorKeys(errors), disputed.rooms) : [];
+
+  // O que falta para concluir, depois de a pessoa tentar: conferido a cada render, então o aviso encolhe a cada chip
+  // marcado e some quando nada falta.
+  const [checking, setChecking] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const incomplete = checking && current && !concluded ? completionErrors(current) : {};
+  /** Erros da conclusão fora dos chips (ambiente sem item, vistoria sem ambiente): só a etapa e o aviso os mostram. */
+  const roomErrors = Object.fromEntries(
+    Object.entries(incomplete).filter(([key]) => !formPathOf(key)),
+  );
+  const rooms = current
+    ? roomViews(current.rooms, { ...errorKeys(errors), ...roomErrors }, disputed.rooms)
+    : [];
   const room = current?.rooms[step];
   const sending = id ? states.get(id) === "enviando" : false;
 
@@ -368,6 +414,30 @@ export function useInspectionDraft(id: string | null) {
     setStep(index);
   }
 
+  /**
+   * "Concluir vistoria" (Figma 164:12824): confere o que falta. Com erro, marca os chips, vai para o ambiente do primeiro
+   * e só grava o rascunho; sem erro, abre o Dialog.
+   */
+  function requestCompletion() {
+    if (!source || !hydrated || concluded) return;
+    const values = form.getValues();
+    const missing = completionErrors(recordWith(source, values));
+    const keys = Object.keys(missing);
+    if (keys.length === 0) {
+      setChecking(false);
+      setConfirming(true);
+      return;
+    }
+    for (const [key, messages] of Object.entries(missing)) {
+      const path = formPathOf(key);
+      if (path) form.setError(path, { type: "complete", message: messages[0] });
+    }
+    const first = Math.min(...keys.map((key) => roomOfError(key) ?? 0));
+    setChecking(true);
+    persist(values, first, false);
+    setStep(first);
+  }
+
   // O "Não enviado" por item: o que difere do que o servidor confirmou. Com transação na fila, a base é o original da
   // mais antiga; sem, o registro. A outbox é lida a cada segundo: logo depois de ir para a fila, a base de antes fica
   // até a transação aparecer nela ou o servidor confirmar (a `version` muda), para o indicador não piscar.
@@ -375,8 +445,8 @@ export function useInspectionDraft(id: string | null) {
   const base = baseNow;
   const pending = current ? pendingItemIds(current, base) : new Set<string>();
   const itemSync = (itemId: string, index: number): FieldSyncState | undefined => {
-    // A vistoria está saindo: o estado por campo não diz mais nada (estado 6 do #107).
-    if (deleting) return undefined;
+    // A vistoria está saindo ou concluída: o estado por campo não diz mais nada (estado 6 do #107; 164:12824).
+    if (deleting || concluded) return undefined;
     const itemErrors = errors.rooms?.[step]?.items?.[index];
     if (itemErrors?.condition || itemErrors?.notes) return "rejeitado";
     if (disputed.items.has(itemId)) return "conflito";
@@ -400,8 +470,18 @@ export function useInspectionDraft(id: string | null) {
     (key) => key.endsWith(".condition") || key.endsWith(".notes"),
   );
   const errorRooms = [...new Set(itemErrors.map(roomOfError))];
+  const roomNames = current?.rooms.map((each) => each.name) ?? [];
+  const completionRejected =
+    rejected !== null &&
+    Object.values(rejected).some((messages) =>
+      messages.some((message) => COMPLETION_MESSAGES.includes(message)),
+    );
   const rejection =
-    draft?.status === "rejected" && (itemErrors.length > 0 || outsideErrors.length > 0)
+    Object.keys(incomplete).length > 0
+      ? { title: INCOMPLETE_TITLE, description: incompleteDescription(incomplete, roomNames) }
+      : completionRejected && rejected
+        ? { title: COMPLETION_REJECTED_TITLE, description: incompleteDescription(rejected, roomNames) }
+        : draft?.status === "rejected" && (itemErrors.length > 0 || outsideErrors.length > 0)
       ? {
           title: REJECTED_TITLE,
           description:
@@ -436,14 +516,37 @@ export function useInspectionDraft(id: string | null) {
     })),
     room: rooms[step],
     /**
-     * Envio da vistoria no ar (ADR 0021), exclusão na fila ou exclusão recusada à espera da pessoa: o formulário fica
-     * só leitura.
+     * Envio da vistoria no ar (ADR 0021), exclusão na fila, exclusão recusada à espera da pessoa ou concluída: o
+     * formulário fica só leitura.
      */
-    readOnly: sending || deleting || removalConflict,
+    readOnly: sending || deleting || removalConflict || concluded,
     /** Estado 6 do #107: a exclusão está na fila. */
     deletion: deleting ? { title: DELETION_TITLE, description: DELETION_DESCRIPTION } : null,
     /** O "···" com "Excluir vistoria": só em andamento e uma vez só. */
-    deletable: source?.status === "inProgress" && !deleting && !removalConflict,
+    deletable: source?.status === "inProgress" && !deleting && !removalConflict && !concluded,
+    /** Concluída: o aviso da confirmada (com a data) ou da conclusão na fila (Figma 164:12824, estados 4 e 5). */
+    completion:
+      concluded && record
+        ? completionView(record, id ? states.has(id) || record.version === null : false)
+        : null,
+    /**
+     * "Concluir vistoria" no último ambiente: só em andamento, fora de conflito e sem exclusão. Em conflito, o envio sai
+     * pelo ConflictResolver, então concluir também espera ele.
+     */
+    finish:
+      hydrated && !concluded && !deleting && !removalConflict && !inConflict
+        ? { label: FINISH_LABEL, onClick: requestCompletion }
+        : undefined,
+    /** O Dialog "Concluir esta vistoria?" (estado 2). */
+    confirming,
+    setConfirming,
+    /** Põe a conclusão na fila (o `PUT` com `status: completed`) e encerra o rascunho. */
+    complete() {
+      if (!store || !source || !hydrated || concluded) return;
+      completed.current = true;
+      completeInspection(store, withoutVersion(recordWith(source, form.getValues())));
+      form.reset(form.getValues());
+    },
     /** O que o Dialog de exclusão nomeia, e se ele avisa que há alteração não enviada (estado 3 do #107). */
     deleteSubject: header
       ? deletionSubject(header.title, source ? INSPECTION_KINDS[source.kind] : null)
