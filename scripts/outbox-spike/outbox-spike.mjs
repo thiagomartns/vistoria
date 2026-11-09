@@ -68,6 +68,7 @@ import {
   outboxCount,
   printTrace,
   outboxKeys,
+  prefetched,
   problem,
   pullNow,
   root,
@@ -118,8 +119,10 @@ try {
   await mobile.evaluate(() => navigator.serviceWorker.ready);
   ok(`sessão ativa (${caio.email}) a 390×844, service worker ativo`);
   // A página veio do /login sem recarregar e o SW ainda não a controla: offline, ir para /clients/edit depende do
-  // prefetch do Next. Sem esperar a rede assentar, o modo avião às vezes corta o prefetch no meio.
-  await mobile.waitForLoadState("networkidle");
+  // prefetch do Next. Sem esperar o payload dele, o modo avião às vezes corta o prefetch no meio; o `networkidle` não
+  // espera nada depois de um 429 no signin, que deixa a página ociosa no /login por 60 s (#145). O /properties/edit,
+  // sem prefetch, cai na navegação do navegador, que o service worker atende.
+  await prefetched(mobile, ["/clients/edit"]);
   await phone.setOffline(true);
   const celular = await create(mobile, "Imobiliária Celular");
   await rowOf(mobile, "Imobiliária Celular").getByText("Salvo no aparelho").waitFor();
@@ -858,12 +861,19 @@ try {
   await mark(page, "Piso", "Bom");
   await inspectionSettled(page, user, "a vistoria a excluir sincroniza");
   const onlineVersion = (await serverInspection(user, online)).body.version;
+  // O aviso do Dialog vem do estado de sync da vistoria (o badge do banner) ou do formulário sujo. Lido antes, o banner
+  // diz qual dos dois foi, se o aviso falso visto no #145 (e nunca mais reproduzido) voltar.
+  const bannerBefore = (await page.getByRole("banner").textContent()).replace(/\s+/g, " ").trim();
   await page.getByRole("banner").getByRole("button", { name: "Mais ações" }).click();
   await page.getByRole("menuitem", { name: "Excluir vistoria" }).waitFor();
   await shoot(page, "excluir-1-menu");
   await page.getByRole("menuitem", { name: "Excluir vistoria" }).click();
   const synced = page.getByRole("dialog", { name: "Excluir esta vistoria?" });
-  assert.ok(!(await synced.textContent()).includes("não enviadas"), "sincronizada, o Dialog não fala de alteração pendente");
+  assert.ok(
+    !(await synced.textContent()).includes("não enviadas"),
+    `sincronizada, o Dialog não fala de alteração pendente (banner antes do menu: "${bannerBefore}"; com badge de sync, ` +
+      "o aviso veio da fila; sem, do formulário sujo)",
+  );
   await shoot(page, "excluir-2-confirmacao");
   await synced.getByRole("button", { name: "Cancelar" }).click();
   await page.getByRole("link", { name: "Voltar", exact: true }).click();
@@ -947,7 +957,9 @@ try {
   const fromLocal = { puts: puts.length, deletes: deletes.length };
   await (await askToDelete(page, page.getByRole("banner"))).getByRole("button", { name: "Excluir vistoria" }).click();
   await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
-  assert.equal(await inspectionRow(page, local).count(), 0, "a criada offline some na hora");
+  // Sem resumo (nunca foi confirmada), a linha dela vem só da fila, que a lista relê a cada 1 s (ADR 0048): ela some
+  // na próxima leitura, não no mesmo render. 2 s é uma leitura com folga (#145).
+  await until(async () => (await inspectionRow(page, local).count()) === 0, "a criada offline some da lista", 2_000);
   await context.setOffline(false);
   await until(async () => (await outboxCount(page, user)) === 0, "a fila esvazia", 90_000);
   await wait(2000);

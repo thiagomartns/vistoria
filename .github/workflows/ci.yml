@@ -83,7 +83,8 @@ jobs:
         run: pnpm spike:shell
 
   # Os roteiros dos spikes contra a API real: o que a outbox e o pull fazem juntos só aparece com o banco, a API e o
-  # static export de verdade (#144). O PULL_CHAOS (o pull a cada 1,5 s) entra quando estiver estável (#145).
+  # static export de verdade (#144). A outbox e o conflito rodam com PULL_CHAOS: o pull a cada 1,5 s em vez de 60 s, caindo
+  # em qualquer ponto do roteiro (#145).
   e2e:
     name: e2e
     runs-on: ubuntu-24.04
@@ -132,9 +133,13 @@ jobs:
         run: pnpm --filter web build
 
       - name: Roteiro da outbox
+        env:
+          PULL_CHAOS: "1"
         run: pnpm spike:outbox
 
       - name: Roteiro do conflito
+        env:
+          PULL_CHAOS: "1"
         run: pnpm spike:conflict
 
       - name: Roteiro do aparelho
