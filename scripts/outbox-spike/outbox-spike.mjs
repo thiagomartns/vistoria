@@ -35,6 +35,10 @@
 // Desde o #132 a sessão se renova pelo cookie: recarregar sem rede ainda perde o token, mas a volta da rede renova antes
 // da fila sair (passo 2, sem passar pelo /login). Os passos que provam a sessão expirada (6 e 13) apagam o cookie antes
 // de voltar a rede, e o refresh recusado (401) leva ao SessionExpired, com a fila retida.
+// Desde o #179 o passo 12h conclui uma vistoria: "Concluir vistoria" com um item sem condição abre o ambiente dele sem
+// enfileirar nada; offline, a conclusão fica na fila, a tela só leitura (também recarregada) e a lista "Concluída"; com a
+// rede, ela chega uma vez só. Outra, concluída direto na API enquanto este aparelho a edita offline, volta 409 locked:
+// a tela adota o servidor, fica só leitura e avisa no toast. Com SCREENS=1, os prints da conclusão em `.screens/campo/`.
 // Desde o #133 o passo 13 passa pelo aviso de outro usuário (Cancelar faz o signOut da Bia e mantém a fila da Ana), e o
 // passo 15 prova a limpeza no IndexedDB de verdade: Sair com pendência pelo Dialog e "Apagar e entrar" de outro usuário.
 
@@ -48,6 +52,7 @@ import {
   checked,
   chipsOf,
   chooseSignOut,
+  completeOnServer,
   create,
   createInspection,
   createProperty,
@@ -62,6 +67,7 @@ import {
   launch,
   linkOf,
   mark,
+  markRoom,
   ok,
   openRoom,
   otherUserWarning,
@@ -1179,6 +1185,97 @@ try {
   await offlineContext.close();
   await fresh.close();
 
+  step("12h", "Concluir (#179): o que falta abre o ambiente do erro; offline, a conclusão sai uma vez só; o locked adota o servidor");
+  // Num imóvel só dele: uma concluída não sai mais da lista, e o passo 14 abre a vistoria do Rua do Roteiro pelo endereço.
+  await createProperty(page, "Imobiliária Beta", "Rua da Conclusão", { pending: false });
+  const conclusaoOption = "Rua da Conclusão, 10 · Imobiliária Beta";
+  const ROOMS = ["Sala", "Cozinha", "Banheiro", "Quarto", "Área de serviço"];
+  const completions = (id) =>
+    puts.filter((put) => put.id === id && JSON.parse(put.body ?? "{}").status === "completed");
+
+  const concluir = await createInspection(page, conclusaoOption);
+  for (const room of ROOMS) {
+    if (room !== "Sala") await openRoom(page, room);
+    await markRoom(page, room === "Cozinha" ? ["Armários"] : []);
+  }
+  await inspectionSettled(page, user, "a vistoria a concluir sincroniza");
+  await page.getByRole("button", { name: "Concluir vistoria" }).waitFor();
+  await shoot(page, "concluir-1-ultimo-ambiente");
+  await page.getByRole("button", { name: "Concluir vistoria" }).click();
+  await currentRoomIs(page, "Cozinha");
+  await page.getByText("Faltam itens para concluir").waitFor();
+  assert.equal(await chipsOf(page, "Armários").getAttribute("aria-invalid"), "true", "o chip do item sem condição");
+  assert.equal(await page.getByRole("dialog").count(), 0, "com algo faltando, o Dialog não abre");
+  await shoot(page, "concluir-3-faltam-itens");
+  await wait(1800);
+  assert.equal(completions(concluir).length, 0, "nada da conclusão vai para a fila");
+  ok("\"Concluir vistoria\" com um item sem condição: abre a Cozinha, marca o chip e não enfileira nada");
+
+  await mark(page, "Armários", "Bom");
+  await inspectionSettled(page, user, "o item que faltava sincroniza");
+  await context.setOffline(true);
+  await page.getByText("Você está offline").waitFor();
+  await openRoom(page, "Área de serviço");
+  await page.getByRole("button", { name: "Concluir vistoria" }).click();
+  const confirmar = page.getByRole("dialog", { name: "Concluir esta vistoria?" });
+  await confirmar.waitFor();
+  await shoot(page, "concluir-2-confirmacao");
+  await confirmar.getByRole("button", { name: "Concluir vistoria" }).click();
+  await page.getByText("Conclusão aguardando envio").waitFor();
+  assert.ok(await chipsOf(page, "Piso").getByRole("radio", { name: "Novo" }).isDisabled(), "concluída, só leitura");
+  assert.equal(await page.getByRole("banner").getByRole("button", { name: "Mais ações" }).count(), 0, "sem o ···");
+  await shoot(page, "concluir-4-aguardando-envio");
+  await page.reload();
+  await page.getByText("Conclusão aguardando envio").waitFor();
+  assert.ok(await chipsOf(page, "Piso").getByRole("radio", { name: "Novo" }).isDisabled(), "recarregada, segue só leitura");
+  await page.getByRole("link", { name: "Voltar", exact: true }).click();
+  await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
+  const concluirRow = inspectionRow(page, concluir);
+  await concluirRow.getByText("Concluída").first().waitFor();
+  await concluirRow.getByText("Salvo no aparelho").first().waitFor();
+  await shoot(page, "concluir-7-lista");
+  ok("offline: a tela fica só leitura com \"Conclusão aguardando envio\", também recarregada; a lista já diz \"Concluída\"");
+
+  await context.setOffline(false);
+  await until(async () => (await outboxCount(page, user)) === 0, "a conclusão sai quando a rede volta", 90_000);
+  await wait(2000);
+  const sentCompletions = completions(concluir);
+  assert.ok(sentCompletions.length > 0, "a conclusão foi enviada");
+  assert.equal(new Set(sentCompletions.map((put) => put.key)).size, 1, "uma conclusão só, sempre com a mesma chave");
+  assert.equal(sentCompletions.filter(succeeded).length, 1, "aceita uma vez só");
+  const concluded = (await serverInspection(user, concluir)).body;
+  assert.equal(concluded.status, "completed");
+  assert.ok(concluded.completedAt, "o servidor gravou o completedAt");
+  await concluirRow.getByRole("link").click();
+  await page.getByText("Vistoria concluída em", { exact: false }).waitFor();
+  await shoot(page, "concluir-5-concluida");
+  ok(`a rede volta: a conclusão chega uma vez só (${sentCompletions.map((put) => put.status).join(", ")}, mesma chave); a tela mostra a data`);
+  await page.getByRole("link", { name: "Voltar", exact: true }).click();
+  await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
+
+  // Concluída em outro aparelho enquanto este a edita offline: o PUT daqui volta 409 locked.
+  const travada = await createInspection(page, conclusaoOption);
+  await mark(page, "Piso", "Bom");
+  await inspectionSettled(page, user, "a vistoria a travar sincroniza");
+  await context.setOffline(true);
+  await page.getByText("Você está offline").waitFor();
+  await mark(page, "Paredes", "Ruim");
+  await wait(1800);
+  const remote = await completeOnServer(user, travada);
+  await context.setOffline(false);
+  await page.getByText("Esta vistoria foi concluída em outro aparelho").waitFor({ timeout: 90_000 });
+  await page.getByText("Vistoria concluída em", { exact: false }).waitFor();
+  await shoot(page, "concluir-6-outro-aparelho");
+  await until(async () => await checked(page, "Paredes", "Bom"), "a tela mostra o que o servidor tem", 10_000);
+  assert.ok(await chipsOf(page, "Paredes").getByRole("radio", { name: "Novo" }).isDisabled(), "só leitura");
+  await until(async () => (await outboxCount(page, user)) === 0, "a edição sai da fila", 90_000);
+  const lockedPut = puts.filter((put) => put.id === travada).at(-1);
+  assert.equal(lockedPut?.status, 409, "o PUT daqui volta locked");
+  assert.equal((await serverInspection(user, travada)).body.version, remote.version, "o servidor fica como o outro deixou");
+  ok("concluída em outro aparelho: o PUT daqui volta 409 locked, a tela adota o servidor, fica só leitura e avisa no toast");
+  await page.getByRole("link", { name: "Voltar", exact: true }).click();
+  await goTo(page, "Clientes");
+
   step(13, "Outro usuário entra: a fila do anterior não sai com a conta dele");
   // Com a página controlada pelo service worker, o modo avião do Playwright não barra o fetch que passa por ele;
   // a pendência nasce offline com a sessão expirada (recarregou), e a fila espera pelo token.
@@ -1253,6 +1350,8 @@ try {
     await openRoom(page, "Varanda");
     await page.getByText("Nenhum item neste ambiente").waitFor();
     await shoot(page, "campo-2-vazio");
+    // O passo 15 recarrega esperando /clients.
+    await goTo(page, "Clientes");
   }
 
   step(15, "Sair com pendência: o Dialog avisa, e confirmar apaga o banco e a outbox; Apagar e entrar apaga os do anterior");
