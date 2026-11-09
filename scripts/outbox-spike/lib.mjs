@@ -550,7 +550,23 @@ export async function createInspection(page, propertyOption) {
 export const chipsOf = (page, item) => page.getByRole("radiogroup", { name: `Condição: ${item}` });
 
 /** Marca a condição de um item do ambiente aberto. */
-export const mark = (page, item, condition) => chipsOf(page, item).getByRole("radio", { name: condition }).click();
+export async function mark(page, item, condition) {
+  // Os chips ficam desabilitados com o envio da vistoria no ar (ADR 0021), e o "enviando" vem da fila, lida a cada 1 s.
+  // O clique do Playwright confere que o chip está habilitado e só depois clica: se o envio começa no meio, o clique cai
+  // num chip desabilitado e se perde, e a marcação nunca acontece (#145, passo 6 do spike:conflict no CI). Clica até o
+  // chip ficar marcado; clicar de novo no valor escolhido não muda nada.
+  const radio = chipsOf(page, item).getByRole("radio", { name: condition });
+  const isChecked = async () => (await radio.getAttribute("aria-checked")) === "true";
+  await until(
+    async () => {
+      if (await isChecked()) return true;
+      if (await radio.isEnabled()) await radio.click({ timeout: 2_000 }).catch(() => {});
+      return isChecked();
+    },
+    `${item} marcado como ${condition}`,
+    15_000,
+  );
+}
 
 export const checked = async (page, item, condition) =>
   (await chipsOf(page, item).getByRole("radio", { name: condition }).getAttribute("aria-checked")) === "true";
