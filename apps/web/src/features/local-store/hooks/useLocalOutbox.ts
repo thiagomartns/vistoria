@@ -27,6 +27,6 @@ export function useLocalOutbox(): OutboxItemView[] {
     };
   }, [ownerId]);
 
-  const drafts = useLiveQuery(() => store?.drafts, [store]);
+  const drafts = useLiveQuery(() => store?.drafts);
   return conflictItems(drafts.data ?? []);
 }

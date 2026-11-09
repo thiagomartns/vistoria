@@ -18,7 +18,7 @@ async function collectionWith(rows: Row[]) {
   });
   const clients = createCollection(syncedCollectionOptions<Row>(db, "clients"));
   await clients.preload();
-  for (const row of rows) await clients.insert(row).isPersisted.promise;
+  for (const row of rows) await clients.insert(row).when("settled");
   return { db, clients };
 }
 
@@ -46,8 +46,8 @@ describe("readConfirmed", () => {
 
     await clients.update(ana.id, (draft) => {
       draft.name = "Ana Maria";
-    }).isPersisted.promise;
-    await clients.delete(bia.id).isPersisted.promise;
+    }).when("settled");
+    await clients.delete(bia.id).when("settled");
 
     expect(await clients.utils.readConfirmed([ana.id, bia.id])).toEqual([
       { ...ana, name: "Ana Maria" },

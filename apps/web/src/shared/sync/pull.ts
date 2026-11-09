@@ -204,7 +204,7 @@ function failureOf(
 
 type Mutation = { type: "insert" | "update" | "delete"; key: string; modified: SyncRecord };
 /** A gravação de um rascunho que mudou com a página. */
-type Persisting = { isPersisted: { promise: Promise<unknown> } } | undefined;
+type Persisting = { when(state: "settled"): Promise<unknown> } | undefined;
 /** A `version` de cada registro da store confirmada (só no resync: lê a store inteira). */
 type Versions = Map<string, string | null>;
 
@@ -306,12 +306,12 @@ async function write(
   drafts: Persisting[],
 ): Promise<void> {
   if (mutations.length > 0) {
-    // Na 0.15, acceptMutations tipa as mutações como Record<string, unknown>, não pelo item da collection.
+    // No 1.0 RC, como na 0.15, acceptMutations tipa as mutações como Record<string, unknown>, não pelo item da collection.
     await store.utils.acceptMutations({
       mutations: mutations.map((mutation) => ({ ...mutation, collection: store })),
     } as unknown as { mutations: PendingMutation[] });
   }
-  await Promise.all(drafts.map((transaction) => transaction?.isPersisted.promise));
+  await Promise.all(drafts.map((transaction) => transaction?.when("settled")));
 }
 
 // Cursores e marcas no banco local do usuário, uma collection IndexedDB cada, como os rascunhos. Saem com o banco.
@@ -359,12 +359,12 @@ export function cursorStoreOf(
 ): CursorStore {
   const save = async (entity: string, change: (row: CursorRow) => void) => {
     if (cursors.has(entity)) {
-      await cursors.update(entity, change).isPersisted.promise;
+      await cursors.update(entity, change).when("settled");
       return;
     }
     const row: CursorRow = { id: entity };
     change(row);
-    await cursors.insert(row).isPersisted.promise;
+    await cursors.insert(row).when("settled");
   };
   return {
     get: (entity) => cursors.get(entity)?.cursor,
@@ -405,11 +405,11 @@ export function skipMarksOf(
       if (fresh.length === 0) return;
       await marks.insert(
         fresh.map((recordId) => ({ id: markKey(entity, recordId), entity, recordId })),
-      ).isPersisted.promise;
+      ).when("settled");
     },
     async remove(entity, id) {
       if (!marks.has(markKey(entity, id))) return;
-      await marks.delete(markKey(entity, id)).isPersisted.promise;
+      await marks.delete(markKey(entity, id)).when("settled");
     },
   };
 }

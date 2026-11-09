@@ -23,13 +23,13 @@ A tela nunca espera a rede: lê do banco local e escreve na outbox. O sync empur
 
 ## Stack
 
-O risco está concentrado numa peça: TanStack DB, ainda pré-1.0. Todo o resto é maduro ou nativo do navegador.
+O risco está concentrado numa peça: TanStack DB, ainda em release candidate da 1.0 (#161). Todo o resto é maduro ou nativo do navegador.
 
 | Camada | Escolha | Risco | Observação |
 | --- | --- | --- | --- |
 | Shell / roteamento | Next.js 16, App Router, static export | Baixo | Sem servidor Next em produção |
 | UI | Sanjou UI sobre Radix + Tailwind CSS 4 | Baixo | Componentes de sync são do app, feitos com primitivos do Sanjou ([ADR 0020](../decisions/0020-componentes-que-faltam-no-sanjou-ficam-no-app.md)) |
-| Dados locais | TanStack DB + `@tanstack/offline-transactions` | **Médio** | Pré-1.0; isolado em `services/` |
+| Dados locais | TanStack DB + `@tanstack/offline-transactions` | **Médio** | 1.0 RC; isolado em `services/` |
 | Sync | Delta + outbox sobre a REST do .NET | Médio | Sem infraestrutura extra |
 | Formulários | react-hook-form + Zod, com o `Form` do Sanjou | Baixo | Zod gerado do contrato ([ADR 0023](../decisions/0023-formularios-com-react-hook-form.md)) |
 | Contrato | `@hey-api/openapi-ts` | Baixo | Tipos, client, Zod e `ProblemType` |
@@ -302,7 +302,7 @@ Quatro spikes validam as apostas antes das telas; o primeiro foi dividido em 1a 
 
 | Risco | Impacto | Mitigação |
 | --- | --- | --- |
-| TanStack DB mudar API antes da 1.0 | Retrabalho em `services` | Hooks e telas não importam TanStack DB direto. Plano B: TanStack Query com cache persistido e outbox própria em `shared/sync`; o contrato não muda |
+| TanStack DB mudar API antes da 1.0 estável | Retrabalho em `services` | Hooks e telas não importam TanStack DB direto. Plano B: TanStack Query com cache persistido e outbox própria em `shared/sync`; o contrato não muda |
 | Conflitos frequentes em formulários longos | Usuário perde confiança | Merge automático por campo e por item; diff só no que colidiu |
 | Volume de dados local | App lento, quota do navegador | Escopo por dono; medido no spike 2: 10 mil vistorias ocupam 42 MB, e a lista abre offline em 1,6–1,8 s no celular, pelo resumo, sem abrir as vistorias completas ([ADR 0048](../decisions/0048-a-lista-de-vistorias-le-um-resumo-gravado-na-mesma-transacao-e-a-vistoria-completa-carrega-por-id.md)) |
 | Sanjou UI depender de recurso de servidor do Next | Quebra no static export | Verificado cedo no marco MD (página de prova no static export) e confirmado no spike 4 |

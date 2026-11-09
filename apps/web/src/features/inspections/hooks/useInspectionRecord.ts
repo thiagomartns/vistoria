@@ -18,7 +18,6 @@ export function useInspectionRecord(store: LocalStore | undefined, id: string | 
             .where(({ inspection }) => eq(inspection.id, id))
             .findOne()
         : undefined,
-    [store, id],
   );
   return {
     record: query.data as InspectionRecord | undefined,

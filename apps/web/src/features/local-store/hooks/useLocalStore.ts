@@ -29,9 +29,9 @@ export function useLocalStore() {
     };
   }, [ownerId]);
 
-  const clients = useLiveQuery(() => store?.clients, [store]);
-  const properties = useLiveQuery(() => store?.properties, [store]);
-  const drafts = useLiveQuery(() => store?.drafts, [store]);
+  const clients = useLiveQuery(() => store?.clients);
+  const properties = useLiveQuery(() => store?.properties);
+  const drafts = useLiveQuery(() => store?.drafts);
   const snapshot = useSyncExternalStore(
     syncStatusStore.subscribe,
     syncStatusStore.getSnapshot,

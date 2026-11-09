@@ -24,7 +24,7 @@ const dto: Dto = {
 };
 const shape = ({ createdAt: _createdAt, ...row }: Dto): Row => row;
 
-const persisted = { isPersisted: { promise: Promise.resolve() } };
+const persisted = { when: () => Promise.resolve() };
 
 /** Os rascunhos em memória: `drafted` são recusados (pendência); `clean`, do formulário profundo, sem nada a enviar. */
 function draftsOf(drafted: string[], clean: DraftRecord[] = []) {

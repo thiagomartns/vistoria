@@ -188,8 +188,8 @@ describe("collection com resumo (ADR 0048)", () => {
       }),
     );
     await legacy.preload();
-    await legacy.insert(ana).isPersisted.promise;
-    await legacy.insert(bia).isPersisted.promise;
+    await legacy.insert(ana).when("settled");
+    await legacy.insert(bia).when("settled");
     await legacy.cleanup();
 
     const { summaries } = open(before);

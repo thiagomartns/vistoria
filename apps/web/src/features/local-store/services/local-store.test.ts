@@ -158,13 +158,13 @@ describe("openLocalStore", () => {
 
     expect(ana.pull.dispose).toHaveBeenCalledOnce();
     expect(ana.outbox.dispose).toHaveBeenCalledOnce();
-    expect(ana.clients.cleanup).toHaveBeenCalledOnce();
-    expect(ana.properties.cleanup).toHaveBeenCalledOnce();
-    expect(ana.inspections.cleanup).toHaveBeenCalledOnce();
+    expect(ana.clients.cleanup).toHaveBeenCalledExactlyOnceWith({ dependents: true });
+    expect(ana.properties.cleanup).toHaveBeenCalledExactlyOnceWith({ dependents: true });
+    expect(ana.inspections.cleanup).toHaveBeenCalledExactlyOnceWith({ dependents: true });
     expect(ana.inspectionSummaries.cleanup).toHaveBeenCalledOnce();
-    expect(ana.drafts.cleanup).toHaveBeenCalledOnce();
-    expect(ana.cursors.cleanup).toHaveBeenCalledOnce();
-    expect(ana.skipped.cleanup).toHaveBeenCalledOnce();
+    expect(ana.drafts.cleanup).toHaveBeenCalledExactlyOnceWith({ dependents: true });
+    expect(ana.cursors.cleanup).toHaveBeenCalledExactlyOnceWith({ dependents: true });
+    expect(ana.skipped.cleanup).toHaveBeenCalledExactlyOnceWith({ dependents: true });
     expect(closeLocalDb).toHaveBeenCalledExactlyOnceWith("ana");
     expect(bia).not.toBe(ana);
     expect(vi.mocked(startOutbox).mock.calls.map(([config]) => config.ownerId)).toEqual([
