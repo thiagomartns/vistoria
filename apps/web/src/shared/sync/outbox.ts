@@ -22,7 +22,7 @@ import { newId } from "./ids";
 export type Outbox = OfflineExecutor;
 
 /**
- * Envio de uma transação; o pacote não exporta o tipo (`OfflineMutationFn`) na 1.1.2. `requeue` põe na fila uma
+ * Envio de uma transação; o pacote não exporta o tipo (`OfflineMutationFn`) na 1.2.0. `requeue` põe na fila uma
  * transação nova desta mesma mutationFn, com chave nova: o reenvio de um merge (frontend.md, "Conflito").
  * `removalQueued` diz se há na fila uma exclusão do mesmo registro: aí um conflito não vira reenvio, porque ele sairia
  * depois da exclusão. O `startOutbox` sempre passa os dois; quem chama a mutationFn direto (testes) pode não passar.
@@ -91,7 +91,7 @@ export function syncFailure(result: { error: unknown; response?: Response }): Er
 const delay = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
 
 /**
- * Espera o `Retry-After` de uma falha antes de ela voltar para a fila. O executor (1.1.2) calcula o atraso só pelo
+ * Espera o `Retry-After` de uma falha antes de ela voltar para a fila. O executor (1.2.0) calcula o atraso só pelo
  * número de tentativas, sem gancho por erro; esperar dentro da mutationFn garante que a próxima tentativa nunca sai
  * antes do que o servidor pediu (o backoff dele soma depois). A fila é serial: nada que pudesse sair antes espera.
  */
@@ -163,7 +163,7 @@ export function ownerOnlineDetector(
 }
 
 // Compactação (frontend.md, "Escrita (push)"): das transações do mesmo registro que nunca foram enviadas, só a mais
-// recente sai, e uma exclusão mais nova do registro leva todas as de antes (ADR 0039). O executor (1.1.2) não deixa tirar uma transação da fila (`removeFromOutbox` só apaga do armazenamento,
+// recente sai, e uma exclusão mais nova do registro leva todas as de antes (ADR 0039). O executor (1.2.0) não deixa tirar uma transação da fila (`removeFromOutbox` só apaga do armazenamento,
 // e ele a envia mesmo assim), então a compactação acontece quando a mais antiga chega à frente: ela termina sem rede,
 // e a mais nova, que leva o registro inteiro, sai no lugar dela.
 // "Nunca enviada" não se lê do `retryCount`: ele só sobe depois de uma falha, e uma aba fechada com o envio no ar volta

@@ -105,7 +105,7 @@ async function confirm<T extends SyncRecord>(
   mutation: PendingMutation<T>,
   record: T,
 ): Promise<void> {
-  // Na 0.15, acceptMutations tipa as mutações como Record<string, unknown>, não pelo item da collection.
+  // No 1.0 RC, como na 0.15, acceptMutations tipa as mutações como Record<string, unknown>, não pelo item da collection.
   await store.utils.acceptMutations({
     mutations: [{ ...mutation, modified: record }],
   } as unknown as {

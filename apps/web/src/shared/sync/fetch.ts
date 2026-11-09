@@ -75,7 +75,7 @@ export async function adoptPulled<T extends SyncRecord>(
 ): Promise<void> {
   const rebased = rebaseClean(drafts, record);
   await adoptServer(store, record);
-  await rebased?.isPersisted.promise;
+  await rebased?.when("settled");
 }
 
 /** Tira do aparelho um registro sem pendência que o servidor não tem mais, com o rascunho limpo dele. */
@@ -86,7 +86,7 @@ export async function dropPulled<T extends SyncRecord>(
 ): Promise<void> {
   const dropped = dropClean(drafts, id);
   await dropConfirmed(store, id);
-  await dropped?.isPersisted.promise;
+  await dropped?.when("settled");
 }
 
 /** O rascunho limpo de `record` com a versão nova, sem a `version` (o rascunho guarda o registro sem ela). */

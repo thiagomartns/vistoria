@@ -119,17 +119,21 @@ async function open(ownerId: string): Promise<LocalStore> {
   };
 }
 
+const ending = { dependents: true };
+
 async function close(ownerId: string, opening: Promise<LocalStore>): Promise<void> {
   const store = await opening.catch(() => undefined);
   store?.pull.dispose();
   store?.outbox.dispose();
-  await store?.clients.cleanup();
-  await store?.properties.cleanup();
-  await store?.inspections.cleanup();
+  // O store fechado não serve a mais ninguém: a live query de uma tela ainda montada termina junto. Sem `dependents`, o
+  // cleanup do TanStack DB 1.0 recusa enquanto alguém lê a collection, e a troca de usuário pararia aqui.
+  await store?.clients.cleanup(ending);
+  await store?.properties.cleanup(ending);
+  await store?.inspections.cleanup(ending);
   await store?.inspectionSummaries.cleanup();
-  await store?.drafts.cleanup();
-  await store?.cursors.cleanup();
-  await store?.skipped.cleanup();
+  await store?.drafts.cleanup(ending);
+  await store?.cursors.cleanup(ending);
+  await store?.skipped.cleanup(ending);
   await closeLocalDb(ownerId);
 }
 

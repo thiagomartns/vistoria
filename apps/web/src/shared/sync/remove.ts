@@ -38,7 +38,7 @@ async function forget<T extends SyncRecord>(
   store: LocalCollection<T>,
   mutation: PendingMutation<T>,
 ): Promise<void> {
-  // Na 0.15, acceptMutations tipa as mutações como Record<string, unknown>, não pelo item da collection.
+  // No 1.0 RC, como na 0.15, acceptMutations tipa as mutações como Record<string, unknown>, não pelo item da collection.
   await store.utils.acceptMutations({
     mutations: [{ ...mutation, type: "delete" }],
   } as unknown as { mutations: PendingMutation[] });
