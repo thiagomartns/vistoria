@@ -42,11 +42,15 @@
 // Desde o #170 o passo 12i cria a saída offline a partir da entrada concluída mais recente do imóvel do 12h (o imóvel
 // sem entrada concluída avisa e não deixa começar): ela volta ao recarregar e chega ao servidor com a referência e a
 // cópia de cada item. Com SCREENS=1, os prints da saída em `.screens/campo/`.
+// Desde o #168 o passo 12h abre o laudo da vistoria concluída pelo "Ver laudo": recarregado em modo avião, ele abre do
+// banco local, e o PDF (`page.pdf`, mídia de impressão) sai sem o shell, com uma página por ambiente. Com SCREENS=1, os
+// prints do laudo e o PDF em `.screens/laudo/`.
 // Desde o #133 o passo 13 passa pelo aviso de outro usuário (Cancelar faz o signOut da Bia e mantém a fila da Ana), e o
 // passo 15 prova a limpeza no IndexedDB de verdade: Sair com pendência pelo Dialog e "Apagar e entrar" de outro usuário.
 
 import assert from "node:assert/strict";
-import { resolve } from "node:path";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 import {
   askToDelete,
@@ -107,6 +111,9 @@ import {
 // Prints dos estados da tela de campo, com SCREENS=1: o mesmo estado no celular e no desktop, trocando o viewport.
 const shotsDir = process.env.SCREENS ? resolve(process.env.INIT_CWD ?? root, ".screens/campo") : null;
 const shoot = shooter(shotsDir);
+// O laudo (#168): os prints e o PDF, com SCREENS=1.
+const reportDir = process.env.SCREENS ? resolve(process.env.INIT_CWD ?? root, ".screens/laudo") : null;
+const shootReport = shooter(reportDir);
 
 const server = await serve();
 const browser = await launch();
@@ -1250,10 +1257,47 @@ try {
   assert.equal(concluded.status, "completed");
   assert.ok(concluded.completedAt, "o servidor gravou o completedAt");
   assert.deepEqual(concluded.completedBy, { id: user.id, name: user.name }, "o servidor gravou quem concluiu (#183)");
-  await concluirRow.getByRole("link").click();
+  // O endereço abre a tela de campo; a concluída também tem o link do laudo (#168).
+  await concluirRow.getByRole("link").first().click();
   await page.getByText(`Vistoria concluída por ${user.name} em`, { exact: false }).waitFor();
   await shoot(page, "concluir-5-concluida");
   ok(`a rede volta: a conclusão chega uma vez só (${sentCompletions.map((put) => put.status).join(", ")}, mesma chave); a tela mostra quem concluiu e a data`);
+
+  // O laudo (#168): pelo "Ver laudo", recarregado em modo avião, e o PDF sem o shell, um ambiente por página.
+  await page.getByRole("link", { name: "Ver laudo" }).click();
+  await page.waitForURL(/\/inspections\/report\?id=/);
+  const laudo = page.getByRole("article", { name: "Laudo de vistoria de entrada" });
+  await laudo.getByText(`Concluída por ${user.name} em`, { exact: false }).waitFor();
+  const rooms = await laudo.getByRole("region").count();
+  assert.ok(rooms > 1, "o laudo tem os ambientes da vistoria");
+  await context.setOffline(true);
+  await page.getByText("Você está offline").waitFor();
+  await page.reload();
+  await laudo.getByText(`Concluída por ${user.name} em`, { exact: false }).waitFor();
+  await shootReport(page, "laudo");
+  await page.emulateMedia({ media: "print" });
+  for (const [what, locator] of [
+    ["a sidebar", page.getByRole("navigation").first()],
+    ["o header", page.getByRole("banner")],
+    ["o botão de imprimir", page.getByRole("button", { name: "Imprimir ou salvar PDF" })],
+    ["o aviso offline", page.getByText("Você está offline")],
+  ]) {
+    assert.equal(await locator.isVisible(), false, `na impressão, ${what} some`);
+  }
+  assert.ok(await laudo.isVisible(), "na impressão, a folha fica");
+  const pdf = await page.pdf({ format: "A4" });
+  await page.emulateMedia({ media: null });
+  assert.equal(pdf.subarray(0, 5).toString(), "%PDF-", "o laudo vira PDF");
+  const pages = pdf.toString("latin1").match(/\/Type\s*\/Page(?!s)/g)?.length ?? 0;
+  assert.ok(pages >= rooms, `um ambiente por página (${rooms} ambientes, ${pages} páginas)`);
+  if (reportDir) {
+    mkdirSync(reportDir, { recursive: true });
+    writeFileSync(join(reportDir, "laudo.pdf"), pdf);
+  }
+  await context.setOffline(false);
+  ok(`o laudo abre em modo avião e vira PDF sem o shell: ${pages} páginas A4 para ${rooms} ambientes`);
+  await page.goBack();
+  await page.getByText(`Vistoria concluída por ${user.name} em`, { exact: false }).waitFor();
   await page.getByRole("link", { name: "Voltar", exact: true }).click();
   await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
 

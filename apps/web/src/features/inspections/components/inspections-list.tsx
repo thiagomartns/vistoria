@@ -1,5 +1,7 @@
 import { Badge } from "@sanjou/ui/badge";
+import { Button } from "@sanjou/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@sanjou/ui/table";
+import { Printer } from "lucide-react";
 import Link from "next/link";
 
 import { ListRow } from "@/shared/components/list-row";
@@ -10,7 +12,8 @@ import { DeleteInspection } from "./delete-inspection";
 // A lista de /inspections (wireframe 67:1490): Table no desktop, ListRow abaixo de `md`. A linha inteira abre a tela de
 // campo. O SyncBadge só aparece fora do sincronizado (silêncio no caminho feliz). No desktop, a linha em andamento tem
 // o "···" com "Excluir vistoria" (#107, estado 4); no celular, exclui-se pela tela de campo. A linha com a exclusão na
-// fila fica apagada, com "Excluindo", até o 204 (estado 5). O laudo, a busca e os filtros chegam no M5.
+// fila fica apagada, com "Excluindo", até o 204 (estado 5). A concluída e confirmada tem o botão "Laudo" no lugar do
+// "···" (Figma 177:16524, estado 8); no celular, o laudo abre pela tela de campo. A busca e os filtros chegam no M5.
 
 export interface InspectionListItem {
   id: string;
@@ -31,6 +34,8 @@ export interface InspectionListItem {
   /** "Em andamento", "Concluída". */
   statusLabel: string | null;
   completed: boolean;
+  /** O laudo, só na concluída e confirmada pelo servidor. */
+  reportHref: string | null;
   /** "19/10/2026". */
   startedOn: string;
   /** "Iniciada em 19/10, 09:12". */
@@ -99,6 +104,12 @@ export function InspectionsList({
                       onConfirm={() => onDelete(item.id)}
                       className="relative z-10"
                     />
+                  ) : item.reportHref ? (
+                    <Button asChild variant="ghost" size="icon" className="relative z-10">
+                      <Link href={item.reportHref} aria-label={`Laudo de ${item.address}`}>
+                        <Printer aria-hidden="true" />
+                      </Link>
+                    </Button>
                   ) : null}
                 </TableCell>
               </TableRow>

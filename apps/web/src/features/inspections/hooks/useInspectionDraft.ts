@@ -57,7 +57,7 @@ import {
   roomsSummary,
 } from "../services/inspections.view";
 import { useInspectionRecord } from "./useInspectionRecord";
-import { placesOf } from "./useInspections";
+import { placesOf, reportHref } from "./useInspections";
 
 /** Depois da última mudança, o rascunho é gravado; fechar a aba depois disso não perde nada. */
 export const DRAFT_DEBOUNCE_MS = 300;
@@ -531,6 +531,8 @@ export function useInspectionDraft(id: string | null) {
       concluded && record
         ? completionView(record, id ? states.has(id) || record.version === null : false)
         : null,
+    /** O laudo, só da conclusão que o servidor confirmou, a que tem o `completedAt` (ADR 0054). */
+    reportHref: concluded && record?.completedAt && id ? reportHref(id) : null,
     /**
      * "Concluir vistoria" no último ambiente: só em andamento, fora de conflito e sem exclusão. Em conflito, o envio sai
      * pelo ConflictResolver, então concluir também espera ele.
