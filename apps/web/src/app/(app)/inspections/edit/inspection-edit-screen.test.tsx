@@ -738,12 +738,13 @@ describe("InspectionEditScreen", () => {
       );
     });
 
-    it("estado 5 (concluída e confirmada): o aviso com a data da conclusão, só leitura e sem o ···", async () => {
+    it("estado 5 (concluída e confirmada): o aviso com quem concluiu e a data, só leitura e sem o ···", async () => {
       const completedAt = new Date(2026, 9, 19, 14, 32).toISOString();
-      open({ inspections: [{ ...pronta, status: "completed", completedAt }] });
+      const completedBy = { id: "u1", name: "Thiago Martins" };
+      open({ inspections: [{ ...pronta, status: "completed", completedAt, completedBy }] });
 
       expect(screen.getByRole("status").textContent).toContain(
-        "Vistoria concluída em 19/10/2026 às 14:32",
+        "Vistoria concluída por Thiago Martins em 19/10/2026 às 14:32",
       );
       expect(
         screen.getByText("Vistoria de entrada · Imobiliária Lar · concluída em 19/10 às 14:32"),

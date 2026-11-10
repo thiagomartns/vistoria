@@ -60,10 +60,13 @@ const lockedNotice = (record: InspectionRecord): SyncNotice => ({
   description: LOCKED_DESCRIPTION,
 });
 
-/** O registro depois do 2xx: o enviado, com a `version` e, na conclusão, o `completedAt` que o servidor gravou. */
+/**
+ * O registro depois do 2xx: o enviado, com a `version` e, na conclusão, o `completedAt` e o `completedBy` que o
+ * servidor gravou.
+ */
 function acceptedInspection(data: { version: string }, sent: InspectionRecord): InspectionRecord {
-  const { completedAt } = data as Partial<Pick<InspectionDto, "completedAt">>;
-  return { ...sent, version: data.version, ...(completedAt && { completedAt }) };
+  const { completedAt, completedBy } = data as Partial<Pick<InspectionDto, "completedAt" | "completedBy">>;
+  return { ...sent, version: data.version, ...(completedAt && { completedAt }), ...(completedBy && { completedBy }) };
 }
 
 /**
@@ -79,8 +82,9 @@ const reopenedInspection = (sent: InspectionRecord): InspectionRecord =>
  * imóvel ainda pendente só sai depois dele; se o imóvel for recusado, ela volta com `propertyId` "Imóvel não
  * encontrado." e vira rascunho recusado, como qualquer `validation` (os erros de ambiente e item chegam no caminho do
  * servidor, `rooms[0].items[1].condition`, e ficam assim no rascunho). A conclusão é o mesmo `PUT`, com `status:
- * completed`: o 2xx traz o `completedAt`, a recusa volta ao rascunho em andamento e o `locked` (concluída em outro
- * aparelho) adota o `current` e avisa. O `completedAt` do registro nunca vai no corpo.
+ * completed`: o 2xx traz o `completedAt` e o `completedBy`, a recusa volta ao rascunho em andamento e o `locked`
+ * (concluída em outro aparelho) adota o `current` e avisa. O `completedAt` e o `completedBy` do registro nunca vão no
+ * corpo.
  */
 export function upsertInspectionMutation(
   inspections: InspectionsCollection,
@@ -91,7 +95,7 @@ export function upsertInspectionMutation(
     store: inspections,
     drafts,
     entity: INSPECTION_ENTITY,
-    send: ({ body: { completedAt: _completedAt, ...body }, ...request }) =>
+    send: ({ body: { completedAt: _completedAt, completedBy: _completedBy, ...body }, ...request }) =>
       upsertInspection({ client, ...request, body }),
     strategy: inspectionMerge,
     accepted: acceptedInspection,

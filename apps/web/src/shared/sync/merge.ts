@@ -59,7 +59,8 @@ function covers(current: unknown, sent: unknown): boolean {
 /**
  * O `current` do conflito é a própria escrita cuja resposta se perdeu (a chave venceu e o servidor reexecutou,
  * backend.md, "Idempotência"). Compara só o que o aparelho envia: `id` e `version` saem, e o que só existe no DTO
- * (`createdAt`, `updatedAt`, `completedAt`, os campos de referência) não conta. Sem `current` (`deleted`), não é.
+ * (`createdAt`, `updatedAt`, `completedAt`, `completedBy`, os campos de referência) não conta. Sem `current`
+ * (`deleted`), não é.
  */
 export function isOwnWrite(current: unknown, sent: Fields): boolean {
   if (!isObject(current)) return false;

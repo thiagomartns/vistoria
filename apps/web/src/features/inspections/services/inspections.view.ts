@@ -296,11 +296,12 @@ export interface CompletionView {
 }
 
 /**
- * Concluída e confirmada: "Vistoria concluída em 19/10/2026 às 14:32" (sem a data, de uma concluída baixada antes de o
- * aparelho guardá-la, só "Vistoria concluída"). Com a conclusão na fila (`pending`), o aviso de envio.
+ * Concluída e confirmada: "Vistoria concluída por Thiago Martins em 19/10/2026 às 14:32" (ADR 0053). Sem a autoria ou
+ * sem a data, de uma concluída baixada antes de o aparelho guardá-las, cada parte que falta sai da frase, até "Vistoria
+ * concluída". Com a conclusão na fila (`pending`), o aviso de envio.
  */
 export function completionView(
-  inspection: Pick<InspectionRecord, "status" | "completedAt">,
+  inspection: Pick<InspectionRecord, "status" | "completedAt" | "completedBy">,
   pending: boolean,
 ): CompletionView | null {
   if (inspection.status !== "completed") return null;
@@ -312,11 +313,16 @@ export function completionView(
     };
   }
   const date = parsedDate(inspection.completedAt);
+  const author = inspection.completedBy?.name;
   return {
     tone: "success",
-    title: date
-      ? `Vistoria concluída em ${DATE.format(date)} às ${TIME.format(date)}`
-      : "Vistoria concluída",
+    title: [
+      "Vistoria concluída",
+      author && `por ${author}`,
+      date && `em ${DATE.format(date)} às ${TIME.format(date)}`,
+    ]
+      .filter(Boolean)
+      .join(" "),
     description: COMPLETED_DESCRIPTION,
   };
 }
