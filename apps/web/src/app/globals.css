@@ -3,3 +3,32 @@
 
 /* Deixa o Tailwind ver as classes dos componentes do Sanjou. Caminho relativo a este arquivo. */
 @source "../../node_modules/@sanjou/ui";
+
+/*
+ * O laudo impresso (Figma 177:16524, estado 3; ADR 0054): folha A4 com a margem do documento e a paginação no rodapé.
+ * O conteúdo de cada página (sem o shell, um ambiente por página) fica nas classes `print:` da tela e da folha.
+ */
+@page {
+  size: A4;
+  margin: 15mm 15mm 18mm;
+
+  @bottom-left {
+    content: "Avis · Laudo de vistoria";
+    font-size: 9pt;
+    color: #71717a;
+  }
+
+  @bottom-right {
+    content: "Página " counter(page) " de " counter(pages);
+    font-size: 9pt;
+    color: #71717a;
+  }
+}
+
+@media print {
+  html,
+  body {
+    height: auto;
+    background: white;
+  }
+}

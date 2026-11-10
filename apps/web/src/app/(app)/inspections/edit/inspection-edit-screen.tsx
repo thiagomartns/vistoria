@@ -1,5 +1,8 @@
 "use client";
 
+import { Button } from "@sanjou/ui/button";
+import { Printer } from "lucide-react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { CompleteInspection } from "@/features/inspections/components/complete-inspection";
@@ -18,7 +21,7 @@ import { PageHeader } from "../../shell-header";
 // ambiente, Próximo vira "Concluir vistoria" (Figma 164:12824): o que falta marca os chips e abre o ambiente do primeiro;
 // sem nada faltando, o Dialog confirma, e a conclusão vai para a fila. Concluída, só leitura e sem o "···". Em
 // andamento, o "···" do header exclui a vistoria (#107): confirmada, a exclusão vai para a fila e a tela volta para a
-// lista; aberta com a exclusão na fila, fica só leitura.
+// lista; aberta com a exclusão na fila, fica só leitura. Concluída e confirmada, "Ver laudo" no header (#168).
 // Uma vistoria que o aparelho não tem é buscada no servidor, com o imóvel e o cliente (#101).
 
 export function InspectionEditScreen() {
@@ -59,6 +62,19 @@ export function InspectionEditScreen() {
                 router.push(INSPECTIONS_HREF);
               }}
             />
+          ) : field.reportHref ? (
+            // Figma 177:16524, estado 7: "Ver laudo" no desktop; no celular, só o ícone.
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="max-md:size-8 max-md:border-transparent max-md:px-0"
+            >
+              <Link href={field.reportHref} aria-label="Ver laudo">
+                <Printer aria-hidden="true" />
+                <span className="hidden md:inline">Ver laudo</span>
+              </Link>
+            </Button>
           ) : null
         }
       />

@@ -31,7 +31,8 @@ import { type ShellHeader, ShellHeaderContext } from "./shell-header";
 // locais e vai para /login quando a rede volta. Vencida a janela offline de 72 h, o conteúdo vira o bloqueio
 // "Reconecte para continuar", sem apagar nada, até um refresh aceito (frame 8 da #128). "Sair" passa pelo useSignOut:
 // sem pendências limpa direto; com pendências, o SignOutDialog pede confirmação (frames 4 e 5). Os avisos passageiros do
-// sync (o `locked`, Figma 164:12824 estado 6) saem no Toaster do Sanjou (ADR 0033).
+// sync (o `locked`, Figma 164:12824 estado 6) saem no Toaster do Sanjou (ADR 0033). Na impressão (o laudo, ADR 0054),
+// sobra só o conteúdo da tela: sem sidebar, header, banner nem barra inferior, e sem a rolagem do `main`.
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -65,13 +66,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
 
   return (
-    <div className="flex h-dvh bg-background">
+    <div className="flex h-dvh bg-background print:block print:h-auto">
       {/* Desktop e celular por breakpoint (md): cada wrapper só decide se aparece. */}
-      <div className="hidden md:flex">
+      <div className="hidden md:flex print:hidden!">
         <Sidebar items={NAV_ITEMS} activeHref={current?.href} footer={user("sidebar")} />
       </div>
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex shrink-0 items-center gap-2 border-b border-border bg-background px-4 pt-[max(12px,env(safe-area-inset-top))] pb-3 md:h-16 md:px-6 md:py-0">
+      <div className="flex min-w-0 flex-1 flex-col print:block">
+        <header className="flex shrink-0 items-center gap-2 border-b border-border bg-background px-4 print:hidden! pt-[max(12px,env(safe-area-inset-top))] pb-3 md:h-16 md:px-6 md:py-0">
           {header?.backHref ? (
             <Button asChild variant="ghost" size="icon">
               <Link href={header.backHref} aria-label="Voltar">
@@ -107,7 +108,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </header>
         <main
-          className={`flex min-h-0 flex-1 flex-col overflow-y-auto md:gap-4 md:p-6 ${header?.focus ? "" : "gap-3 p-4"}`}
+          className={`flex min-h-0 flex-1 flex-col overflow-y-auto md:gap-4 md:p-6 print:block print:overflow-visible print:p-0! ${header?.focus ? "" : "gap-3 p-4"}`}
         >
           {offlineWindow.expired ? (
             <OfflineBanner
@@ -118,7 +119,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           ) : (
             <>
               {sync.offline ? (
-                <div className={header?.focus ? "px-4 pt-4 md:p-0" : "contents"}>
+                <div className={`print:hidden! ${header?.focus ? "px-4 pt-4 md:p-0" : "contents"}`}>
                   <OfflineBanner type="aviso" />
                 </div>
               ) : null}
@@ -127,7 +128,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           )}
         </main>
         {header?.focus ? null : (
-          <div className="md:hidden">
+          <div className="md:hidden print:hidden!">
             <BottomNav items={NAV_ITEMS} activeHref={current?.href} />
           </div>
         )}

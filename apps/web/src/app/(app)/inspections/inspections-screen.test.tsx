@@ -195,6 +195,24 @@ describe("InspectionsScreen", () => {
     expect(mobile[0]?.textContent).toContain("Iniciada em 19/10, 09:12");
   });
 
+  it("concluída e confirmada: o botão 'Laudo' abre o laudo; com a conclusão na fila ou em andamento, não há", () => {
+    open({
+      inspections: [
+        inspection("i1"),
+        inspection("i2", { status: "completed" }),
+        inspection("i3", { status: "completed" }),
+      ],
+      states: new Map([["i3", "local"]]),
+    });
+
+    const rows = within(screen.getByRole("table")).getAllByRole("row").slice(1);
+    const laudo = (row: HTMLElement) =>
+      within(row).queryByRole("link", { name: "Laudo de Rua das Flores, 120 · ap 32" });
+    expect(laudo(rows[0]!)).toBeNull();
+    expect(laudo(rows[1]!)?.getAttribute("href")).toBe("/inspections/report?id=i2");
+    expect(laudo(rows[2]!)).toBeNull();
+  });
+
   it("recusada no servidor: a linha mostra 'Correção necessária'", () => {
     const sent = inspection("i1");
     open({

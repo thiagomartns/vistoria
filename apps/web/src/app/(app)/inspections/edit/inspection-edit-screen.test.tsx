@@ -728,6 +728,8 @@ describe("InspectionEditScreen", () => {
       expect((chip("Piso", "Novo") as HTMLButtonElement).disabled).toBe(true);
       expect(screen.queryByRole("button", { name: "Mais ações" })).toBeNull();
       expect(screen.queryByText("Não enviado")).toBeNull();
+      // O laudo só existe com a conclusão confirmada pelo servidor (Figma 177:16524, estado 7).
+      expect(screen.queryByRole("link", { name: "Ver laudo" })).toBeNull();
       expect(
         screen.getByText("Vistoria de entrada · Imobiliária Lar · concluída neste aparelho"),
       ).toBeDefined();
@@ -751,6 +753,10 @@ describe("InspectionEditScreen", () => {
       ).toBeDefined();
       expect((chip("Piso", "Novo") as HTMLButtonElement).disabled).toBe(true);
       expect(screen.queryByRole("button", { name: "Mais ações" })).toBeNull();
+      // No lugar do ···, o laudo (Figma 177:16524, estado 7).
+      expect(screen.getByRole("link", { name: "Ver laudo" }).getAttribute("href")).toBe(
+        "/inspections/report?id=i1",
+      );
       await new Promise((done) => setTimeout(done, 400));
       expect(saveInspectionDraft).not.toHaveBeenCalled();
     });

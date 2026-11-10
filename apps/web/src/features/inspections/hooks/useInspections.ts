@@ -26,6 +26,9 @@ export const INSPECTIONS_HREF = "/inspections";
 /** A tela de campo de uma vistoria. */
 export const inspectionHref = (id: string) => `/inspections/edit?id=${encodeURIComponent(id)}`;
 
+/** O laudo de uma vistoria concluída. */
+export const reportHref = (id: string) => `/inspections/report?id=${encodeURIComponent(id)}`;
+
 /** O imóvel de cada vistoria no aparelho: o endereço e o nome do cliente. */
 export function placesOf(
   properties: readonly PropertyRecord[],
@@ -87,6 +90,9 @@ export function useInspections() {
       kindLabel: row.kindLabel,
       statusLabel: row.statusLabel,
       completed: row.status === "completed",
+      // O laudo só da conclusão confirmada: concluída e sem nada na fila (ADR 0054).
+      reportHref:
+        row.status === "completed" && row.sync === "sincronizado" ? reportHref(row.id) : null,
       startedOn: dateOf(row.startedAt),
       startedMeta: startedLabel(row.startedAt),
       sync: row.sync,
