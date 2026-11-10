@@ -210,6 +210,32 @@ describe("InspectionEditScreen", () => {
     expect(screen.queryByText("Não enviado")).toBeNull();
   });
 
+  // Figma 52:2538: na saída, ao lado de cada item, o que ele tinha na entrada; o item sem cópia não mostra nada.
+  it("saída: a condição e a observação da entrada ao lado de cada item copiado, e o subtítulo diz saída", () => {
+    const saida: InspectionRecord = {
+      ...vistoria,
+      kind: "moveOut",
+      referenceInspectionId: "entrada",
+      rooms: [
+        {
+          ...vistoria.rooms[0]!,
+          items: [
+            { ...item("t1", "Piso", 0), referenceCondition: "new", referenceNotes: null },
+            { ...item("t2", "Paredes", 1), referenceCondition: "fair", referenceNotes: "Pintura nova." },
+            item("t9", "Tomadas", 2),
+          ],
+        },
+      ],
+    };
+    open({ inspections: [saida] });
+
+    expect(screen.getByText("Vistoria de saída · Imobiliária Lar · iniciada em 19/10 às 09:12")).toBeDefined();
+    // Dois itens com cópia, cada um nas duas formas (desktop e celular); o Tomadas, posto depois, sem nada.
+    expect(screen.getAllByText("Na entrada")).toHaveLength(4);
+    expect(screen.getAllByText("Pintura nova.")).toHaveLength(2);
+    expect(screen.getAllByText("Sem observação.")).toHaveLength(2);
+  });
+
   it("observação com texto vem aberta; sem texto, sob demanda", async () => {
     const user = userEvent.setup();
     open();

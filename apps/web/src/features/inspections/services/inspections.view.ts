@@ -624,3 +624,59 @@ export function deletedConflictView(
         : `Neste aparelho: ${plural(changes.items, "item alterado", "itens alterados")} em ${plural(changes.rooms, "ambiente", "ambientes")}. ${RECREATE_NOTE}`,
   };
 }
+
+/** Uma entrada de onde a saída pode partir, no Select da Nova vistoria. */
+export interface MoveInOption {
+  value: string;
+  /** "Entrada de 26/10/2026 · 29 itens". */
+  label: string;
+}
+
+/**
+ * As entradas concluídas do imóvel, de onde a saída pode partir (wireframe 68:1878), da mais recente para a mais
+ * antiga. Lê o resumo de cada vistoria com a fila por cima, como a lista (ADR 0048): a concluída offline, ainda na
+ * fila, conta, porque a outbox é serial e a conclusão chega ao servidor antes da saída (ADR 0034). A excluída, ou com a
+ * exclusão na fila, não entra. O rótulo fica no que o resumo tem: o início e o total de itens.
+ */
+export function moveInsOf(
+  summaries: readonly InspectionSummary[],
+  pending: ReadonlyMap<string, PendingRecord>,
+  propertyId: string,
+): MoveInOption[] {
+  const listed = new Map<string, ListedInspection>(summaries.map((summary) => [summary.id, summary]));
+  for (const [id, entry] of pending) {
+    if (entry.removed) listed.delete(id);
+    else listed.set(id, entry.record as InspectionRecord);
+  }
+  return [...listed.values()]
+    .filter(
+      (inspection) =>
+        !inspection.deleting &&
+        inspection.propertyId === propertyId &&
+        inspection.kind === "moveIn" &&
+        inspection.status === "completed",
+    )
+    .toSorted((a, b) => (a.startedAt === b.startedAt ? 0 : a.startedAt < b.startedAt ? 1 : -1))
+    .map((inspection) => ({
+      value: inspection.id,
+      label: `Entrada de ${dateOf(inspection.startedAt)} · ${plural(
+        itemCounts(inspection as Record<string, unknown>).items,
+        "item",
+        "itens",
+      )}`,
+    }));
+}
+
+/** O que a entrada tinha num item da saída, ao lado dele na tela de campo (Figma 42:1632 e 42:1715). */
+export interface ItemReference {
+  /** "Bom". */
+  condition: string;
+  notes: string | null;
+}
+
+/** A cópia da entrada num item da saída; o item sem cópia (a entrada, ou posto depois na saída) não tem. */
+export function referenceOf(item: ItemRecord): ItemReference | undefined {
+  return item.referenceCondition
+    ? { condition: CONDITIONS[item.referenceCondition], notes: item.referenceNotes ?? null }
+    : undefined;
+}

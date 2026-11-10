@@ -54,7 +54,12 @@ const itemOf = (record: InspectionRecord, id: string) =>
   record.rooms.flatMap((room) => room.items).find((entry) => entry.id === id) as ItemRecord;
 
 /** O rascunho em conflito, como a outbox o deixa (#104): o local, o `current` do servidor e a base. */
-function draftOf(local: InspectionRecord, server: InspectionRecord, withBase = true): DraftRecord {
+function draftOf(
+  local: InspectionRecord,
+  server: InspectionRecord,
+  withBase = true,
+  from: InspectionRecord = base,
+): DraftRecord {
   const { version: _version, ...data } = local;
   return {
     id: base.id,
@@ -64,7 +69,7 @@ function draftOf(local: InspectionRecord, server: InspectionRecord, withBase = t
     errors: {},
     conflict: {
       current: { ...server, updatedAt: "2026-10-27T14:58:00+00:00" },
-      base: withBase ? base : undefined,
+      base: withBase ? from : undefined,
       collisions: [],
     },
     updatedAt: "2026-10-27T15:02:00.000Z",
@@ -212,6 +217,35 @@ describe("deletedConflictView", () => {
 });
 
 describe("resolveInspection", () => {
+  // ADR 0052: a escolha no ConflictResolver muda só o campo em disputa; a cópia da entrada segue no item.
+  it("saída: a resolução mantém a referência e a cópia da entrada nos itens", () => {
+    const moveOut = edited((v) => {
+      v.kind = "moveOut";
+      v.referenceInspectionId = "entrada";
+      for (const entry of v.rooms.flatMap((r) => r.items)) {
+        entry.referenceCondition = "new";
+        entry.referenceNotes = null;
+      }
+    });
+    const local = edited((v) => {
+      itemOf(v, "t2").condition = "fair";
+    }, moveOut);
+    const server = edited((v) => {
+      itemOf(v, "t2").condition = "poor";
+      v.version = "V2";
+    }, moveOut);
+    const conflict = inspectionConflictOf(draftOf(local, server, true, moveOut))!;
+
+    const resolved = resolveInspection(conflict, { "room:r1:item:t2:condition": "meu" });
+
+    expect(resolved?.referenceInspectionId).toBe("entrada");
+    expect(itemOf(resolved!, "t2")).toMatchObject({
+      condition: "fair",
+      referenceCondition: "new",
+      referenceNotes: null,
+    });
+  });
+
   it("campos da raiz, do ambiente e do item: 'meu' fica com o local, 'servidor' com o do servidor", () => {
     const local = edited((v) => {
       v.generalNotes = "Duas chaves.";

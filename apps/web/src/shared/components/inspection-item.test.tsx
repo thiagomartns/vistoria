@@ -6,7 +6,14 @@ import { InspectionItem } from "./inspection-item";
 
 // Figma InspectionItem 42:1758: observação sob demanda, indicador de sync e somente leitura.
 
-function open(props: { hasNotes?: boolean; readOnly?: boolean; sync?: "local" | "enviando" } = {}) {
+function open(
+  props: {
+    hasNotes?: boolean;
+    readOnly?: boolean;
+    sync?: "local" | "enviando";
+    reference?: { condition: string; notes: string | null };
+  } = {},
+) {
   render(
     <InspectionItem
       name="Piso"
@@ -15,6 +22,7 @@ function open(props: { hasNotes?: boolean; readOnly?: boolean; sync?: "local" | 
       hasNotes={props.hasNotes ?? false}
       readOnly={props.readOnly}
       sync={props.sync}
+      reference={props.reference}
     />,
   );
 }
@@ -48,5 +56,25 @@ describe("InspectionItem", () => {
     open();
 
     expect(screen.queryByText("Não enviado")).toBeNull();
+  });
+
+  // Figma 42:1632 (desktop, sob o nome) e 42:1715 (celular, faixa acima dos chips): as duas formas estão no DOM, e o CSS
+  // mostra uma por largura.
+  it("na saída, o que o item tinha na entrada: a condição e a observação, ou \"Sem observação.\"", () => {
+    open({ reference: { condition: "Bom", notes: "Pintura nova." } });
+
+    expect(screen.getAllByText("Na entrada")).toHaveLength(2);
+    expect(screen.getAllByText("Bom")).toHaveLength(2);
+    expect(screen.getAllByText("Pintura nova.")).toHaveLength(2);
+  });
+
+  it("na saída, a entrada sem observação diz \"Sem observação.\"", () => {
+    open({ reference: { condition: "Novo", notes: null } });
+    expect(screen.getAllByText("Sem observação.")).toHaveLength(2);
+  });
+
+  it("sem referência (a entrada, ou o item posto depois na saída), nada da entrada aparece", () => {
+    open();
+    expect(screen.queryByText("Na entrada")).toBeNull();
   });
 });

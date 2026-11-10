@@ -15,7 +15,8 @@ import type { InspectionFormValues, ItemFormValues } from "../schemas/inspection
 // Um ambiente da tela de campo (Figma 43:1751): o nome e o progresso, os itens com a condição em chips e a observação
 // sob demanda, e no topo o aviso de recusa do servidor (55:5920) ou do que falta para concluir (164:12824, estado 3), o
 // de conflito, com "Resolver conflito" (55:5132), o da exclusão na fila (estado 6 do #107) ou o da concluída, confirmada
-// ou com a conclusão na fila (164:12824, estados 4 e 5). Ambiente sem itens mostra o EmptyState (52:4071),
+// ou com a conclusão na fila (164:12824, estados 4 e 5). Na saída, cada item mostra o que tinha na entrada (52:2538).
+// Ambiente sem itens mostra o EmptyState (52:4071),
 // sem ação: incluir itens chega com o editor de roteiros (M5). O `form` vem do hook da página.
 
 export interface RoomItemView {
@@ -24,6 +25,8 @@ export interface RoomItemView {
   /** O índice do item no ambiente (o caminho no formulário). */
   index: number;
   sync?: FieldSyncState;
+  /** Só na saída: a condição e a observação da entrada, ao lado do item (Figma 42:1632 e 42:1715). */
+  reference?: { condition: string; notes: string | null };
 }
 
 type Condition = NonNullable<ItemFormValues["condition"]>;
@@ -121,6 +124,7 @@ export function RoomStep({
                       <InspectionItem
                         name={item.name}
                         sync={item.sync}
+                        reference={item.reference}
                         readOnly={readOnly}
                         hasNotes={form.getValues(`${base}.notes`) !== ""}
                         condition={
