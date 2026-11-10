@@ -212,7 +212,9 @@ export const zUpsertInspectionItemDto = z.object({
     name: z.string().min(1).max(60),
     position: z.int().gte(0).lte(2147483647).nullable(),
     condition: zItemCondition.nullish(),
-    notes: z.string().max(1000).nullish()
+    notes: z.string().max(1000).nullish(),
+    referenceCondition: zItemCondition.nullish(),
+    referenceNotes: z.string().max(1000).nullish()
 });
 
 export const zUpsertPropertyDto = z.object({
@@ -240,6 +242,7 @@ export const zUpsertInspectionDto = z.object({
     propertyId: z.uuid().nullable(),
     kind: zInspectionKind.nullable(),
     status: zInspectionStatus.nullable(),
+    referenceInspectionId: z.uuid().nullish(),
     startedAt: z.iso.datetime({ offset: true }).nullable(),
     generalNotes: z.string().max(2000).nullish(),
     rooms: z.array(zUpsertRoomDto).max(40)

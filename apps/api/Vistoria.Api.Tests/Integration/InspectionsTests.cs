@@ -132,24 +132,24 @@ public class InspectionsTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
-    public async Task Put_IgnoresWhatTheServerDefines_AndKeepsStartedAtOnUpdate()
+    // O completedAt é do servidor; startedAt e kind, da criação (ADR 0051). A referência da saída fica em
+    // InspectionMoveOutTests.
+    public async Task Put_IgnoresWhatTheServerDefines_AndKeepsStartedAtAndKindOnUpdate()
     {
         var client = factory.CreateAuthenticatedClient();
         var id = Guid.CreateVersion7();
         var body = await ValidBody(client);
-        var extras = new JsonObject
-        {
-            ["completedAt"] = "2026-10-20T13:00:00+00:00",
-            ["referenceInspectionId"] = Guid.CreateVersion7().ToString(),
-        };
+        var extras = new JsonObject { ["completedAt"] = "2026-10-20T13:00:00+00:00" };
         var created = await Put(client, id, Merge(body, extras));
         created.StatusCode.Should().Be(HttpStatusCode.Created);
 
-        var updated = await Put(client, id, body with { StartedAt = body.StartedAt.AddDays(1) }, ETagOf(created));
+        var updated = await Put(
+            client, id, body with { StartedAt = body.StartedAt.AddDays(1), Kind = "moveOut" }, ETagOf(created));
 
         updated.StatusCode.Should().Be(HttpStatusCode.OK);
         var stored = await Body(updated);
         stored.GetProperty("startedAt").GetDateTimeOffset().Should().Be(body.StartedAt);
+        stored.GetProperty("kind").GetString().Should().Be("moveIn");
         stored.GetProperty("completedAt").ValueKind.Should().Be(JsonValueKind.Null);
         stored.GetProperty("referenceInspectionId").ValueKind.Should().Be(JsonValueKind.Null);
     }

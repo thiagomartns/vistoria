@@ -17,7 +17,8 @@ public class TemplateService(IRepository<Template> templates, IMapper mapper)
 
     // O que as Data Annotations não alcançam: elemento nulo na lista (o validador do MVC o pula) e id repetido. O
     // editor usa os ids como chave de ambiente e item, então eles são únicos no roteiro todo, não só no ambiente.
-    protected override Task ValidateAsync(Template proposed, Guid ownerId, CancellationToken cancellationToken)
+    protected override Task ValidateAsync(
+        Template proposed, Template? current, Guid ownerId, CancellationToken cancellationToken)
     {
         var errors = new Dictionary<string, string[]>(StringComparer.Ordinal);
         var roomIds = new HashSet<Guid>();

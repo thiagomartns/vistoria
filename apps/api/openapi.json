@@ -2363,6 +2363,13 @@
               }
             ]
           },
+          "referenceInspectionId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
           "startedAt": {
             "type": [
               "null",
@@ -2426,6 +2433,23 @@
             ]
           },
           "notes": {
+            "maxLength": 1000,
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "referenceCondition": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ItemCondition"
+              }
+            ]
+          },
+          "referenceNotes": {
             "maxLength": 1000,
             "type": [
               "null",

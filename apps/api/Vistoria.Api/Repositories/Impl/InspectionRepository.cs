@@ -57,12 +57,12 @@ public class InspectionRepository(AppDbContext db) : GenericRepository<Inspectio
             return null;
         }
 
-        // Definidos uma vez (na criação, na saída): o PUT não os regrava. O CompletedAt vem do service, que o carimba
+        // Definidos uma vez, na criação (ADR 0051): o PUT não os regrava. O CompletedAt vem do service, que o carimba
         // na conclusão; uma vistoria só é regravada em andamento, então não há valor antigo a manter.
-        var (startedAt, referenceId) = (current.StartedAt, current.ReferenceInspectionId);
+        var (startedAt, kind, referenceId) = (current.StartedAt, current.Kind, current.ReferenceInspectionId);
         var entry = Db.Entry(current);
         entry.CurrentValues.SetValues(entity);
-        (current.StartedAt, current.ReferenceInspectionId) = (startedAt, referenceId);
+        (current.StartedAt, current.Kind, current.ReferenceInspectionId) = (startedAt, kind, referenceId);
         entry.Property(e => e.Version).OriginalValue = entity.Version;
         entry.State = EntityState.Modified;
 
@@ -76,6 +76,7 @@ public class InspectionRepository(AppDbContext db) : GenericRepository<Inspectio
             foreach (var proposedItem in proposed.Items)
             {
                 // Pelo RoomId, não pelas listas: tirar o item da lista de um ambiente faria o EF excluí-lo como órfão.
+                // A cópia da entrada (ReferenceCondition e ReferenceNotes) fica como nasceu, e item novo nasce sem ela.
                 var item = FindOrAdd(items, proposedItem.Id);
                 item.RoomId = room.Id;
                 (item.Name, item.Position, item.Condition, item.Notes) =

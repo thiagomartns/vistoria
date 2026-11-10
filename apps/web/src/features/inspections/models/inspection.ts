@@ -8,12 +8,15 @@ import type {
 } from "@/shared/api/generated";
 
 // Os nuláveis do DTO de entrada são nuláveis só para o `[Required]` do .NET pegar o campo ausente; aqui eles sempre
-// existem. Os campos que o servidor define (`referenceInspectionId`, `referenceCondition`, `referenceNotes` e as datas)
-// não existem no registro, então nunca vão no `PUT`. A exceção é o `completedAt` da concluída (ADR 0050): ele fica no
-// registro para a tela e o laudo, e o envio o tira do corpo.
+// existem. As datas que o servidor define não existem no registro, então nunca vão no `PUT`. A exceção é o
+// `completedAt` da concluída (ADR 0050): ele fica no registro para a tela e o laudo, e o envio o tira do corpo. A
+// referência da saída (`referenceInspectionId`, `referenceCondition` e `referenceNotes`) já entra no `PUT` de criação
+// (ADR 0051), mas o aparelho ainda não cria saída: o registro fica sem ela até a #170.
 
 /** Item no banco local: o corpo do `PUT`, com o `id` gerado no aparelho. */
-export type ItemRecord = Required<Omit<UpsertInspectionItemDto, "id" | "position">> & {
+export type ItemRecord = Required<
+  Omit<UpsertInspectionItemDto, "id" | "position" | "referenceCondition" | "referenceNotes">
+> & {
   id: string;
   position: number;
 };
@@ -40,7 +43,7 @@ export type InspectionRecord = {
    */
   completedAt?: string;
 } & Required<
-  Omit<UpsertInspectionDto, "propertyId" | "kind" | "status" | "startedAt" | "rooms">
+  Omit<UpsertInspectionDto, "propertyId" | "kind" | "status" | "startedAt" | "rooms" | "referenceInspectionId">
 > & {
     propertyId: string;
     kind: InspectionKind;

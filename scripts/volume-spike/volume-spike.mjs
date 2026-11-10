@@ -39,8 +39,6 @@ const TARGETS = {
   field: { label: "Lista → tela de campo", unit: "ms", phone: 1000, desktop: 500 },
 };
 
-const KIND_LABELS = { moveIn: "Entrada", moveOut: "Saída" };
-
 const DEVICES = [
   {
     name: "phone",
@@ -74,17 +72,22 @@ const median = (values) => {
 const format = (value, unit) =>
   unit === "bytes" ? `${(value / MB).toFixed(1)} MB` : value >= 10_000 ? `${(value / 1000).toFixed(1)} s` : `${Math.round(value)} ms`;
 
-/** Outro aparelho troca o tipo da vistoria (Entrada ↔ Saída), um PUT direto na API; devolve o rótulo novo. */
-async function toggleKind(user, id) {
+/**
+ * Outro aparelho passa a vistoria para outro imóvel do mesmo dono, um PUT direto na API. Não troca o tipo: kind e
+ * referência são da criação, e o PUT de atualização os ignora (ADR 0051).
+ */
+async function moveToAnotherProperty(user, id) {
   const auth = { authorization: `Bearer ${user.token}` };
   const { body: seen } = await callApi(`/api/v1/inspections/${id}`, { headers: auth });
-  const kind = seen.kind === "moveIn" ? "moveOut" : "moveIn";
+  const { body: properties } = await callApi("/api/v1/sync/properties?limit=2", { headers: auth });
+  const other = properties.items.find((property) => property.id !== seen.propertyId);
+  assert.ok(other, "o dev@vistoria.local tem outro imóvel para a vistoria");
   const { status } = await callApi(`/api/v1/inspections/${id}`, {
     method: "PUT",
     headers: { ...auth, "if-match": `"${seen.version}"`, "idempotency-key": uuidv7() },
     body: JSON.stringify({
-      propertyId: seen.propertyId,
-      kind,
+      propertyId: other.id,
+      kind: seen.kind,
       status: seen.status,
       startedAt: seen.startedAt,
       generalNotes: seen.generalNotes,
@@ -104,7 +107,6 @@ async function toggleKind(user, id) {
     }),
   });
   assert.equal(status, 200, `o PUT do outro aparelho respondeu ${status}`);
-  return KIND_LABELS[kind];
 }
 
 /** As linhas que a lista montou. */
@@ -199,7 +201,8 @@ async function measure(browser, device, user, server) {
         ` (origem inteira ${format(storage.usage, "bytes")})`,
     );
 
-    // 3. Live query: outro aparelho troca o tipo da primeira vistoria da lista; o pull da volta da rede a traz.
+    // 3. Live query: outro aparelho troca o imóvel da primeira vistoria da lista; o pull da volta da rede traz o
+    // endereço novo para a linha.
     const target = await page.evaluate(
       (selector) => new URL(document.querySelector(selector).href).searchParams.get("id"),
       TABLE_LINK,
@@ -207,13 +210,18 @@ async function measure(browser, device, user, server) {
     await watchDeltaEnds(page);
     const liveQuery = [];
     for (let run = 0; run < RUNS; run++) {
-      const label = await toggleKind(server.user, target);
+      const before = await page.evaluate(
+        (id) => document.querySelector(`a[href$="id=${id}"]`)?.closest("tr")?.cells[0].textContent,
+        target,
+      );
+      assert.ok(before, "a linha da vistoria tem endereço");
+      await moveToAnotherProperty(server.user, target);
       const changed = page.waitForFunction(
-        ([id, expected]) => {
-          const row = document.querySelector(`a[href$="id=${id}"]`)?.closest("tr");
-          return row && [...row.cells].some((cell) => cell.textContent === expected) && performance.now();
+        ([id, previous]) => {
+          const now = document.querySelector(`a[href$="id=${id}"]`)?.closest("tr")?.cells[0].textContent;
+          return now && now !== previous && performance.now();
         },
-        [target, label],
+        [target, before],
         { polling: "raf", timeout: 60_000 },
       );
       const ends = await page.evaluate(() => window.__deltaEnds.length);
