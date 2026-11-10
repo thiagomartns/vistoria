@@ -5,9 +5,10 @@ using Vistoria.Api.Model.Configurations;
 namespace Vistoria.Api.Data.DTO.V1;
 
 // Sem id nem version na raiz, como o UpsertClientDto (ADR 0028); rooms[].id e items[].id vão no corpo, e as listas são
-// completas: o que não vier é excluído. Nada do que o servidor define entra aqui (completedAt, nem os campos de
-// referência da saída): no corpo, são ignorados como qualquer campo desconhecido. Os nuláveis com [Required] são só
-// para pegar o campo ausente: não nuláveis, viriam Guid.Empty, 0 ou o primeiro valor do enum em silêncio.
+// completas: o que não vier é excluído. O completedAt, que o servidor define, não entra aqui: no corpo, é ignorado
+// como qualquer campo desconhecido. Kind, referenceInspectionId e a cópia dos itens valem só na criação; num PUT de
+// atualização ficam os gravados (ADR 0051). Os nuláveis com [Required] são só para pegar o campo ausente: não
+// nuláveis, viriam Guid.Empty, 0 ou o primeiro valor do enum em silêncio.
 public sealed record UpsertInspectionDto
 {
     [Required(ErrorMessage = "Informe o imóvel.")]
@@ -18,6 +19,9 @@ public sealed record UpsertInspectionDto
 
     [Required(ErrorMessage = "Informe a situação da vistoria.")]
     public InspectionStatus? Status { get; init; }
+
+    // Só na saída, e obrigatório nela: uma entrada concluída do mesmo imóvel.
+    public Guid? ReferenceInspectionId { get; init; }
 
     [Required(ErrorMessage = "Informe o início da vistoria.")]
     public DateTimeOffset? StartedAt { get; init; }
@@ -72,6 +76,12 @@ public sealed record UpsertInspectionItemDto
 
     [MaxLength(InspectionItemConfiguration.NotesMaxLength, ErrorMessage = "As observações podem ter até {1} caracteres.")]
     public string? Notes { get; init; }
+
+    // Só na saída: a condição e as observações do item na entrada, copiadas pelo front.
+    public ItemCondition? ReferenceCondition { get; init; }
+
+    [MaxLength(InspectionItemConfiguration.NotesMaxLength, ErrorMessage = "As observações podem ter até {1} caracteres.")]
+    public string? ReferenceNotes { get; init; }
 }
 
 /// <summary>

@@ -199,6 +199,7 @@ export type UpsertInspectionDto = {
     propertyId: null | string;
     kind: null | InspectionKind;
     status: null | InspectionStatus;
+    referenceInspectionId?: null | string;
     startedAt: null | string;
     generalNotes?: null | string;
     rooms: Array<UpsertRoomDto>;
@@ -210,6 +211,8 @@ export type UpsertInspectionItemDto = {
     position: null | number;
     condition?: null | ItemCondition;
     notes?: null | string;
+    referenceCondition?: null | ItemCondition;
+    referenceNotes?: null | string;
 };
 
 export type UpsertPropertyDto = {

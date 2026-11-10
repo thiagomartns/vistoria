@@ -54,7 +54,8 @@ public class CommittedOpenApiTests
             .Should().Equal("id", "name", "position");
     }
 
-    // O agregado inteiro vai e volta no corpo da vistoria; os campos de referência dos itens são só de saída.
+    // O agregado inteiro vai e volta no corpo da vistoria; a referência e as cópias dos itens são só de saída e entram
+    // no corpo da criação (ADR 0051).
     [Theory]
     [InlineData("get", "getInspection", new[] { "200", "401", "404" })]
     [InlineData("put", "upsertInspection",
@@ -77,7 +78,10 @@ public class CommittedOpenApiTests
         schemas.GetProperty("InspectionItemDto").GetProperty("properties").EnumerateObject().Select(p => p.Name)
             .Should().Equal("id", "name", "position", "condition", "notes", "referenceCondition", "referenceNotes");
         schemas.GetProperty("UpsertInspectionItemDto").GetProperty("properties").EnumerateObject().Select(p => p.Name)
-            .Should().Equal("id", "name", "position", "condition", "notes");
+            .Should().Equal("id", "name", "position", "condition", "notes", "referenceCondition", "referenceNotes");
+        schemas.GetProperty("UpsertInspectionDto").GetProperty("properties").EnumerateObject().Select(p => p.Name)
+            .Should().Equal(
+                "propertyId", "kind", "status", "referenceInspectionId", "startedAt", "generalNotes", "rooms");
     }
 
     // Na V1 só a vistoria é excluída (vision.md, "Regras de negócio"): 204 sem corpo e os erros da tabela de Endpoints.

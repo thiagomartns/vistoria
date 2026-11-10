@@ -17,7 +17,8 @@ public class PropertyService(IRepository<Property> properties, IRepository<Clien
 
     // Cliente de outro dono responde igual ao inexistente, para o id dele não vazar. Cliente não é excluído na V1,
     // então ele não some entre esta leitura e o SaveChanges.
-    protected override async Task ValidateAsync(Property proposed, Guid ownerId, CancellationToken cancellationToken)
+    protected override async Task ValidateAsync(
+        Property proposed, Property? current, Guid ownerId, CancellationToken cancellationToken)
     {
         var client = await clients.FindByIdAsync(proposed.ClientId, cancellationToken);
         if (client is null || client.OwnerId != ownerId)

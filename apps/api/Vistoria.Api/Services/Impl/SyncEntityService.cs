@@ -89,7 +89,7 @@ public abstract class SyncEntityService<TEntity, TDto>(IRepository<TEntity> repo
 
         proposed.Id = id;
         proposed.OwnerId = ownerId;
-        await ValidateAsync(proposed, ownerId, cancellationToken);
+        await ValidateAsync(proposed, current, ownerId, cancellationToken);
 
         if (baseVersion is null)
         {
@@ -122,8 +122,12 @@ public abstract class SyncEntityService<TEntity, TDto>(IRepository<TEntity> repo
             : throw await ConflictWithLatest(ownerId, id, cancellationToken);
     }
 
-    /// <summary>Regras que dependem de outros registros (ex.: o cliente do imóvel). Lança <c>ValidationException</c>.</summary>
-    protected virtual Task ValidateAsync(TEntity proposed, Guid ownerId, CancellationToken cancellationToken) =>
+    /// <summary>
+    /// Regras que dependem de outros registros (ex.: o cliente do imóvel). Lança <c>ValidationException</c>.
+    /// <paramref name="current"/> é o registro vivo que será regravado, ou nulo na criação.
+    /// </summary>
+    protected virtual Task ValidateAsync(
+        TEntity proposed, TEntity? current, Guid ownerId, CancellationToken cancellationToken) =>
         Task.CompletedTask;
 
     /// <summary>
