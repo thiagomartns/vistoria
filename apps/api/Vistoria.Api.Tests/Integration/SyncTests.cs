@@ -211,6 +211,7 @@ public class SyncTests(SyncTests.OwnDatabaseFactory factory) : IClassFixture<Syn
         page.Items.Select(Id).Should().Equal(completed);
         page.Items[0].GetProperty("status").GetString().Should().Be("completed");
         page.Items[0].GetProperty("completedAt").GetDateTimeOffset().Should().Be(factory.Time.GetUtcNow());
+        page.Items[0].GetProperty("completedBy").GetProperty("id").GetGuid().Should().Be(user.Id);
     }
 
     // Sem N+1: raiz, ambientes e itens saem de uma consulta só, com uma vistoria na página ou cinco.

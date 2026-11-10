@@ -17,6 +17,7 @@ public class InspectionConfiguration : IEntityTypeConfiguration<Inspection>
         builder.Property(i => i.Kind).HasConversion<string>().HasMaxLength(KindMaxLength);
         builder.Property(i => i.Status).HasConversion<string>().HasMaxLength(StatusMaxLength);
         builder.Property(i => i.GeneralNotes).HasMaxLength(GeneralNotesMaxLength);
+        builder.Property(i => i.CompletedByName).HasMaxLength(UserConfiguration.NameMaxLength);
 
         // Imóvel e vistoria de referência não são excluídos fisicamente pelo app: Restrict nunca dispara por ele.
         builder.HasOne<Property>().WithMany().HasForeignKey(i => i.PropertyId).OnDelete(DeleteBehavior.Restrict);

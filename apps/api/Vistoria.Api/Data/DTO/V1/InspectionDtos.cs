@@ -5,7 +5,7 @@ using Vistoria.Api.Model.Configurations;
 namespace Vistoria.Api.Data.DTO.V1;
 
 // Sem id nem version na raiz, como o UpsertClientDto (ADR 0028); rooms[].id e items[].id vão no corpo, e as listas são
-// completas: o que não vier é excluído. O completedAt, que o servidor define, não entra aqui: no corpo, é ignorado
+// completas: o que não vier é excluído. O completedAt e o completedBy, que o servidor define, não entram aqui: no corpo, é ignorado
 // como qualquer campo desconhecido. Kind, referenceInspectionId e a cópia dos itens valem só na criação; num PUT de
 // atualização ficam os gravados (ADR 0051). Os nuláveis com [Required] são só para pegar o campo ausente: não
 // nuláveis, viriam Guid.Empty, 0 ou o primeiro valor do enum em silêncio.
@@ -86,7 +86,8 @@ public sealed record UpsertInspectionItemDto
 
 /// <summary>
 /// <c>version</c> é o mesmo base64 do <c>ETag</c>, sem aspas, e é a versão do agregado inteiro. Ambientes e itens em
-/// ordem de <c>position</c>; os excluídos não aparecem.
+/// ordem de <c>position</c>; os excluídos não aparecem. <c>completedAt</c> e <c>completedBy</c> só existem na concluída,
+/// gravados pelo servidor na conclusão.
 /// </summary>
 public sealed record InspectionDto(
     Guid Id,
@@ -96,11 +97,15 @@ public sealed record InspectionDto(
     Guid? ReferenceInspectionId,
     DateTimeOffset StartedAt,
     DateTimeOffset? CompletedAt,
+    InspectionAuthorDto? CompletedBy,
     string? GeneralNotes,
     IReadOnlyList<RoomDto> Rooms,
     string Version,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
+
+/// <summary>Quem concluiu a vistoria, com o nome copiado na conclusão: trocar de nome depois não muda o laudo (ADR 0053).</summary>
+public sealed record InspectionAuthorDto(Guid Id, string Name);
 
 public sealed record RoomDto(Guid Id, string Name, int Position, string? Notes, IReadOnlyList<InspectionItemDto> Items);
 

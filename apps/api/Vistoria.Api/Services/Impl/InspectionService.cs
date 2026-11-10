@@ -7,7 +7,11 @@ using Vistoria.Api.Repositories;
 namespace Vistoria.Api.Services.Impl;
 
 public class InspectionService(
-    IInspectionRepository inspections, IRepository<Property> properties, IMapper mapper, TimeProvider time)
+    IInspectionRepository inspections,
+    IRepository<Property> properties,
+    IUserRepository users,
+    IMapper mapper,
+    TimeProvider time)
     : SyncEntityService<Inspection, InspectionDto>(inspections, mapper), IInspectionService
 {
     private readonly IMapper _mapper = mapper;
@@ -21,7 +25,8 @@ public class InspectionService(
 
     // O que as Data Annotations não alcançam. Imóvel (ou entrada de referência) de outro dono responde igual ao
     // inexistente, para o id dele não vazar. A vistoria concluída (inclusive a que já nasce concluída, feita toda
-    // offline) ganha o CompletedAt aqui; o que o cliente mandou nele nunca chega ao modelo. Kind e referência são da
+    // offline) ganha aqui o CompletedAt e a autoria: o usuário do token, com o nome copiado (ADR 0053). O que o cliente
+    // mandou neles nunca chega ao modelo. Kind e referência são da
     // criação (ADR 0051): na regravação, ficam os do registro atual, e as cópias dos itens, o repositório não toca.
     protected override async Task ValidateAsync(
         Inspection proposed, Inspection? current, Guid ownerId, CancellationToken cancellationToken)
@@ -73,6 +78,8 @@ public class InspectionService(
         }
 
         proposed.CompletedAt = completing ? time.GetUtcNow() : null;
+        proposed.CompletedById = completing ? ownerId : null;
+        proposed.CompletedByName = completing ? (await users.FindByIdAsync(ownerId, cancellationToken))?.Name : null;
     }
 
     // Na criação: a saída aponta para uma entrada concluída, viva, do mesmo imóvel e do mesmo dono; a entrada não tem

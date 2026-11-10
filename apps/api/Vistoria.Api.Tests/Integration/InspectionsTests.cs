@@ -40,6 +40,7 @@ public class InspectionsTests(ApiFactory factory) : IClassFixture<ApiFactory>
             stored.GetProperty("status").GetString().Should().Be("inProgress");
             stored.GetProperty("startedAt").GetDateTimeOffset().Should().Be(body.StartedAt);
             stored.GetProperty("completedAt").ValueKind.Should().Be(JsonValueKind.Null);
+            stored.GetProperty("completedBy").ValueKind.Should().Be(JsonValueKind.Null);
             stored.GetProperty("generalNotes").GetString().Should().Be(body.GeneralNotes);
             stored.GetProperty("createdAt").GetDateTimeOffset().Should().Be(factory.Time.GetUtcNow());
             stored.TryGetProperty("ownerId", out _).Should().BeFalse();

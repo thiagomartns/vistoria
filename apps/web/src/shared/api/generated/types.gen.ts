@@ -35,6 +35,11 @@ export type HealthDto = {
     status: string;
 };
 
+export type InspectionAuthorDto = {
+    id: string;
+    name: string;
+};
+
 export type InspectionDto = {
     id: string;
     propertyId: string;
@@ -43,6 +48,7 @@ export type InspectionDto = {
     referenceInspectionId: null | string;
     startedAt: string;
     completedAt: null | string;
+    completedBy: null | InspectionAuthorDto;
     generalNotes: null | string;
     rooms: Array<RoomDto>;
     version: string;

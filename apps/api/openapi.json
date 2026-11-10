@@ -1704,6 +1704,22 @@
           }
         }
       },
+      "InspectionAuthorDto": {
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
       "InspectionDto": {
         "required": [
           "id",
@@ -1713,6 +1729,7 @@
           "referenceInspectionId",
           "startedAt",
           "completedAt",
+          "completedBy",
           "generalNotes",
           "rooms",
           "version",
@@ -1752,6 +1769,16 @@
               "string"
             ],
             "format": "date-time"
+          },
+          "completedBy": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/InspectionAuthorDto"
+              }
+            ]
           },
           "generalNotes": {
             "type": [

@@ -12,7 +12,8 @@ public interface IInspectionService
     /// de <paramref name="ifMatch"/> do <c>IClientService</c>. Excluída → <c>DeletedException</c>; concluída →
     /// <c>LockedException</c>, antes da versão. Depois da versão, <c>ValidationException</c> no caminho do campo para:
     /// conclusão sem ambiente, ambiente sem item ou item sem condição, imóvel inexistente ou de outro dono, ambiente ou
-    /// item nulo, e id repetido na vistoria ou já usado em outra. Concluir grava o <c>CompletedAt</c> do servidor.
+    /// item nulo, e id repetido na vistoria ou já usado em outra. Concluir grava o <c>CompletedAt</c> do servidor e a
+    /// autoria (o usuário do token, com o nome copiado).
     /// </summary>
     Task<(InspectionDto Inspection, bool Created)> UpsertAsync(
         Guid ownerId, Guid id, string? ifMatch, UpsertInspectionDto request, CancellationToken cancellationToken);
