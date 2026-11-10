@@ -238,8 +238,8 @@ describe("NewInspectionScreen", () => {
   // Wireframe 68:1646: a mais recente vem escolhida; a concluída offline, ainda na fila, também conta.
   it("saída: lista as entradas concluídas do imóvel, a mais recente escolhida, e cria a saída copiada dela", async () => {
     const user = userEvent.setup();
-    const older = moveIn("antiga", "p1", "2026-03-01T09:00:00Z");
-    const newer = moveIn("recente", "p1", "2026-10-20T09:00:00Z");
+    const older = moveIn("antiga", "p1", new Date(2026, 2, 1, 9, 0).toISOString());
+    const newer = moveIn("recente", "p1", new Date(2026, 9, 20, 14, 30).toISOString());
     inspections.summaries = [summaryOf(older)];
     inspections.records = new Map([
       [older.id, older],
@@ -256,13 +256,13 @@ describe("NewInspectionScreen", () => {
     await chooseMoveOut(user, "Rua das Flores, 120 · Imobiliária Lar");
 
     const select = screen.getByLabelText("Vistoria de entrada");
-    expect(select.textContent).toBe("Entrada de 20/10/2026 · 2 itens");
+    expect(select.textContent).toBe("Entrada de 20/10/2026 às 14:30 · 2 itens");
     await user.click(select);
     expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual([
-      "Entrada de 20/10/2026 · 2 itens",
-      "Entrada de 01/03/2026 · 2 itens",
+      "Entrada de 20/10/2026 às 14:30 · 2 itens",
+      "Entrada de 01/03/2026 às 09:00 · 2 itens",
     ]);
-    await user.click(screen.getByRole("option", { name: "Entrada de 20/10/2026 · 2 itens" }));
+    await user.click(screen.getByRole("option", { name: "Entrada de 20/10/2026 às 14:30 · 2 itens" }));
     await user.click(screen.getByRole("button", { name: "Começar vistoria" }));
 
     await vi.waitFor(() =>

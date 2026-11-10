@@ -489,16 +489,16 @@ describe("moveInsOf", () => {
 
   it("as entradas concluídas do imóvel, da mais recente para a mais antiga, com o início e o total de itens", () => {
     const summaries = [
-      summaryOf(completed("antiga", { startedAt: "2026-03-01T09:00:00.000Z" })),
-      summaryOf(completed("recente", { startedAt: "2026-10-20T09:00:00.000Z" })),
+      summaryOf(completed("antiga", { startedAt: new Date(2026, 2, 1, 9, 0).toISOString() })),
+      summaryOf(completed("recente", { startedAt: new Date(2026, 9, 20, 14, 30).toISOString() })),
       summaryOf(inspection("andamento")),
       summaryOf(completed("saida", { kind: "moveOut" })),
       summaryOf(completed("outro-imovel", { propertyId: "p2" })),
     ];
 
     expect(moveInsOf(summaries, NONE, "p1")).toEqual([
-      { value: "recente", label: "Entrada de 20/10/2026 · 2 itens" },
-      { value: "antiga", label: "Entrada de 01/03/2026 · 2 itens" },
+      { value: "recente", label: "Entrada de 20/10/2026 às 14:30 · 2 itens" },
+      { value: "antiga", label: "Entrada de 01/03/2026 às 09:00 · 2 itens" },
     ]);
   });
 

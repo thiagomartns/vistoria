@@ -237,6 +237,9 @@ export function dateOf(iso: string): string {
   return Number.isNaN(date.getTime()) ? "" : DATE.format(date);
 }
 
+/** "09:12". */
+const timeOf = (iso: string) => TIME.format(new Date(iso));
+
 const dayAndTime = (date: Date) => ({ day: DAY.format(date), time: TIME.format(date) });
 
 /** "Iniciada em 19/10, 09:12" (meta da linha no celular). */
@@ -628,7 +631,7 @@ export function deletedConflictView(
 /** Uma entrada de onde a saída pode partir, no Select da Nova vistoria. */
 export interface MoveInOption {
   value: string;
-  /** "Entrada de 26/10/2026 · 29 itens". */
+  /** "Entrada de 26/10/2026 às 09:12 · 29 itens". */
   label: string;
 }
 
@@ -636,7 +639,8 @@ export interface MoveInOption {
  * As entradas concluídas do imóvel, de onde a saída pode partir (wireframe 68:1878), da mais recente para a mais
  * antiga. Lê o resumo de cada vistoria com a fila por cima, como a lista (ADR 0048): a concluída offline, ainda na
  * fila, conta, porque a outbox é serial e a conclusão chega ao servidor antes da saída (ADR 0034). A excluída, ou com a
- * exclusão na fila, não entra. O rótulo fica no que o resumo tem: o início e o total de itens.
+ * exclusão na fila, não entra. O rótulo fica no que o resumo tem: o início, com a hora (duas no mesmo dia se
+ * distinguem), e o total de itens.
  */
 export function moveInsOf(
   summaries: readonly InspectionSummary[],
@@ -659,7 +663,7 @@ export function moveInsOf(
     .toSorted((a, b) => (a.startedAt === b.startedAt ? 0 : a.startedAt < b.startedAt ? 1 : -1))
     .map((inspection) => ({
       value: inspection.id,
-      label: `Entrada de ${dateOf(inspection.startedAt)} · ${plural(
+      label: `Entrada de ${dateOf(inspection.startedAt)} às ${timeOf(inspection.startedAt)} · ${plural(
         itemCounts(inspection as Record<string, unknown>).items,
         "item",
         "itens",
