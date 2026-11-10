@@ -146,6 +146,20 @@ try {
   ok("entrou e voltou para /inspections");
   const precached = await page.evaluate(async () => {
     const registration = await navigator.serviceWorker.ready;
+    // O `ready` resolve com o worker em `registration.active` ainda em "activating" (#188): espera o fim da ativação,
+    // com prazo, para a asserção abaixo valer pelo worker e não pela corrida.
+    const worker = registration.active;
+    if (worker && worker.state === "activating") {
+      await new Promise((done) => {
+        const timer = setTimeout(done, 10_000);
+        worker.addEventListener("statechange", () => {
+          if (worker.state !== "activating") {
+            clearTimeout(timer);
+            done();
+          }
+        });
+      });
+    }
     const keys = await caches.keys();
     let count = 0;
     for (const key of keys) count += (await (await caches.open(key)).keys()).length;
