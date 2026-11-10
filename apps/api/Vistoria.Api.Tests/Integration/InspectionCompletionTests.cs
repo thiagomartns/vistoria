@@ -2,22 +2,26 @@ using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using AwesomeAssertions;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Vistoria.Api.Infrastructure.Errors;
+using Vistoria.Api.Model;
+using Vistoria.Api.Model.Context;
 using Vistoria.Api.Tests.Support;
 
 namespace Vistoria.Api.Tests.Integration;
 
 // Fase 3 (backend.md, "Regra do agregado" e "Testes de integração"): o PUT com status completed só passa com a vistoria
-// completa, ganha o CompletedAt do servidor e trava a vistoria. As corridas contra uma conclusão ficam em
+// completa, ganha o CompletedAt e a autoria do servidor e trava a vistoria. As corridas contra uma conclusão ficam em
 // OptimisticConcurrencyTests.
 public class InspectionCompletionTests(ApiFactory factory) : IClassFixture<ApiFactory>
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task Completing_Returns200Completed_WithCompletedAtFromTheServer_IgnoringTheClients()
+    public async Task Completing_Returns200Completed_WithCompletedAtAndAuthorFromTheServer_IgnoringTheClients()
     {
-        var client = factory.CreateAuthenticatedClient();
+        var (client, userId) = await AuthorClient("Thiago Martins");
         var id = Guid.CreateVersion7();
         var body = await CompleteBody(client);
         var created = await Put(client, id, body);
@@ -31,23 +35,56 @@ public class InspectionCompletionTests(ApiFactory factory) : IClassFixture<ApiFa
         {
             stored.GetProperty("status").GetString().Should().Be("completed");
             stored.GetProperty("completedAt").GetDateTimeOffset().Should().Be(completedAt);
+            AssertAuthor(stored, userId, "Thiago Martins");
             stored.GetProperty("startedAt").GetDateTimeOffset().Should().Be(body.StartedAt);
         }
     }
 
-    // Vistoria feita toda offline, enviada já concluída: a mesma validação, e nasce com CompletedAt.
+    // Vistoria feita toda offline, enviada já concluída: a mesma validação, e nasce com CompletedAt e autoria.
     [Fact]
-    public async Task CreatingAlreadyCompleted_Returns201WithCompletedAt()
+    public async Task CreatingAlreadyCompleted_Returns201WithCompletedAtAndAuthor()
     {
-        var client = factory.CreateAuthenticatedClient();
+        var (client, userId) = await AuthorClient("Thiago Martins");
         var id = Guid.CreateVersion7();
 
-        var response = await Put(client, id, await CompleteBody(client) with { Status = "completed" });
+        var response = await Put(client, id, CompletedWith(await CompleteBody(client), "2020-01-01T00:00:00+00:00"));
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         var stored = await Body(response);
         stored.GetProperty("status").GetString().Should().Be("completed");
         stored.GetProperty("completedAt").GetDateTimeOffset().Should().Be(factory.Time.GetUtcNow());
+        AssertAuthor(stored, userId, "Thiago Martins");
+    }
+
+    // O nome é copiado na conclusão (ADR 0053): o laudo continua com o nome de quem concluiu naquele momento.
+    [Fact]
+    public async Task Author_KeepsTheNameFromTheCompletion_WhenTheUserIsRenamedLater()
+    {
+        var (client, userId) = await AuthorClient("Thiago Martins");
+        var (id, _, _, _) = await CreateCompleted(client);
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<AppDbContext>().Users
+                .Where(u => u.Id == userId)
+                .ExecuteUpdateAsync(u => u.SetProperty(x => x.Name, "Thiago M. Gomes"), Ct);
+        }
+
+        AssertAuthor(await Body(await client.GetAsync(PathOf(id), Ct)), userId, "Thiago Martins");
+    }
+
+    // Em andamento não tem autoria, nem quando o cliente manda uma.
+    [Fact]
+    public async Task InProgress_HasNoAuthor_EvenIfTheClientSendsOne()
+    {
+        var (client, _) = await AuthorClient("Thiago Martins");
+        var body = JsonSerializer.SerializeToNode(await CompleteBody(client), JsonSerializerOptions.Web)!.AsObject();
+        body["completedBy"] = new JsonObject { ["id"] = Guid.CreateVersion7(), ["name"] = "Outra pessoa" };
+
+        var response = await Put(client, Guid.CreateVersion7(), body);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        (await Body(response)).GetProperty("completedBy").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     public static TheoryData<string, string> IncompleteCases => new()
@@ -195,13 +232,42 @@ public class InspectionCompletionTests(ApiFactory factory) : IClassFixture<ApiFa
         return (id, body with { Status = "completed" }, ETagOf(created), ETagOf(completed));
     }
 
-    // O corpo de conclusão com um completedAt do cliente, que o servidor ignora.
+    // O corpo de conclusão com um completedAt e um completedBy do cliente, que o servidor ignora.
     private static JsonObject CompletedWith(InspectionBody body, string completedAt)
     {
         var completed = body with { Status = "completed" };
         var root = JsonSerializer.SerializeToNode(completed, JsonSerializerOptions.Web)!.AsObject();
         root["completedAt"] = completedAt;
+        root["completedBy"] = new JsonObject { ["id"] = Guid.CreateVersion7(), ["name"] = "Outra pessoa" };
         return root;
+    }
+
+    // Um usuário gravado de verdade, com nome: o CreateAuthenticatedClient só emite o token, sem a linha em users.
+    private async Task<(HttpClient Client, Guid UserId)> AuthorClient(string name)
+    {
+        var userId = Guid.CreateVersion7();
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.Users.Add(new User
+            {
+                Id = userId,
+                Name = name,
+                Email = $"{userId:N}@vistoria.test",
+                PasswordHash = "-",
+                CreatedAt = factory.Time.GetUtcNow(),
+            });
+            await db.SaveChangesAsync(Ct);
+        }
+
+        return (factory.CreateAuthenticatedClient(userId), userId);
+    }
+
+    private static void AssertAuthor(JsonElement stored, Guid userId, string name)
+    {
+        var author = stored.GetProperty("completedBy");
+        author.GetProperty("id").GetGuid().Should().Be(userId);
+        author.GetProperty("name").GetString().Should().Be(name);
     }
 
     private static async Task<Guid> CreateProperty(HttpClient client)

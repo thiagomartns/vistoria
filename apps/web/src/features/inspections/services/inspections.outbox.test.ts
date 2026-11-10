@@ -24,7 +24,8 @@ import {
 
 // A vistoria na outbox única, com o executor de verdade e as mutationFns de verdade de properties e inspections,
 // contra um servidor falso que, como a API, recusa a vistoria de um imóvel que ele não conhece (ADR 0034). A conclusão
-// (#179) passa pelo mesmo `PUT`: o servidor falso grava o `completedAt`, recusa item sem condição ou responde `locked`.
+// (#179) passa pelo mesmo `PUT`: o servidor falso grava o `completedAt` e o `completedBy` (#183), recusa item sem
+// condição ou responde `locked`.
 
 let canSend = true;
 
@@ -87,6 +88,7 @@ const validation = (errors: Record<string, string[]>) =>
   );
 
 const COMPLETED_AT = "2026-10-19T14:32:00+00:00";
+const COMPLETED_BY = { id: "01a16032-2dfc-7334-9752-3da4fdcc2e88", name: "Thiago Martins" };
 
 /** A resposta 409 `locked`, com o `current` da vistoria concluída em outro aparelho. */
 const locked = (current: Record<string, unknown>) =>
@@ -104,7 +106,8 @@ const locked = (current: Record<string, unknown>) =>
 
 /**
  * O servidor falso: grava o imóvel (ou o recusa, com `rejectProperty`) e só aceita a vistoria de um imóvel gravado.
- * Como a API, a conclusão exige condição em todos os itens e ganha o `completedAt`; com `lockedBy`, toda vistoria já
+ * Como a API, a conclusão exige condição em todos os itens e ganha o `completedAt` e o
+ * `completedBy`; com `lockedBy`, toda vistoria já
  * está concluída por outro aparelho (409 `locked` com esse `current`). Anota cada `PUT` com a entidade, o id, a chave e
  * o corpo.
  */
@@ -139,9 +142,18 @@ function fakeServer({
           }),
         );
         if (Object.keys(errors).length > 0) return validation(errors);
-        return Response.json({ ...body, id, version: "AAAAAAAAB9R=", completedAt: COMPLETED_AT });
+        return Response.json({
+          ...body,
+          id,
+          version: "AAAAAAAAB9R=",
+          completedAt: COMPLETED_AT,
+          completedBy: COMPLETED_BY,
+        });
       }
-      return Response.json({ ...body, id, version: "AAAAAAAAB9Q=", completedAt: null }, { status: 201 });
+      return Response.json(
+        { ...body, id, version: "AAAAAAAAB9Q=", completedAt: null, completedBy: null },
+        { status: 201 },
+      );
     },
   });
   return { client, sent };
@@ -336,7 +348,7 @@ describe("concluir pela outbox (#179)", () => {
     });
   }
 
-  it("offline: o PUT com status completed fica na fila; com a rede, sai uma vez só e a store fica concluída com o completedAt", async () => {
+  it("offline: o PUT com status completed fica na fila; com a rede, sai uma vez só e a store fica concluída com o completedAt e o completedBy", async () => {
     const server = fakeServer();
     const local = localStores();
     const { outbox, inspections, inspection } = await synced(server, local);
@@ -366,11 +378,13 @@ describe("concluir pela outbox (#179)", () => {
     expect(completions).toHaveLength(1);
     expect(completions[0]?.key).toBe(queued?.idempotencyKey);
     expect(completions[0]?.body).not.toHaveProperty("completedAt");
+    expect(completions[0]?.body).not.toHaveProperty("completedBy");
     expect(local.confirmed.get(inspection.id)).toEqual({
       ...values,
       status: "completed",
       version: "AAAAAAAAB9R=",
       completedAt: COMPLETED_AT,
+      completedBy: COMPLETED_BY,
     });
     expect(local.drafts.has(inspection.id)).toBe(false);
   });
@@ -417,6 +431,7 @@ describe("concluir pela outbox (#179)", () => {
       status: "completed",
       version: "AAAAAAAAB9S=",
       completedAt: COMPLETED_AT,
+      completedBy: COMPLETED_BY,
       createdAt: "2026-10-19T09:12:00+00:00",
       updatedAt: COMPLETED_AT,
       referenceInspectionId: null,
@@ -438,6 +453,7 @@ describe("concluir pela outbox (#179)", () => {
       status: "completed",
       version: "AAAAAAAAB9S=",
       completedAt: COMPLETED_AT,
+      completedBy: COMPLETED_BY,
     });
     expect(local.drafts.has(inspection.id)).toBe(false);
     await new Promise((done) => setTimeout(done, 300));

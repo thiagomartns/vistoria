@@ -57,8 +57,8 @@ public class InspectionRepository(AppDbContext db) : GenericRepository<Inspectio
             return null;
         }
 
-        // Definidos uma vez, na criação (ADR 0051): o PUT não os regrava. O CompletedAt vem do service, que o carimba
-        // na conclusão; uma vistoria só é regravada em andamento, então não há valor antigo a manter.
+        // Definidos uma vez, na criação (ADR 0051): o PUT não os regrava. O CompletedAt e a autoria vêm do service, que
+        // os carimba na conclusão; uma vistoria só é regravada em andamento, então não há valor antigo a manter.
         var (startedAt, kind, referenceId) = (current.StartedAt, current.Kind, current.ReferenceInspectionId);
         var entry = Db.Entry(current);
         entry.CurrentValues.SetValues(entity);

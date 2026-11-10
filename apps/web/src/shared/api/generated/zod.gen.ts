@@ -33,6 +33,11 @@ export const zHealthDto = z.object({
     status: z.string()
 });
 
+export const zInspectionAuthorDto = z.object({
+    id: z.uuid(),
+    name: z.string()
+});
+
 export const zInspectionKind = z.enum(['moveIn', 'moveOut']);
 
 export const zInspectionStatus = z.enum(['inProgress', 'completed']);
@@ -132,6 +137,7 @@ export const zInspectionDto = z.object({
     referenceInspectionId: z.uuid().nullable(),
     startedAt: z.iso.datetime({ offset: true }),
     completedAt: z.iso.datetime({ offset: true }).nullable(),
+    completedBy: zInspectionAuthorDto.nullable(),
     generalNotes: z.string().nullable(),
     rooms: z.array(zRoomDto),
     version: z.string(),

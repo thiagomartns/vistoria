@@ -16,6 +16,7 @@ describe("inspectionRecordOf", () => {
       referenceInspectionId: "i0",
       startedAt: "2026-10-26T13:00:00Z",
       completedAt: null,
+      completedBy: null,
       generalNotes: "Chaves com o porteiro.",
       rooms: [
         {
@@ -90,6 +91,7 @@ describe("inspectionRecordOf", () => {
       referenceInspectionId: null,
       startedAt: "2026-10-26T13:00:00Z",
       completedAt: null,
+      completedBy: null,
       generalNotes: null,
       rooms: [{ id: "r1", name: "Sala", position: 0, notes: null, items: [item] }],
       version: "AAAAAAAAB9M=",
@@ -103,7 +105,7 @@ describe("inspectionRecordOf", () => {
     expect(Object.keys(record.rooms[0]!.items[0]!)).toEqual(["id", "name", "position", "condition", "notes"]);
   });
 
-  it("concluída: o completedAt do servidor fica no registro (ADR 0050); em andamento, a chave nem existe", () => {
+  it("concluída: o completedAt e o completedBy do servidor ficam no registro (ADR 0050, 0053); em andamento, nem existem", () => {
     const dto: InspectionDto = {
       id: "i2",
       propertyId: "p1",
@@ -112,6 +114,7 @@ describe("inspectionRecordOf", () => {
       referenceInspectionId: null,
       startedAt: "2026-10-19T09:12:00Z",
       completedAt: "2026-10-19T14:32:00Z",
+      completedBy: { id: "u1", name: "Thiago Martins" },
       generalNotes: null,
       rooms: [],
       version: "AAAAAAAAB9M=",
@@ -119,9 +122,12 @@ describe("inspectionRecordOf", () => {
       updatedAt: "2026-10-19T14:32:00Z",
     };
 
-    expect(inspectionRecordOf(dto).completedAt).toBe("2026-10-19T14:32:00Z");
-    expect(inspectionRecordOf({ ...dto, status: "inProgress", completedAt: null })).not.toHaveProperty(
-      "completedAt",
-    );
+    expect(inspectionRecordOf(dto)).toMatchObject({
+      completedAt: "2026-10-19T14:32:00Z",
+      completedBy: { id: "u1", name: "Thiago Martins" },
+    });
+    const inProgress = inspectionRecordOf({ ...dto, status: "inProgress", completedAt: null, completedBy: null });
+    expect(inProgress).not.toHaveProperty("completedAt");
+    expect(inProgress).not.toHaveProperty("completedBy");
   });
 });

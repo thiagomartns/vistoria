@@ -14,6 +14,8 @@ public class Inspection : SyncEntity
     public Guid? ReferenceInspectionId { get; set; } // só em saída: a entrada concluída do mesmo imóvel
     public DateTimeOffset StartedAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; } // do servidor, ao concluir
+    public Guid? CompletedById { get; set; }          // quem concluiu (o usuário do token), ao concluir
+    public string? CompletedByName { get; set; }      // o nome dele naquele momento, copiado (ADR 0053)
     public string? GeneralNotes { get; set; }
     public List<Room> Rooms { get; set; } = [];
 }

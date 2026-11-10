@@ -445,16 +445,23 @@ describe("tela de campo", () => {
     );
   });
 
-  it("aviso da concluída: confirmada com a data, sem a data, na fila; em andamento, nenhum", () => {
+  it("aviso da concluída: confirmada com a autoria e a data, sem uma ou outra, na fila; em andamento, nenhum", () => {
     const completedAt = new Date(2026, 9, 19, 14, 32).toISOString();
+    const completedBy = { id: "u1", name: "Thiago Martins" };
 
-    expect(completionView({ status: "completed", completedAt }, false)).toEqual({
+    expect(completionView({ status: "completed", completedAt, completedBy }, false)).toEqual({
       tone: "success",
-      title: "Vistoria concluída em 19/10/2026 às 14:32",
+      title: "Vistoria concluída por Thiago Martins em 19/10/2026 às 14:32",
       description: COMPLETED_DESCRIPTION,
     });
+    expect(completionView({ status: "completed", completedAt }, false)?.title).toBe(
+      "Vistoria concluída em 19/10/2026 às 14:32",
+    );
+    expect(completionView({ status: "completed", completedBy }, false)?.title).toBe(
+      "Vistoria concluída por Thiago Martins",
+    );
     expect(completionView({ status: "completed" }, false)?.title).toBe("Vistoria concluída");
-    expect(completionView({ status: "completed", completedAt }, true)).toEqual({
+    expect(completionView({ status: "completed", completedAt, completedBy }, true)).toEqual({
       tone: "pending",
       title: COMPLETION_PENDING_TITLE,
       description: COMPLETION_PENDING_DESCRIPTION,
