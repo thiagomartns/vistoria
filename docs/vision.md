@@ -60,7 +60,7 @@ Room e Item não têm versão própria; mudar qualquer item sobe a versão da vi
 | --- | --- | --- |
 | `id` | Guid | UUID v7 do cliente |
 | `propertyId` | Guid | Obrigatório |
-| `kind` | `moveIn` \| `moveOut` | Entrada ou saída |
+| `kind` | `moveIn` \| `moveOut` | Entrada ou saída; definido na criação |
 | `status` | `inProgress` \| `completed` | Concluída é imutável |
 | `referenceInspectionId` | Guid? | Só em saída: uma entrada concluída do mesmo imóvel |
 | `startedAt` | data e hora | Definido na criação |
@@ -97,7 +97,7 @@ Room e Item não têm versão própria; mudar qualquer item sobe a versão da vi
 
 - **Concluir** exige ao menos um ambiente, ao menos um item por ambiente e `condition` preenchida em todos os itens. O erro aponta o caminho exato: `rooms[2].items[4].condition`.
 - **Concluída é imutável.** `PUT` ou `DELETE` numa vistoria concluída responde 409 `locked` (tipo novo no [catálogo do backend](architecture/backend.md#catálogo-de-erros)).
-- **Saída a partir da entrada** é feita no front: copia ambientes e itens com Ids novos, preenche `referenceCondition` e `referenceNotes` e deixa `condition` nula.
+- **Saída a partir da entrada** é feita no front: copia ambientes e itens com Ids novos, preenche `referenceCondition` e `referenceNotes` e deixa `condition` nula. A referência e as cópias são gravadas na criação e não mudam depois, nem o tipo da vistoria ([ADR 0051](decisions/0051-kind-referencia-e-copias-da-saida-sao-da-criacao-o-put-de-atualizacao-os-ignora-169.md)).
 - **Exclusão:** só vistoria em andamento (soft delete). Cliente, imóvel e roteiro não são excluídos na V1.
 - **Escopo:** tudo pertence a um `OwnerId`; um vistoriador nunca vê dado de outro.
 
