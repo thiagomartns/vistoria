@@ -9,6 +9,8 @@
 // pelo relógio da própria API. As duas pedem dados pelo gatilho do intervalo do pull, chamado pelo roteiro.
 // Com SCREENS=1, tira os prints em `.screens/aparelho/`, para `pnpm screens --files .screens/aparelho`. Aceita
 // PULL_CHAOS=1, como os outros roteiros.
+// Com CPU_THROTTLE=N, as duas abas do passo 3 rodam com a CPU N vezes mais lenta (CDP), para estressar a corrida do
+// refresh entre abas (#190). Só no passo 3: com a sessão CDP, o modo avião do contexto não muda o `navigator.onLine`.
 
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
@@ -82,6 +84,14 @@ async function captureTicks(context) {
 }
 
 const tick = (page) => page.evaluate(() => window.__spikeTick());
+
+/** A CPU da aba `CPU_THROTTLE` vezes mais lenta (#190); sem a variável, nada. */
+async function throttle(context, page) {
+  const rate = Number(process.env.CPU_THROTTLE ?? 1);
+  if (rate <= 1) return;
+  const cdp = await context.newCDPSession(page);
+  await cdp.send("Emulation.setCPUThrottlingRate", { rate });
+}
 
 /**
  * O access token vencido: `expire()` marca os tokens que o contexto já usou, e as requisições com um deles saem com a
@@ -267,6 +277,8 @@ try {
   await refreshesDone(refreshes, from, 1, "a volta da rede renova");
   await backToList(b);
   const b2 = await desk.newPage();
+  await throttle(desk, b);
+  await throttle(desk, b2);
   const b2Sync = watchSync(b2);
   from = refreshes.length;
   await b2.goto(`${base}/inspections`);
