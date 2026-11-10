@@ -1249,10 +1249,11 @@ try {
   const concluded = (await serverInspection(user, concluir)).body;
   assert.equal(concluded.status, "completed");
   assert.ok(concluded.completedAt, "o servidor gravou o completedAt");
+  assert.deepEqual(concluded.completedBy, { id: user.id, name: user.name }, "o servidor gravou quem concluiu (#183)");
   await concluirRow.getByRole("link").click();
-  await page.getByText("Vistoria concluída em", { exact: false }).waitFor();
+  await page.getByText(`Vistoria concluída por ${user.name} em`, { exact: false }).waitFor();
   await shoot(page, "concluir-5-concluida");
-  ok(`a rede volta: a conclusão chega uma vez só (${sentCompletions.map((put) => put.status).join(", ")}, mesma chave); a tela mostra a data`);
+  ok(`a rede volta: a conclusão chega uma vez só (${sentCompletions.map((put) => put.status).join(", ")}, mesma chave); a tela mostra quem concluiu e a data`);
   await page.getByRole("link", { name: "Voltar", exact: true }).click();
   await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
 
@@ -1267,7 +1268,7 @@ try {
   const remote = await completeOnServer(user, travada);
   await context.setOffline(false);
   await page.getByText("Esta vistoria foi concluída em outro aparelho").waitFor({ timeout: 90_000 });
-  await page.getByText("Vistoria concluída em", { exact: false }).waitFor();
+  await page.getByText(`Vistoria concluída por ${user.name} em`, { exact: false }).waitFor();
   await shoot(page, "concluir-6-outro-aparelho");
   await until(async () => await checked(page, "Paredes", "Bom"), "a tela mostra o que o servidor tem", 10_000);
   assert.ok(await chipsOf(page, "Paredes").getByRole("radio", { name: "Novo" }).isDisabled(), "só leitura");
