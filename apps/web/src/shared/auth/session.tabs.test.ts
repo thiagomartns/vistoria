@@ -14,15 +14,31 @@ const user = { id: "0199a0b2-7c1e-7f3a-9b2d-1c2d3e4f5a6b", name: "Thiago Martins
 const tokenOf = (sub: string, n: number) =>
   `h${n}.${btoa(JSON.stringify({ sub })).replace(/=+$/, "")}.s`;
 
-/** Um LockManager que serializa os pedidos do mesmo nome, como o do navegador entre abas. */
+/**
+ * Um LockManager que serializa os pedidos do mesmo nome, como o do navegador entre abas. Com `{ ifAvailable: true }`,
+ * concede na hora se ninguém segura o lock, e senão chama o callback com `null`, sem esperar.
+ */
 function fakeLocks() {
   let tail: Promise<unknown> = Promise.resolve();
+  let held = 0;
+  type Callback = (lock: { name: string } | null) => Promise<unknown>;
   return {
-    request: vi.fn<(name: string, fn: () => Promise<unknown>) => Promise<unknown>>((_name, fn) => {
-      const run = tail.then(fn);
-      tail = run.catch(() => {});
-      return run;
-    }),
+    request: vi.fn<(name: string, ...args: [Callback] | [{ ifAvailable?: boolean }, Callback]) => Promise<unknown>>(
+      (name, ...args) => {
+        const [options, fn] = args.length === 2 ? args : [{}, args[0]];
+        if (options.ifAvailable && held > 0) return Promise.resolve().then(() => fn(null));
+        const run = tail.then(async () => {
+          held += 1;
+          try {
+            return await fn({ name });
+          } finally {
+            held -= 1;
+          }
+        });
+        tail = run.catch(() => {});
+        return run;
+      },
+    ),
   };
 }
 
@@ -70,7 +86,6 @@ describe("duas abas com o token vencido", () => {
     const outcomes = await Promise.all([a.session.renewSession(), b.session.renewSession()]);
 
     expect(outcomes).toEqual(["renewed", "renewed"]);
-    expect(locks.request).toHaveBeenCalledTimes(2);
     expect(api.refresh).toHaveBeenCalledOnce();
     expect(a.client.accessToken.get()).toBe(tokenOf(user.id, 1));
     expect(b.client.accessToken.get()).toBe(tokenOf(user.id, 1));
@@ -115,6 +130,57 @@ describe("duas abas com o token vencido", () => {
     expect(outcome).toBe("renewed");
     expect(api.refresh).not.toHaveBeenCalled();
     expect(b.client.accessToken.get()).toBe(tokenOf(user.id, 1));
+  });
+
+  it("a outra aba segurava o lock e a data dela ainda não chegou aqui: espera o anúncio, sem outro refresh", async () => {
+    // A corrida do #190: no navegador, cada aba é um processo, e a data no localStorage, o anúncio e a vez no lock
+    // chegam por canais diferentes, sem ordem entre eles. A aba B ganhava o lock ainda com a data antiga e sem o
+    // anúncio, achava que ninguém tinha renovado e pedia o próprio refresh. O lock ocupado agora basta como sinal.
+    const locks = fakeLocks();
+    Object.defineProperty(navigator, "locks", { value: locks, configurable: true });
+    api.refresh.mockResolvedValue({
+      data: { accessToken: tokenOf(user.id, 9), expiresAt: "2026-10-31T15:00:00Z" },
+    });
+    tabs = [await openTab()];
+    const [b] = tabs as [Tab];
+    const otherTab = new BroadcastChannel("auth-refresh");
+    // A aba A renova dentro do lock; aqui, o localStorage não muda (a gravação dela ainda não chegou a este processo).
+    let release: (() => void) | undefined;
+    void locks.request("auth-refresh", () => new Promise<void>((done) => (release = done)));
+    await vi.waitFor(() => expect(release).toBeDefined());
+
+    const renewing = b.session.renewSession();
+    await new Promise((done) => setTimeout(done, 10));
+    release?.();
+    setTimeout(() => otherTab.postMessage({ userId: user.id, accessToken: tokenOf(user.id, 1) }), 50);
+    const outcome = await renewing;
+    otherTab.close();
+
+    expect(outcome).toBe("renewed");
+    expect(api.refresh).not.toHaveBeenCalled();
+    expect(b.client.accessToken.get()).toBe(tokenOf(user.id, 1));
+  });
+
+  it("a outra aba segurava o lock e não renovou (sem rede): esta espera o prazo do anúncio e renova sozinha", async () => {
+    const locks = fakeLocks();
+    Object.defineProperty(navigator, "locks", { value: locks, configurable: true });
+    api.refresh.mockResolvedValue({
+      data: { accessToken: tokenOf(user.id, 9), expiresAt: "2026-10-31T15:00:00Z" },
+    });
+    tabs = [await openTab()];
+    const [b] = tabs as [Tab];
+    let release: (() => void) | undefined;
+    void locks.request("auth-refresh", () => new Promise<void>((done) => (release = done)));
+    await vi.waitFor(() => expect(release).toBeDefined());
+
+    const renewing = b.session.renewSession();
+    await new Promise((done) => setTimeout(done, 10));
+    release?.();
+    const outcome = await renewing;
+
+    expect(outcome).toBe("renewed");
+    expect(api.refresh).toHaveBeenCalledOnce();
+    expect(b.client.accessToken.get()).toBe(tokenOf(user.id, 9));
   });
 
   it("o anúncio de outro dono não vale nesta aba", async () => {

@@ -11,22 +11,45 @@ function fakeChannel() {
 }
 
 describe("createRefreshLock", () => {
-  it("com Web Locks, roda dentro do lock auth-refresh", async () => {
+  it("com Web Locks e o lock livre, roda dentro do lock auth-refresh, sem contenção", async () => {
     const locks = {
-      request: vi.fn<(name: string, fn: () => Promise<unknown>) => Promise<unknown>>((_name, fn) =>
-        fn(),
-      ),
+      request: vi.fn<
+        (name: string, options: LockOptions, fn: (lock: Lock | null) => unknown) => Promise<unknown>
+      >(async (name, _options, fn) => fn({ name, mode: "exclusive" })),
     };
     const lock = createRefreshLock({ locks: locks as never, channel: fakeChannel() });
 
-    expect(await lock.run(async () => "renovado")).toBe("renovado");
-    expect(locks.request).toHaveBeenCalledWith(REFRESH_LOCK, expect.any(Function));
+    const run = vi.fn<(contended: boolean) => Promise<string>>(async () => "renovado");
+    expect(await lock.run(run)).toBe("renovado");
+    expect(run).toHaveBeenCalledWith(false);
+    expect(locks.request).toHaveBeenCalledOnce();
+    expect(locks.request).toHaveBeenCalledWith(REFRESH_LOCK, { ifAvailable: true }, expect.any(Function));
   });
 
-  it("sem Web Locks, roda direto", async () => {
+  it("com o lock em outra aba, espera ele e roda com contenção (#190)", async () => {
+    const calls: unknown[][] = [];
+    const locks = {
+      request: async (...args: unknown[]) => {
+        calls.push(args);
+        if (args.length === 3) return (args[2] as (lock: Lock | null) => unknown)(null);
+        return (args[1] as (lock: Lock | null) => unknown)({ name: REFRESH_LOCK, mode: "exclusive" });
+      },
+    };
+    const lock = createRefreshLock({ locks: locks as never, channel: fakeChannel() });
+
+    const run = vi.fn<(contended: boolean) => Promise<string>>(async () => "renovado");
+    expect(await lock.run(run)).toBe("renovado");
+    expect(run).toHaveBeenCalledOnce();
+    expect(run).toHaveBeenCalledWith(true);
+    expect(calls.map((args) => args.length)).toEqual([3, 2]);
+  });
+
+  it("sem Web Locks, roda direto, sem contenção", async () => {
     const lock = createRefreshLock({ locks: null, channel: fakeChannel() });
 
-    expect(await lock.run(async () => "renovado")).toBe("renovado");
+    const run = vi.fn<(contended: boolean) => Promise<string>>(async () => "renovado");
+    expect(await lock.run(run)).toBe("renovado");
+    expect(run).toHaveBeenCalledWith(false);
   });
 
   it("anuncia pelo canal e só repassa mensagem com dono e token", () => {

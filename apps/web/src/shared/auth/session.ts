@@ -175,21 +175,24 @@ function nextAnnouncement(ms: number): Promise<boolean> {
 
 /**
  * Renova pelo cookie, já com o lock entre abas. Se outra aba renovou depois do token que esta tem, não sai outro
- * refresh: o token anunciado já chegou, ou chega logo. A data da renovação é gravada antes de a outra aba soltar o lock,
- * e o anúncio pode chegar depois do lock, ou depois de esta aba pedir a renovação (#135). O cookie é do navegador, não da aba: um token de outro usuário (outra aba
+ * refresh: o token anunciado já chegou, ou chega logo. Dois sinais dizem que outra aba renovou: o lock estava com ela
+ * (`contended`) ou a data gravada no localStorage é mais nova que a que esta aba conhece. Entre processos, a data e o
+ * anúncio podem chegar depois de esta aba ganhar o lock (#135, #190); o lock ocupado não depende deles (ADR 0055). O cookie é do navegador, não da aba: um token de outro usuário (outra aba
  * entrou com outra conta) não vale para este dono, porque a fila de um nunca sai com a conta do outro.
  */
 async function refreshAs(
   owner: SessionUser,
   before: string | null,
   renewedBefore: string | null,
+  contended: boolean,
 ): Promise<RenewOutcome> {
   const changed = () => {
     const now = accessToken.get();
     return now !== null && now !== before;
   };
   if (changed()) return "renewed";
-  if (readRenewedAt() !== renewedBefore && (await nextAnnouncement(ANNOUNCE_WAIT_MS))) {
+  const renewedElsewhere = contended || readRenewedAt() !== renewedBefore;
+  if (renewedElsewhere && (await nextAnnouncement(ANNOUNCE_WAIT_MS))) {
     return "renewed";
   }
   if (changed()) return "renewed";
@@ -226,7 +229,7 @@ export function renewSession(): Promise<RenewOutcome> {
   const before = accessToken.get();
   const renewedBefore = knownRenewedAt === undefined ? readRenewedAt() : knownRenewedAt;
   renewing = refreshLock()
-    .run(() => refreshAs(owner, before, renewedBefore))
+    .run((contended) => refreshAs(owner, before, renewedBefore, contended))
     .catch((): RenewOutcome => "offline")
     .then((outcome) => {
       if (outcome === "renewed") renewOnReconnect = false;
