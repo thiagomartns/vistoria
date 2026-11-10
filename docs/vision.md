@@ -65,6 +65,7 @@ Room e Item não têm versão própria; mudar qualquer item sobe a versão da vi
 | `referenceInspectionId` | Guid? | Só em saída: uma entrada concluída do mesmo imóvel |
 | `startedAt` | data e hora | Definido na criação |
 | `completedAt` | data e hora? | Definido pelo servidor ao concluir |
+| `completedBy` | `{ id, name }`? | Quem concluiu, gravado pelo servidor ao concluir, com o nome daquele momento |
 | `generalNotes` | texto | Até 2.000 caracteres |
 | `rooms` | Room\[\] | Até 40 |
 | `version` | base64 | Do servidor |
