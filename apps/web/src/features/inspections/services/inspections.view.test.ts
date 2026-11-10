@@ -22,7 +22,9 @@ import {
   inspectionPage,
   inspectionRows,
   isDeletable,
+  moveInsOf,
   pendingItemIds,
+  referenceOf,
   roomViews,
   roomsSummary,
   startedLabel,
@@ -478,5 +480,53 @@ describe("tela de campo", () => {
     expect(incompleteDescription({ "rooms[2].items": ["x"] }, names)).toBe(
       "Um ambiente está sem itens (Banheiro).",
     );
+  });
+});
+
+describe("moveInsOf", () => {
+  const completed = (id: string, over: Partial<InspectionRecord> = {}) =>
+    inspection(id, { status: "completed", completedAt: "2026-10-26T18:00:00Z", ...over });
+
+  it("as entradas concluídas do imóvel, da mais recente para a mais antiga, com o início e o total de itens", () => {
+    const summaries = [
+      summaryOf(completed("antiga", { startedAt: new Date(2026, 2, 1, 9, 0).toISOString() })),
+      summaryOf(completed("recente", { startedAt: new Date(2026, 9, 20, 14, 30).toISOString() })),
+      summaryOf(inspection("andamento")),
+      summaryOf(completed("saida", { kind: "moveOut" })),
+      summaryOf(completed("outro-imovel", { propertyId: "p2" })),
+    ];
+
+    expect(moveInsOf(summaries, NONE, "p1")).toEqual([
+      { value: "recente", label: "Entrada de 20/10/2026 às 14:30 · 2 itens" },
+      { value: "antiga", label: "Entrada de 01/03/2026 às 09:00 · 2 itens" },
+    ]);
+  });
+
+  it("a fila vale por cima do resumo: a concluída offline entra, e a excluída ou com a exclusão na fila sai", () => {
+    const summaries = [summaryOf(inspection("concluida-offline")), summaryOf(completed("excluida"))];
+    const pending = new Map([
+      queued(completed("concluida-offline")),
+      queued(completed("excluida"), { removed: true }),
+      queued({ ...completed("excluindo"), deleting: true }),
+    ]);
+
+    expect(moveInsOf(summaries, pending, "p1").map((option) => option.value)).toEqual(["concluida-offline"]);
+  });
+});
+
+describe("referenceOf", () => {
+  it("o item da saída com cópia: o rótulo da condição e a observação da entrada; sem cópia, nada", () => {
+    expect(
+      referenceOf({
+        id: "t1",
+        name: "Piso",
+        position: 0,
+        condition: null,
+        notes: null,
+        referenceCondition: "fair",
+        referenceNotes: "Pintura nova.",
+      }),
+    ).toEqual({ condition: "Regular", notes: "Pintura nova." });
+    expect(referenceOf({ id: "t2", name: "Teto", position: 1, condition: null, notes: null })).toBeUndefined();
   });
 });

@@ -51,3 +51,36 @@ export function newMoveInInspection(propertyId: string, now: Date = new Date()):
     })),
   };
 }
+
+/**
+ * A vistoria de saída a partir da entrada concluída (vision.md, "Regras de negócio"): os mesmos ambientes e itens, com
+ * ids v7 novos (os da entrada continuam dela no servidor), a condição e a observação da entrada copiadas em
+ * `referenceCondition` e `referenceNotes`, e nada avaliado ainda. Em andamento, começada agora no aparelho, no imóvel
+ * da entrada e apontando para ela. A cópia é feita uma vez: a saída não lê mais a entrada (ADR 0052).
+ */
+export function newMoveOutInspection(moveIn: InspectionRecord, now: Date = new Date()): InspectionRecord {
+  return {
+    id: newId(),
+    version: null,
+    propertyId: moveIn.propertyId,
+    kind: "moveOut",
+    status: "inProgress",
+    startedAt: now.toISOString(),
+    generalNotes: null,
+    referenceInspectionId: moveIn.id,
+    rooms: moveIn.rooms.map((room) => ({
+      id: newId(),
+      name: room.name,
+      position: room.position,
+      notes: null,
+      items: room.items.map((item) => ({
+        id: newId(),
+        name: item.name,
+        position: item.position,
+        condition: null,
+        notes: null,
+        ...(item.condition && { referenceCondition: item.condition, referenceNotes: item.notes }),
+      })),
+    })),
+  };
+}

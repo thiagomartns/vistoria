@@ -52,6 +52,7 @@ import {
   fieldHeader,
   incompleteDescription,
   pendingItemIds,
+  referenceOf,
   roomViews,
   roomsSummary,
 } from "../services/inspections.view";
@@ -513,6 +514,7 @@ export function useInspectionDraft(id: string | null) {
       name: item.name,
       index,
       sync: itemSync(item.id, index),
+      reference: referenceOf(item),
     })),
     room: rooms[step],
     /**

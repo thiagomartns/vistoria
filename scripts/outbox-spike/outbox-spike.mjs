@@ -39,6 +39,9 @@
 // enfileirar nada; offline, a conclusão fica na fila, a tela só leitura (também recarregada) e a lista "Concluída"; com a
 // rede, ela chega uma vez só. Outra, concluída direto na API enquanto este aparelho a edita offline, volta 409 locked:
 // a tela adota o servidor, fica só leitura e avisa no toast. Com SCREENS=1, os prints da conclusão em `.screens/campo/`.
+// Desde o #170 o passo 12i cria a saída offline a partir da entrada concluída mais recente do imóvel do 12h (o imóvel
+// sem entrada concluída avisa e não deixa começar): ela volta ao recarregar e chega ao servidor com a referência e a
+// cópia de cada item. Com SCREENS=1, os prints da saída em `.screens/campo/`.
 // Desde o #133 o passo 13 passa pelo aviso de outro usuário (Cancelar faz o signOut da Bia e mantém a fila da Ana), e o
 // passo 15 prova a limpeza no IndexedDB de verdade: Sair com pendência pelo Dialog e "Apagar e entrar" de outro usuário.
 
@@ -1274,6 +1277,77 @@ try {
   assert.equal((await serverInspection(user, travada)).body.version, remote.version, "o servidor fica como o outro deixou");
   ok("concluída em outro aparelho: o PUT daqui volta 409 locked, a tela adota o servidor, fica só leitura e avisa no toast");
   await page.getByRole("link", { name: "Voltar", exact: true }).click();
+  step("12i", "Saída (#170): offline, da entrada concluída mais recente do imóvel; recarregada, segue; com a rede, chega com a referência e as cópias");
+  // No imóvel do 12h há duas entradas concluídas: a `concluir` e a `travada`, a mais recente, que vem escolhida.
+  const entrada = (await serverInspection(user, travada)).body;
+  if (shotsDir) {
+    // O aviso do locked do 12h ainda pode estar na tela: os prints da saída saem sem ele, se ele sair a tempo.
+    await page
+      .getByText("Esta vistoria foi concluída em outro aparelho")
+      .waitFor({ state: "hidden", timeout: 15_000 })
+      .catch(() => {});
+  }
+  await context.setOffline(true);
+  await page.getByText("Você está offline").waitFor();
+  await goTo(page, "Vistorias");
+  await page.getByRole("link", { name: "Nova vistoria" }).first().click();
+  await page.getByRole("heading", { level: 1, name: "Nova vistoria" }).waitFor();
+  await page.getByLabel("Imóvel").click();
+  await page.getByRole("option", { name: "Rua do Roteiro, 10 · Imobiliária Beta" }).click();
+  await page.getByRole("radio", { name: "Saída" }).click();
+  await page.getByText("Este imóvel não tem vistoria de entrada concluída").waitFor();
+  assert.ok(await page.getByRole("button", { name: "Começar vistoria" }).isDisabled(), "sem entrada, não começa");
+  await shoot(page, "saida-3-sem-entrada");
+  ok("imóvel sem entrada concluída: o aviso, e \"Começar vistoria\" desabilitado");
+
+  await page.getByLabel("Imóvel").click();
+  await page.getByRole("option", { name: conclusaoOption }).click();
+  const moveInSelect = page.getByLabel("Vistoria de entrada");
+  await moveInSelect.waitFor();
+  await moveInSelect.click();
+  const moveInOptions = await page.getByRole("option").allTextContents();
+  await page.keyboard.press("Escape");
+  assert.equal(moveInOptions.length, 2, `as duas entradas concluídas do imóvel: ${moveInOptions.join(" | ")}`);
+  assert.equal(await moveInSelect.textContent(), moveInOptions[0], "a mais recente vem escolhida");
+  await shoot(page, "saida-1-nova");
+  await page.getByRole("button", { name: "Começar vistoria" }).click();
+  await page.waitForURL(/\/inspections\/edit\?id=/);
+  await currentRoomIs(page, "Sala");
+  const saida = new URL(page.url()).searchParams.get("id");
+  await page.getByText("Na entrada").first().waitFor();
+  assert.equal(await checked(page, "Piso", "Bom"), false, "a saída nasce sem condição");
+  await mark(page, "Piso", "Bom");
+  await mark(page, "Paredes", "Ruim");
+  await shoot(page, "saida-2-campo");
+  await wait(1800);
+  await page.reload();
+  await currentRoomIs(page, "Sala");
+  await until(async () => await checked(page, "Paredes", "Ruim"), "recarregada, a marcação segue", 10_000);
+  await page.getByText("Na entrada").first().waitFor();
+  ok("offline: a saída nasce da entrada mais recente, com o que ela tinha ao lado de cada item, e volta ao recarregar");
+
+  await context.setOffline(false);
+  await until(async () => (await outboxCount(page, user)) === 0, "a saída sai quando a rede volta", 90_000);
+  const moveOut = (await serverInspection(user, saida)).body;
+  assert.equal(moveOut.kind, "moveOut");
+  assert.equal(moveOut.referenceInspectionId, travada, "a referência é a entrada escolhida");
+  const itemsOf = (inspection) => inspection.rooms.flatMap((room) => room.items.map((item) => ({ room: room.name, ...item })));
+  const [copies, originals] = [itemsOf(moveOut), itemsOf(entrada)];
+  assert.deepEqual(
+    copies.map(({ room, name, referenceCondition, referenceNotes }) => ({ room, name, referenceCondition, referenceNotes })),
+    originals.map(({ room, name, condition, notes }) => ({ room, name, referenceCondition: condition, referenceNotes: notes })),
+    "cada item da saída tem a condição e a observação da entrada",
+  );
+  assert.ok(copies.every((item) => !originals.some((original) => original.id === item.id)), "ids novos");
+  assert.deepEqual(
+    copies.filter((item) => item.condition !== null).map(({ room, name, condition }) => `${room}/${name}=${condition}`),
+    ["Sala/Piso=good", "Sala/Paredes=poor"],
+    "só o que foi marcado aqui",
+  );
+  ok(`a rede volta: a saída chega com a referência e as ${copies.length} cópias, e só as duas condições marcadas`);
+  await page.getByRole("link", { name: "Voltar", exact: true }).click();
+  await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
+
   await goTo(page, "Clientes");
 
   step(13, "Outro usuário entra: a fila do anterior não sai com a conta dele");

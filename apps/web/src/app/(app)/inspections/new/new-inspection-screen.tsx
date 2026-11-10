@@ -6,11 +6,23 @@ import { useNewInspection } from "@/features/inspections/hooks/useNewInspection"
 
 import { PageHeader } from "../../shell-header";
 
-// /inspections/new (wireframe 68:1644): escolhe o imóvel e começa a vistoria de entrada pelo roteiro padrão, mesmo
-// offline; "Começar vistoria" abre a tela de campo no primeiro ambiente.
+// /inspections/new (wireframes 68:1644 e 68:1878): escolhe o imóvel e o tipo e começa a vistoria, mesmo offline: a
+// entrada pelo roteiro padrão, a saída a partir de uma entrada concluída do imóvel. "Começar vistoria" abre a tela de
+// campo no primeiro ambiente.
 
 export function NewInspectionScreen() {
-  const { ready, form, onSubmit, propertyOptions, templateLabel } = useNewInspection();
+  const {
+    ready,
+    form,
+    onSubmit,
+    propertyOptions,
+    templateLabel,
+    moveOut,
+    moveInOptions,
+    moveInId,
+    noMoveIn,
+    waitingMoveIn,
+  } = useNewInspection();
 
   return (
     <>
@@ -21,6 +33,11 @@ export function NewInspectionScreen() {
           onSubmit={onSubmit}
           propertyOptions={propertyOptions}
           templateLabel={templateLabel}
+          moveOut={moveOut}
+          moveInOptions={moveInOptions}
+          moveInId={moveInId}
+          noMoveIn={noMoveIn}
+          waitingMoveIn={waitingMoveIn}
           newPropertyHref="/properties/edit"
           propertiesHref="/properties"
           cancelHref={INSPECTIONS_HREF}

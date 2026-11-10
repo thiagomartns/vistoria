@@ -1,4 +1,4 @@
-import { Alert, AlertDescription } from "@sanjou/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@sanjou/ui/alert";
 import { Button } from "@sanjou/ui/button";
 import {
   Form,
@@ -18,10 +18,11 @@ import type { UseFormReturn } from "react-hook-form";
 
 import { ToggleGroup, ToggleGroupItem } from "@/shared/components/toggle-group";
 
-// O formulário de /inspections/new (wireframe 68:1644): Imóvel, Tipo e Roteiro, com "Começar vistoria" e "Cancelar".
-// No desktop, 560 px; no celular, largura cheia e botões lg. A saída aparece desabilitada (chega no M5, a partir de
-// uma entrada concluída) e o roteiro é o fixo, a única opção até os roteiros editáveis. Sem imóvel no aparelho, um
-// aviso leva ao cadastro. O `form` vem do hook da página.
+// O formulário de /inspections/new (wireframes 68:1644 e 68:1878): Imóvel e Tipo; na entrada, o Roteiro (o fixo, a
+// única opção até os roteiros editáveis); na saída, a Vistoria de entrada de onde ela parte, ou, sem entrada concluída
+// no imóvel, o aviso e "Começar vistoria" desabilitado (68:1759). "Começar vistoria" e "Cancelar". No desktop, 560 px;
+// no celular, largura cheia e botões lg. Sem imóvel no aparelho, um aviso leva ao cadastro. O `form` vem do hook da
+// página.
 
 export interface Option {
   value: string;
@@ -29,10 +30,20 @@ export interface Option {
 }
 
 type NewInspectionFormProps = {
-  form: UseFormReturn<{ propertyId: string }>;
+  form: UseFormReturn<{ propertyId: string; kind: "moveIn" | "moveOut"; moveInId: string }>;
   onSubmit: FormEventHandler<HTMLFormElement>;
   propertyOptions: Option[];
   templateLabel: string;
+  /** O tipo escolhido é saída. */
+  moveOut: boolean;
+  /** As entradas concluídas do imóvel escolhido. */
+  moveInOptions: Option[];
+  /** A entrada de onde a saída parte: a escolhida, ou a mais recente. */
+  moveInId: string;
+  /** Saída num imóvel sem entrada concluída. */
+  noMoveIn: boolean;
+  /** A saída ainda não pode começar (sem entrada, ou lendo a escolhida). */
+  waitingMoveIn: boolean;
   newPropertyHref: string;
   propertiesHref: string;
   cancelHref: string;
@@ -45,6 +56,11 @@ export function NewInspectionForm({
   onSubmit,
   propertyOptions,
   templateLabel,
+  moveOut,
+  moveInOptions,
+  moveInId,
+  noMoveIn,
+  waitingMoveIn,
   newPropertyHref,
   propertiesHref,
   cancelHref,
@@ -100,46 +116,93 @@ export function NewInspectionForm({
             </FormItem>
           )}
         />
-        <div className="flex flex-col gap-1.5">
-          <Label id="tipo-label">Tipo</Label>
-          <ToggleGroup
-            aria-labelledby="tipo-label"
-            aria-describedby="tipo-descricao"
-            value="moveIn"
-            values={["moveIn", "moveOut"]}
-            onValueChange={() => {}}
-            size="auto"
-          >
-            <ToggleGroupItem value="moveIn">Entrada</ToggleGroupItem>
-            <ToggleGroupItem value="moveOut" disabled>
-              Saída
-            </ToggleGroupItem>
-          </ToggleGroup>
-          <p id="tipo-descricao" className="text-sm text-muted-foreground">
-            A saída chega numa próxima versão.
-          </p>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="roteiro">Roteiro</Label>
-          <Select value={TEMPLATE} disabled={noProperties}>
-            <SelectTrigger id="roteiro" className="w-full" aria-describedby="roteiro-descricao">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={TEMPLATE}>{templateLabel}</SelectItem>
-            </SelectContent>
-          </Select>
-          <p id="roteiro-descricao" className="text-sm text-muted-foreground">
-            Ambientes e itens são copiados para a vistoria; depois de criada, ela não depende mais
-            do roteiro.
-          </p>
-        </div>
+        <FormField
+          control={form.control}
+          name="kind"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Tipo</FormLabel>
+              <FormControl>
+                <ToggleGroup
+                  aria-label="Tipo"
+                  value={field.value}
+                  values={["moveIn", "moveOut"]}
+                  onValueChange={(value) => field.onChange(value)}
+                  size="auto"
+                >
+                  <ToggleGroupItem value="moveIn">Entrada</ToggleGroupItem>
+                  <ToggleGroupItem value="moveOut">Saída</ToggleGroupItem>
+                </ToggleGroup>
+              </FormControl>
+            </FormItem>
+          )}
+        />
+        {!moveOut ? (
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="roteiro">Roteiro</Label>
+            <Select value={TEMPLATE} disabled={noProperties}>
+              <SelectTrigger id="roteiro" className="w-full" aria-describedby="roteiro-descricao">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={TEMPLATE}>{templateLabel}</SelectItem>
+              </SelectContent>
+            </Select>
+            <p id="roteiro-descricao" className="text-sm text-muted-foreground">
+              Ambientes e itens são copiados para a vistoria; depois de criada, ela não depende mais
+              do roteiro.
+            </p>
+          </div>
+        ) : noMoveIn ? (
+          <Alert variant="warning">
+            <TriangleAlert aria-hidden="true" />
+            <AlertTitle>Este imóvel não tem vistoria de entrada concluída</AlertTitle>
+            <AlertDescription>
+              A saída parte de uma entrada concluída do mesmo imóvel. Conclua a entrada ou crie uma
+              vistoria de entrada.
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <FormField
+            control={form.control}
+            name="moveInId"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Vistoria de entrada</FormLabel>
+                <Select
+                  name={field.name}
+                  value={moveInId}
+                  onValueChange={field.onChange}
+                  disabled={moveInOptions.length === 0}
+                >
+                  <FormControl>
+                    <SelectTrigger ref={field.ref} onBlur={field.onBlur} className="w-full">
+                      <SelectValue placeholder="Escolha o imóvel primeiro" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {moveInOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormDescription>
+                  Ambientes e itens são copiados com o estado da entrada, que aparece ao lado de cada
+                  item na tela de campo.
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        )}
         <div className="flex flex-col gap-2 md:flex-row">
           <Button
             type="submit"
             size="lg"
             className="w-full md:h-8 md:w-auto md:px-3"
-            disabled={noProperties}
+            disabled={noProperties || (moveOut && waitingMoveIn)}
           >
             Começar vistoria
           </Button>

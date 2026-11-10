@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ClientRecord } from "@/features/clients/models/client";
+import type { InspectionRecord } from "@/features/inspections/models/inspection";
+import type { InspectionSummary } from "@/features/inspections/models/inspection-summary";
 import { saveInspection } from "@/features/inspections/services/inspections.sync";
 import type { PropertyRecord } from "@/features/properties/models/property";
 import { resetSession } from "@/shared/auth/session";
@@ -11,7 +13,8 @@ import { resetSyncStatus } from "@/shared/sync/sync-status";
 import { AppShell } from "../../app-shell";
 import { NewInspectionScreen } from "./new-inspection-screen";
 
-// /inspections/new (wireframe 68:1644), com o banco local simulado no hook e o saveInspection espionado.
+// /inspections/new (wireframes 68:1644 e 68:1878), com o banco local simulado no hook, os resumos e a vistoria por id
+// simulados, e o saveInspection espionado.
 
 const navigation = vi.hoisted(() => ({ push: vi.fn<(href: string) => void>() }));
 
@@ -29,6 +32,8 @@ const local = vi.hoisted(() => ({
     ready: true,
     clients: [] as ClientRecord[],
     properties: [] as PropertyRecord[],
+    pending: new Map<string, { mutationFnName: string; record: unknown; removed: boolean }>(),
+    outboxRead: true,
   },
 }));
 
@@ -36,8 +41,27 @@ vi.mock("@/features/local-store/hooks/useLocalStore", () => ({
   useLocalStore: () => local.value,
 }));
 
+// Os resumos que a lista lê (ADR 0048) e as vistorias completas que o aparelho tem, por id.
+const inspections = vi.hoisted(() => ({
+  summaries: [] as InspectionSummary[],
+  records: new Map<string, InspectionRecord>(),
+}));
+
+vi.mock("@/features/inspections/hooks/useInspectionSummaries", () => ({
+  useInspectionSummaries: () => ({ data: inspections.summaries, isReady: true }),
+}));
+
+vi.mock("@/features/inspections/hooks/useInspectionRecord", () => ({
+  useInspectionRecord: (_store: unknown, id: string | null) => ({
+    record: id ? inspections.records.get(id) : undefined,
+    ready: true,
+  }),
+}));
+
 vi.mock("@/features/inspections/services/inspections.sync", () => ({
   saveInspection: vi.fn<() => string>(() => "nova"),
+  UPSERT_INSPECTION: "upsertInspection",
+  DELETE_INSPECTION: "deleteInspection",
 }));
 
 const lar: ClientRecord = {
@@ -73,7 +97,51 @@ function open(properties: PropertyRecord[]) {
   );
 }
 
+// Uma entrada do imóvel: concluída, com a Sala avaliada.
+const moveIn = (id: string, propertyId: string, startedAt: string): InspectionRecord => ({
+  id,
+  version: "A",
+  propertyId,
+  kind: "moveIn",
+  status: "completed",
+  completedAt: startedAt,
+  startedAt,
+  generalNotes: null,
+  rooms: [
+    {
+      id: `${id}-sala`,
+      name: "Sala",
+      position: 0,
+      notes: null,
+      items: [
+        { id: `${id}-piso`, name: "Piso", position: 0, condition: "good", notes: null },
+        { id: `${id}-paredes`, name: "Paredes", position: 1, condition: "fair", notes: "Pintura nova." },
+      ],
+    },
+  ],
+});
+
+const summaryOf = (record: InspectionRecord): InspectionSummary => ({
+  id: record.id,
+  version: record.version,
+  propertyId: record.propertyId,
+  kind: record.kind,
+  status: record.status,
+  startedAt: record.startedAt,
+  evaluated: 2,
+  items: 2,
+});
+
+async function chooseMoveOut(user: ReturnType<typeof userEvent.setup>, propertyLabel: string) {
+  await user.click(screen.getByLabelText("Imóvel"));
+  await user.click(await screen.findByRole("option", { name: propertyLabel }));
+  await user.click(screen.getByRole("radio", { name: "Saída" }));
+}
+
 afterEach(() => {
+  inspections.summaries = [];
+  inspections.records = new Map();
+  local.value = { ...local.value, pending: new Map() };
   navigation.push.mockReset();
   vi.mocked(saveInspection).mockClear();
   resetSyncStatus();
@@ -81,15 +149,14 @@ afterEach(() => {
 });
 
 describe("NewInspectionScreen", () => {
-  it("Tipo com Entrada marcada e Saída desabilitada; Roteiro padrão; Voltar e Cancelar para a lista", () => {
+  it("Tipo com Entrada marcada e Saída disponível; Roteiro padrão; Voltar e Cancelar para a lista", () => {
     open([property("p1", "Rua das Flores")]);
 
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Nova vistoria");
     expect(screen.getByRole("radio", { name: "Entrada" }).getAttribute("aria-checked")).toBe(
       "true",
     );
-    expect((screen.getByRole("radio", { name: "Saída" }) as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText("A saída chega numa próxima versão.")).toBeDefined();
+    expect((screen.getByRole("radio", { name: "Saída" }) as HTMLButtonElement).disabled).toBe(false);
     expect(screen.getByLabelText("Roteiro").textContent).toBe(
       "Roteiro padrão · 5 ambientes, 29 itens",
     );
@@ -148,5 +215,76 @@ describe("NewInspectionScreen", () => {
     expect(
       (screen.getByRole("button", { name: "Começar vistoria" }) as HTMLButtonElement).disabled,
     ).toBe(true);
+  });
+
+  // Wireframe 68:1759: o imóvel só tem uma entrada em andamento (e a concluída é de outro imóvel).
+  it("imóvel sem entrada concluída não oferece a saída: o aviso, nenhuma entrada e começar desabilitado", async () => {
+    const user = userEvent.setup();
+    const inProgress = { ...moveIn("andamento", "p1", "2026-10-20T09:00:00Z"), status: "inProgress" as const };
+    inspections.summaries = [summaryOf(inProgress), summaryOf(moveIn("outra", "p2", "2026-10-21T09:00:00Z"))];
+    open([property("p1", "Rua das Flores"), property("p2", "Rua do Porto")]);
+
+    await chooseMoveOut(user, "Rua das Flores, 120 · Imobiliária Lar");
+
+    expect(screen.getByText("Este imóvel não tem vistoria de entrada concluída")).toBeDefined();
+    expect(screen.queryByLabelText("Vistoria de entrada")).toBeNull();
+    expect(screen.queryByLabelText("Roteiro")).toBeNull();
+    const start = screen.getByRole("button", { name: "Começar vistoria" }) as HTMLButtonElement;
+    expect(start.disabled).toBe(true);
+    await user.click(start);
+    expect(saveInspection).not.toHaveBeenCalled();
+  });
+
+  // Wireframe 68:1646: a mais recente vem escolhida; a concluída offline, ainda na fila, também conta.
+  it("saída: lista as entradas concluídas do imóvel, a mais recente escolhida, e cria a saída copiada dela", async () => {
+    const user = userEvent.setup();
+    const older = moveIn("antiga", "p1", new Date(2026, 2, 1, 9, 0).toISOString());
+    const newer = moveIn("recente", "p1", new Date(2026, 9, 20, 14, 30).toISOString());
+    inspections.summaries = [summaryOf(older)];
+    inspections.records = new Map([
+      [older.id, older],
+      [newer.id, newer],
+    ]);
+    local.value = {
+      ...local.value,
+      pending: new Map([
+        [newer.id, { mutationFnName: "upsertInspection", record: newer, removed: false }],
+      ]),
+    };
+    open([property("p1", "Rua das Flores")]);
+
+    await chooseMoveOut(user, "Rua das Flores, 120 · Imobiliária Lar");
+
+    const select = screen.getByLabelText("Vistoria de entrada");
+    expect(select.textContent).toBe("Entrada de 20/10/2026 às 14:30 · 2 itens");
+    await user.click(select);
+    expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual([
+      "Entrada de 20/10/2026 às 14:30 · 2 itens",
+      "Entrada de 01/03/2026 às 09:00 · 2 itens",
+    ]);
+    await user.click(screen.getByRole("option", { name: "Entrada de 20/10/2026 às 14:30 · 2 itens" }));
+    await user.click(screen.getByRole("button", { name: "Começar vistoria" }));
+
+    await vi.waitFor(() =>
+      expect(navigation.push).toHaveBeenCalledWith("/inspections/edit?id=nova"),
+    );
+    const created = vi.mocked(saveInspection).mock.calls[0]?.[1];
+    expect(created).toMatchObject({
+      propertyId: "p1",
+      kind: "moveOut",
+      status: "inProgress",
+      referenceInspectionId: "recente",
+    });
+    expect(created?.rooms[0]?.items.map(({ id: _id, ...item }) => item)).toEqual([
+      { name: "Piso", position: 0, condition: null, notes: null, referenceCondition: "good", referenceNotes: null },
+      {
+        name: "Paredes",
+        position: 1,
+        condition: null,
+        notes: null,
+        referenceCondition: "fair",
+        referenceNotes: "Pintura nova.",
+      },
+    ]);
   });
 });

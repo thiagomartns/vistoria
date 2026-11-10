@@ -1,14 +1,16 @@
+import { Badge } from "@sanjou/ui/badge";
 import { Button } from "@sanjou/ui/button";
 import { Plus } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { FieldSyncIndicator, type FieldSyncState } from "./field-sync-indicator";
 
-// Item do ambiente na tela de campo (Figma InspectionItem 42:1758), tipo entrada. No desktop, o nome e o
-// FieldSyncIndicator numa coluna de 220 px ao lado da avaliação; no celular, o nome e o indicador numa linha e a
-// avaliação embaixo, em largura cheia. A avaliação é o ToggleGroup de condição (quem usa passa), o erro do servidor e a
-// observação sob demanda: "Adicionar observação" abre o campo, e com texto ele já vem aberto. Somente leitura (envio
-// em voo) esconde o botão. A saída ("Na entrada") chega no M5. Específico do vistoria (ADR 0020).
+// Item do ambiente na tela de campo (Figma InspectionItem 42:1758). No desktop, o nome e o FieldSyncIndicator numa
+// coluna de 220 px ao lado da avaliação; no celular, o nome e o indicador numa linha e a avaliação embaixo, em largura
+// cheia. A avaliação é o ToggleGroup de condição (quem usa passa), o erro do servidor e a observação sob demanda:
+// "Adicionar observação" abre o campo, e com texto ele já vem aberto. Somente leitura (envio em voo) esconde o botão.
+// Na saída (tipo=saída, 42:1632 e 42:1715), o que o item tinha na entrada, só leitura: no desktop sob o nome, no
+// celular numa faixa acima dos chips. Específico do vistoria (ADR 0020).
 
 type InspectionItemProps = {
   name: string;
@@ -23,7 +25,11 @@ type InspectionItemProps = {
   /** A observação tem texto: o campo já aparece aberto. */
   hasNotes: boolean;
   readOnly?: boolean;
+  /** Só na saída: a condição ("Bom") e a observação que o item tinha na entrada. */
+  reference?: { condition: string; notes: string | null };
 };
+
+const NO_NOTES = "Sem observação.";
 
 export function InspectionItem({
   name,
@@ -33,6 +39,7 @@ export function InspectionItem({
   notes,
   hasNotes,
   readOnly = false,
+  reference,
 }: InspectionItemProps) {
   const [opened, setOpened] = useState(false);
   const notesBox = useRef<HTMLDivElement>(null);
@@ -50,8 +57,22 @@ export function InspectionItem({
           {name}
         </span>
         {sync ? <FieldSyncIndicator state={sync} /> : null}
+        {reference ? (
+          <div className="hidden flex-col items-start gap-1 text-xs text-muted-foreground md:flex">
+            <span>Na entrada</span>
+            <Badge variant="neutral">{reference.condition}</Badge>
+            <span className="text-sm">{reference.notes ?? NO_NOTES}</span>
+          </div>
+        ) : null}
       </div>
       <div className="flex min-w-0 flex-1 flex-col items-start gap-2">
+        {reference ? (
+          <p className="flex w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-md bg-muted px-2 py-1.5 text-sm text-muted-foreground md:hidden">
+            <span>Na entrada</span>
+            <Badge variant="neutral">{reference.condition}</Badge>
+            <span>{reference.notes ?? NO_NOTES}</span>
+          </p>
+        ) : null}
         {condition}
         {error}
         {open ? (

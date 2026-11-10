@@ -59,6 +59,38 @@ const ids = (list: { id: string; position: number }[]) =>
   list.map((entry) => `${entry.id}@${entry.position}`);
 
 describe("mergeInspection", () => {
+  // ADR 0052: a cópia da entrada é igual nos três lados e nunca colide; o merge a mantém nos itens e na raiz.
+  it("saída: a referência e a cópia dos itens ficam no registro mesclado, sem colisão", () => {
+    const withCopy = (draft: InspectionRecord) => {
+      draft.kind = "moveOut";
+      draft.referenceInspectionId = "entrada";
+      for (const entry of draft.rooms.flatMap((r) => r.items)) {
+        entry.referenceCondition = "good";
+        entry.referenceNotes = entry.id === "t1" ? "Risco perto da porta." : null;
+      }
+    };
+    const moveOutBase = local(withCopy);
+    const mine = structuredClone(moveOutBase);
+    itemOf(mine, "r1", "t1").condition = "fair";
+    const theirs = { ...structuredClone(moveOutBase), version: "BBB=" };
+    itemOf(theirs, "r2", "t3").notes = "Torneira pingando.";
+
+    const { merged, collisions } = mergeInspection(moveOutBase, mine, theirs);
+
+    expect(collisions).toEqual([]);
+    expect(merged.referenceInspectionId).toBe("entrada");
+    expect(itemOf(merged, "r1", "t1")).toMatchObject({
+      condition: "fair",
+      referenceCondition: "good",
+      referenceNotes: "Risco perto da porta.",
+    });
+    expect(itemOf(merged, "r2", "t3")).toMatchObject({
+      notes: "Torneira pingando.",
+      referenceCondition: "good",
+      referenceNotes: null,
+    });
+  });
+
   it("nada mudou: a base com a version do servidor, sem colisão", () => {
     expect(mergeInspection(base, local(), server())).toEqual({
       merged: { ...base, version: "BBB=" },
