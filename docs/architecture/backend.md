@@ -306,7 +306,7 @@ O JWT do curso continua, com quatro mudanças. O refresh token sai do corpo e va
 | Senha | `PasswordHasher<User>` (PBKDF2 com salt). De 8 a 128 caracteres, sem regra de composição nem trim; o teto limita o custo do hash por requisição |
 | E-mail | Único sem diferenciar maiúsculas: gravado com trim e em minúsculas, com índice único. Já usado → 400 `validation` em `errors.email` |
 | Validação do access token | JwtBearer: emissor, audiência, chave e só HS256. O prazo é conferido pelo `TimeProvider`, sem tolerância de relógio (quem emite e quem valida é a mesma API). Falha → 401 `unauthorized` com `WWW-Authenticate: Bearer` |
-| Rotas | Exigem access token por padrão (fallback policy). Só `/auth/*`, health e o documento OpenAPI levam `[AllowAnonymous]`; sem token, até rota inexistente responde 401 |
+| Rotas | Exigem access token por padrão (fallback policy). Só `/auth/*`, os health checks (`/health/*`) e o documento OpenAPI são públicos (`[AllowAnonymous]` ou `AllowAnonymous()`); sem token, até rota inexistente responde 401 |
 | Credencial inválida | Senha errada e e-mail inexistente → o mesmo 401 `invalid-credentials`. O e-mail inexistente também roda o PBKDF2, contra um hash fixo, para o tempo não revelar quais e-mails têm conta |
 | Re-hash | Login com hash em formato ou custo antigo (`SuccessRehashNeeded`) regrava o hash no atual |
 | Chave do JWT | HS256, base64 de pelo menos 32 bytes. User Secrets em dev (`Jwt:SigningKey`, gravada pelo `pnpm db:init`), `Jwt__SigningKey` em produção; nunca no `appsettings.json`. Sem chave válida a API não sobe |
@@ -332,6 +332,8 @@ Em produção, front e API ficam na **mesma origem**, atrás de um proxy. Isso e
 | Migrações | `Database.MigrateAsync()` no startup | Bundle `efbundle` executado como etapa do deploy |
 
 **docker-compose de produção:** `proxy` (Caddy, com TLS automático), `api` e `db`. O Caddy encaminha `/api/*` para `api:8080` e serve o resto como arquivos estáticos com `try_files {path} {path}.html {path}/index.html`. As rotas do front não têm segmentos dinâmicos (o id vai na query string), então não há reescrita por rota.
+
+**Health checks:** nativos do ASP.NET Core (`AddHealthChecks`), fora de `/api/v1`, do contrato e do OpenAPI, sem token. `/health/live` não tem dependência nenhuma: só confirma que o processo responde. `/health/ready` inclui o banco (`AddDbContextCheck` do `AppDbContext`) e responde 503 quando ele não responde, para o proxy tirar a instância da rotação. O corpo é o texto do próprio health check (`Healthy`, `Unhealthy`), não um `ProblemDetails`: o 503 não é erro do catálogo. O `healthcheck` do serviço `api` no compose de produção usa o `/health/ready`; o CI e os scripts (`seed`, roteiros) também esperam por ele.
 
 **Ordem do pipeline:** `UseExceptionHandler` → `UseCors` (só em dev) → `UseRateLimiter` → `UseAuthentication` → `UseAuthorization` → `MapControllers`. Com o CORS antes, o preflight não gasta o rate limit; com o rate limit antes da autenticação, força bruta é cortada antes de qualquer PBKDF2.
 

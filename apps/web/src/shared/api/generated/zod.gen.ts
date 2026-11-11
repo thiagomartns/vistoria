@@ -29,10 +29,6 @@ export const zClientDto = z.object({
     updatedAt: z.iso.datetime({ offset: true })
 });
 
-export const zHealthDto = z.object({
-    status: z.string()
-});
-
 export const zInspectionAuthorDto = z.object({
     id: z.uuid(),
     name: z.string()
@@ -320,11 +316,6 @@ export const zUpsertClientPath = z.object({
  * OK
  */
 export const zUpsertClientResponse = zClientDto;
-
-/**
- * OK
- */
-export const zGetHealthResponse = zHealthDto;
 
 export const zDeleteInspectionHeaders = z.object({
     'If-Match': z.string().optional(),

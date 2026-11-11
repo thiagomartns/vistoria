@@ -30,7 +30,7 @@ public static class AuthConfig
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
         services.AddSingleton<IConfigureOptions<JwtBearerOptions>, JwtBearerSetup>();
 
-        // Toda rota exige token; as públicas (/auth/*, health, documento OpenAPI) dizem isso com [AllowAnonymous].
+        // Toda rota exige token; as públicas (/auth/*, /health/*, documento OpenAPI) dizem isso com AllowAnonymous.
         services.AddAuthorizationBuilder()
             .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
 

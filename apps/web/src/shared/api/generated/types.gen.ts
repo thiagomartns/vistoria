@@ -31,10 +31,6 @@ export type ClientDto = {
     updatedAt: string;
 };
 
-export type HealthDto = {
-    status: string;
-};
-
 export type InspectionAuthorDto = {
     id: string;
     name: string;
@@ -470,22 +466,6 @@ export type UpsertClientResponses = {
 };
 
 export type UpsertClientResponse = UpsertClientResponses[keyof UpsertClientResponses];
-
-export type GetHealthData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/api/v1/health';
-};
-
-export type GetHealthResponses = {
-    /**
-     * OK
-     */
-    200: HealthDto;
-};
-
-export type GetHealthResponse = GetHealthResponses[keyof GetHealthResponses];
 
 export type DeleteInspectionData = {
     body?: never;

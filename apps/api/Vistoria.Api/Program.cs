@@ -8,6 +8,7 @@ builder.Services.AddErrorHandling();
 builder.Services.AddOpenApiDocs();
 builder.Services.AddApiControllers();
 builder.Services.AddDatabase(builder.Configuration);
+builder.Services.AddHealth();
 builder.Services.AddMappings();
 builder.Services.AddDomainServices();
 builder.Services.AddIdempotency();
@@ -25,6 +26,7 @@ app.UseDevCors();
 app.UseRateLimits();
 app.UseAuth();
 app.MapControllers();
+app.MapHealth();
 
 await app.MigrateDatabaseAsync();
 await app.RunAsync();

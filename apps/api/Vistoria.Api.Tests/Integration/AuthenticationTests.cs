@@ -7,6 +7,7 @@ using System.Text.Json;
 using AwesomeAssertions;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
+using Vistoria.Api.Configurations;
 using Vistoria.Api.Infrastructure.Errors;
 using Vistoria.Api.Tests.Support;
 
@@ -75,7 +76,8 @@ public class AuthenticationTests(TestControllersFactory factory) : IClassFixture
     }
 
     [Theory]
-    [InlineData("/api/v1/health")]
+    [InlineData(HealthConfig.LivePath)]
+    [InlineData(HealthConfig.ReadyPath)]
     [InlineData("/openapi/v1.json")]
     [InlineData("/swagger/index.html")]
     public async Task PublicRoutes_AnswerWithoutToken(string path)
