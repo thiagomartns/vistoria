@@ -451,26 +451,6 @@
         }
       }
     },
-    "/api/v1/health": {
-      "get": {
-        "tags": [
-          "Health"
-        ],
-        "operationId": "getHealth",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HealthDto"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/inspections/{id}": {
       "get": {
         "tags": [
@@ -1693,17 +1673,6 @@
           }
         }
       },
-      "HealthDto": {
-        "required": [
-          "status"
-        ],
-        "type": "object",
-        "properties": {
-          "status": {
-            "type": "string"
-          }
-        }
-      },
       "InspectionAuthorDto": {
         "required": [
           "id",
@@ -2697,9 +2666,6 @@
     },
     {
       "name": "Clients"
-    },
-    {
-      "name": "Health"
     },
     {
       "name": "Inspections"

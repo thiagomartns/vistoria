@@ -42,8 +42,8 @@ export async function serve() {
   if (!existsSync(join(outDir, "index.html"))) {
     throw new Error("apps/web/out não existe: rode `pnpm --filter web build` antes.");
   }
-  const health = await callApi("/api/v1/health").catch(() => ({ status: 0 }));
-  assert.equal(health.status, 200, `API fora do ar em ${api}: rode \`pnpm dev:api\`.`);
+  const health = await callApi("/health/ready").catch(() => ({ status: 0 }));
+  assert.equal(health.status, 200, `API ou banco fora do ar em ${api}: rode \`pnpm dev:api\`.`);
   const server = createServer((req, res) => {
     if (req.url?.startsWith("/api/")) {
       const upstream = request(

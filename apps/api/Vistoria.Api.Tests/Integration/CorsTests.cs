@@ -27,7 +27,7 @@ public class CorsTests(ApiFactory factory) : IClassFixture<ApiFactory>
     [Fact]
     public async Task Development_ResponseExposesETagAndRetryAfter()
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/health");
+        var request = new HttpRequestMessage(HttpMethod.Get, HealthConfig.LivePath);
         request.Headers.Add("Origin", CorsConfig.DevOrigin);
 
         var response = await factory.CreateClient().SendAsync(request, TestContext.Current.CancellationToken);
@@ -70,7 +70,7 @@ public class CorsTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
         var preflight = await production.CreateClient().SendAsync(Preflight(CorsConfig.DevOrigin),
             TestContext.Current.CancellationToken);
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/health");
+        var request = new HttpRequestMessage(HttpMethod.Get, HealthConfig.LivePath);
         request.Headers.Add("Origin", CorsConfig.DevOrigin);
         var simple = await production.CreateClient().SendAsync(request, TestContext.Current.CancellationToken);
 

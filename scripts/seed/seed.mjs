@@ -46,8 +46,9 @@ try {
   const baseUrl = process.env.API_URL ?? "http://localhost:8080";
   const { sdk, createClient } = await loadGeneratedClient();
 
-  const health = await sdk.getHealth({ client: createClient({ baseUrl }) });
-  if (!health.response?.ok) fail(`API fora do ar em ${baseUrl}: rode \`pnpm dev:api\`.`);
+  // O ready inclui o banco: sem ele, a API responde 503.
+  const health = await fetch(new URL("/health/ready", baseUrl)).catch(() => null);
+  if (!health?.ok) fail(`API ou banco fora do ar em ${baseUrl}: rode \`pnpm dev:api\`.`);
 
   const { password, source } = resolvePassword();
   if (source === "generated") console.log("seed: senha do usuário de dev gerada em infra/.env.");

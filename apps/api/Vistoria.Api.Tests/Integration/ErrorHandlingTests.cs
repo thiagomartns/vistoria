@@ -105,7 +105,7 @@ public class ErrorHandlingTests(TestControllersFactory factory) : IClassFixture<
     [Fact]
     public async Task WrongMethod_Returns405UnsupportedRequest()
     {
-        var response = await _authenticated.PostAsync("/api/v1/health", null, TestContext.Current.CancellationToken);
+        var response = await _authenticated.PostAsync("/test/errors/not-found", null, TestContext.Current.CancellationToken);
         var body = await ReadBody(response);
 
         AssertProblem(response, body, 405, ProblemTypes.UnsupportedRequest);
