@@ -358,6 +358,23 @@ describe("TemplateEditScreen · desktop", () => {
     expect(heading().textContent).toBe("Apartamento");
   });
 
+  it("Adicionar ambiente abre o novo à direita, e o nome digitado vai para ele, não para o anterior", async () => {
+    const user = userEvent.setup();
+    open("t1", { templates: [apartamento] });
+
+    await user.click(screen.getByRole("button", { name: "Adicionar ambiente" }));
+    expect(field("Nome do ambiente").value).toBe("");
+    await user.type(field("Nome do ambiente"), "Lavanderia");
+
+    expect(roomDetails()).toEqual([
+      "Sala3 itens",
+      "Cozinha2 itens",
+      "Varanda0 itens",
+      "Lavanderia0 itens",
+    ]);
+    expect(roomButton("Lavanderia").getAttribute("aria-current")).toBe("true");
+  });
+
   describe("reordenar pelo teclado (dnd-kit): Espaço pega, seta move, Espaço solta", () => {
     // O jsdom não mede layout: cada linha de lista reordenável mede 56 px, uma embaixo da outra, pela posição dela.
     beforeEach(() => {

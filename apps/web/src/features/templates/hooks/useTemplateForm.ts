@@ -161,7 +161,15 @@ export function useTemplateForm(id: string | null) {
     errors: draft ? fieldErrorsOf(draft) : undefined,
   });
   const roomList = useFieldArray({ control: form.control, name: "rooms" });
-  const rooms = useWatch({ control: form.control, name: "rooms" }) ?? [];
+  const watched = useWatch({ control: form.control, name: "rooms" }) ?? [];
+  // A ordem e os ids vêm dos `fields`, que mudam no mesmo render do `append`, do `remove` e do `move`; o `useWatch`
+  // chega um render depois, e o painel abriria o ambiente anterior por um instante (o nome digitado logo depois de
+  // "Adicionar ambiente" cairia nele). Os nomes e os itens vêm do `useWatch`, pelo id.
+  const live = new Map(watched.map((room) => [room.roomId, room]));
+  const rooms: RoomFormValues[] = roomList.fields.map(
+    (field) =>
+      live.get(field.roomId) ?? { roomId: field.roomId, name: field.name, items: field.items },
+  );
   const { errors } = useFormState({ control: form.control });
 
   // O ambiente aberto, pelo id: reordenar não muda qual está aberto. Sem escolha (ou removido), o primeiro.
