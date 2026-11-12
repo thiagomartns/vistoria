@@ -42,21 +42,27 @@ export async function apiSignIn(user) {
   }
 }
 
-/** As vistorias vivas do servidor: o primeiro sync, sem cursor, até o fim. */
-export async function serverInspections(user) {
+/** Todos os registros vivos de `entity` (`inspections`, `templates`) que o servidor tem para `user`, pelo delta. */
+export async function serverDelta(user, entity) {
   const items = [];
   let cursor;
   for (;;) {
     const query = new URLSearchParams({ limit: "1000", ...(cursor ? { cursor } : {}) });
-    const { status, body } = await callApi(`/api/v1/sync/inspections?${query}`, {
+    const { status, body } = await callApi(`/api/v1/sync/${entity}?${query}`, {
       headers: { authorization: `Bearer ${user.token}` },
     });
-    assert.equal(status, 200, `o delta de vistorias respondeu ${status}`);
+    assert.equal(status, 200, `o delta de ${entity} respondeu ${status}`);
     items.push(...body.items);
     if (!body.hasMore) return items;
     cursor = body.nextCursor;
   }
 }
+
+/** As vistorias vivas de `user` no servidor. */
+export const serverInspections = (user) => serverDelta(user, "inspections");
+
+/** Os roteiros de `user` no servidor. */
+export const serverTemplates = (user) => serverDelta(user, "templates");
 
 /** O total de vistorias que o contador da lista diz ("10.000 vistorias", "50 de 10.000 vistorias"), ou null. */
 export const listedTotal = (page) =>

@@ -16,13 +16,14 @@ import {
 export const LOCAL_STORES = [
   "clients",
   "properties",
+  "templates",
   "inspections",
   "inspectionSummaries",
   "drafts",
   "cursors",
   "skipped",
 ] as const;
-const LOCAL_DB_VERSION = 6;
+const LOCAL_DB_VERSION = 7;
 
 /** Nome do banco local de um usuário. */
 export const localDbName = (ownerId: string) => `vistoria-${ownerId}`;
@@ -63,7 +64,7 @@ export function readConfirmed<T>(
 }
 
 /**
- * As opções da collection IndexedDB de uma entidade sincronizada (clients, properties, inspections): a store `name`,
+ * As opções da collection IndexedDB de uma entidade sincronizada (clients, properties, templates, inspections): a store `name`,
  * pelo `id`, com o `readConfirmed` nas `utils`, ao lado do `exportData` e do `acceptMutations` da própria collection.
  */
 export function syncedCollectionOptions<T extends { id: string }>(

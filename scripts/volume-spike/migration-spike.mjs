@@ -1,10 +1,12 @@
 // `pnpm spike:migration [--from REF]`
-// Roteiro da migração do banco local da versão anterior para a deste build (desde a #154, ADR 0048: da 5 para a 6), num
+// Roteiro da migração do banco local da versão anterior para a deste build (desde a #172: da 6 para a 7, com a store de
+// roteiros; antes, na #154, ADR 0048: da 5 para a 6), num
 // navegador de verdade e na mesma origem. É o upgrade que os aparelhos fazem de fato:
 // 1. o build de `REF` (o último commit com o banco na versão anterior) entra como o usuário de dev do `pnpm seed`,
 //    baixa todas as vistorias pelo delta e marca um item numa vistoria, com o envio barrado: a transação fica na outbox;
 // 2. o servidor passa a servir este build, e o service worker novo assume quando o aparelho fecha e abre o app de novo;
-// 3. o banco sobe para a versão deste build, cada vistoria tem o seu resumo, e a lista abre com todas;
+// 3. o banco sobe para a versão deste build, cada vistoria tem o seu resumo, os roteiros chegam pelo pull, e a lista abre
+//    com todas;
 // 4. o envio é liberado, e a transação feita no build antigo sai, chega ao servidor e entra na vistoria e no resumo;
 // 5. em modo avião, o reload abre a lista e a tela de campo com o que foi marcado.
 // O build de `REF` sai de um `git worktree` e fica em `node_modules/.cache/migration-spike/REF`.
@@ -43,15 +45,16 @@ import {
   markListReady,
   pageValue,
   serverInspections,
+  serverTemplates,
   setOffline,
 } from "./lib.mjs";
 
 /**
- * O último commit com o banco local na versão anterior à deste build (a `main` de antes da #154: a 5). Subir a versão
+ * O último commit com o banco local na versão anterior à deste build (a `main` de antes da #172: a 6). Subir a versão
  * em `local-db.ts` é trocar este sha no mesmo PR, pelo último commit da versão que fica para trás; o passo 1 quebra se
  * esquecer. O sha inteiro: o checkout raso do CI só busca um commit pelo sha completo.
  */
-const PREVIOUS_REF = "b36213291a51b5c11b84256e71e95a4da80dd5a8";
+const PREVIOUS_REF = "ca13ce000f3fcae5a0eda9b4509a67a22d1ac0cf";
 
 /** A versão do banco local deste build, lida de `local-db.ts`. */
 function currentDbVersion() {
@@ -245,7 +248,7 @@ try {
   assert.ok(migrated, "o build novo não assumiu depois de fechar e abrir o app 5 vezes");
   ok(`o service worker novo assumiu na ${migrated.attempt}ª abertura, e o banco subiu para a versão ${current}`);
 
-  step(3, "A migração: os resumos saem das vistorias, e a lista abre com todas");
+  step(3, "A migração: cada vistoria com o seu resumo, os roteiros pelo pull, e a lista abre com todas");
   await listShows(page, total, `o build novo lista as ${total} vistorias`);
   const listedIn = await pageValue(page, "__listReadyAt", "a lista pronta depois da migração");
   const after = await localDb(page, user.id);
@@ -253,7 +256,19 @@ try {
   assert.equal(after.counts.inspectionSummaries, total, "um resumo por vistoria");
   assert.ok(!after.versions.includes("inspections"), "o _versions não guarda mais as vistorias");
   assert.equal(await outboxCount(page, user), 1, "a marcação do build antigo continua na outbox");
-  ok(`${after.counts.inspectionSummaries} resumos montados; a lista abriu em ${Math.round(listedIn)} ms desde a navegação`);
+  ok(`${after.counts.inspectionSummaries} resumos; a lista abriu em ${Math.round(listedIn)} ms desde a navegação`);
+  // Da 6 para a 7, a store de roteiros nasce vazia, e o pull traz o "Apartamento" do `pnpm seed`.
+  if (current === 7) {
+    assert.ok(!before.stores.includes("templates"), "o build antigo não tem a store de roteiros");
+    const templates = await serverTemplates(user);
+    assert.ok(templates.length > 0, "o servidor não tem roteiros do usuário de dev: rode `pnpm seed` antes");
+    await until(
+      async () => (await localDb(page, user.id))?.counts.templates === templates.length,
+      "os roteiros no banco local",
+      60_000,
+    );
+    ok(`${templates.length} roteiro(s) pelo pull: ${templates.map((template) => template.name).join(", ")}`);
+  }
 
   step(4, "O envio liberado: a marcação do build antigo sai e entra na vistoria e no resumo juntos");
   await context.unroute(SENDS);

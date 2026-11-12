@@ -22,6 +22,7 @@ describe("banco local por usuário", () => {
     expect(vi.mocked(createIndexedDB).mock.calls[0]?.[0].stores).toEqual([
       "clients",
       "properties",
+      "templates",
       "inspections",
       "inspectionSummaries",
       "drafts",

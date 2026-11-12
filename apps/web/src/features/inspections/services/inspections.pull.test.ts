@@ -236,6 +236,7 @@ describe("pull da vistoria: sem pendência (ADR 0043)", () => {
     expect(api.requests.filter((r) => r.startsWith("GET /api/v1/sync/"))).toEqual([
       "GET /api/v1/sync/clients",
       "GET /api/v1/sync/properties",
+      "GET /api/v1/sync/templates",
       "GET /api/v1/sync/inspections?cursor=1",
     ]);
   });

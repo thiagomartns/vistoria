@@ -156,7 +156,7 @@ jobs:
       - name: Roteiro do volume
         run: pnpm spike:volume --inspections 200
 
-      # O banco local da versão 5 (a main de antes da #154) para a 6, com as mesmas 200: o build antigo sai de um git worktree.
+      # O banco local da versão 6 (a main de antes da #172) para a 7, com as mesmas 200: o build antigo sai de um git worktree.
       - name: Roteiro da migração
         run: pnpm spike:migration
 
