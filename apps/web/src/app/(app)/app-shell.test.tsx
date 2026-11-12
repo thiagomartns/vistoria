@@ -154,6 +154,34 @@ describe("AppShell", () => {
     expect(screen.queryByText("Salvo no aparelho")).toBeNull();
   });
 
+  it("com `onBack`, o Voltar é um botão que chama o mais novo, sem navegar; sem ele, volta o link", async () => {
+    const user = userEvent.setup();
+    const first = vi.fn<() => void>();
+    const latest = vi.fn<() => void>();
+    const { rerender } = render(
+      <AppShell>
+        <PageHeader title="Sala" backHref="/templates" onBack={first} />
+      </AppShell>,
+    );
+    rerender(
+      <AppShell>
+        <PageHeader title="Sala" backHref="/templates" onBack={latest} />
+      </AppShell>,
+    );
+
+    expect(screen.queryByRole("link", { name: "Voltar" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Voltar" }));
+    expect(first).not.toHaveBeenCalled();
+    expect(latest).toHaveBeenCalledOnce();
+
+    rerender(
+      <AppShell>
+        <PageHeader title="Apartamento" backHref="/templates" />
+      </AppShell>,
+    );
+    expect(screen.getByRole("link", { name: "Voltar" }).getAttribute("href")).toBe("/templates");
+  });
+
   it("as ações do registro vão para o header, uma vez só, antes do SyncStatus", () => {
     render(
       <AppShell>

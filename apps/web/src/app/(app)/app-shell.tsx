@@ -73,7 +73,11 @@ export function AppShell({ children }: { children: ReactNode }) {
       </div>
       <div className="flex min-w-0 flex-1 flex-col print:block">
         <header className="flex shrink-0 items-center gap-2 border-b border-border bg-background px-4 print:hidden! pt-[max(12px,env(safe-area-inset-top))] pb-3 md:h-16 md:px-6 md:py-0">
-          {header?.backHref ? (
+          {header?.onBack ? (
+            <Button variant="ghost" size="icon" aria-label="Voltar" onClick={header.onBack}>
+              <ChevronLeft aria-hidden="true" />
+            </Button>
+          ) : header?.backHref ? (
             <Button asChild variant="ghost" size="icon">
               <Link href={header.backHref} aria-label="Voltar">
                 <ChevronLeft aria-hidden="true" />

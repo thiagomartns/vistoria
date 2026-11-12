@@ -8,10 +8,10 @@ import { confirmedBases, pendingRecords, recordSyncStates } from "@/shared/sync/
 import { type LocalStore, openLocalStore } from "../services/local-store";
 
 /**
- * O banco local do dono da sessão: clients e properties (otimistas incluídos), os rascunhos e o estado de sync de cada
- * registro com transação na outbox, com a base confirmada dele e o registro como a fila o deixa. `ready` só quando as
- * collections já carregaram. As vistorias não abrem inteiras: a lista lê o resumo, e a tela de campo, a vistoria pelo
- * id (ADR 0048).
+ * O banco local do dono da sessão: clients, properties e templates (otimistas incluídos), os rascunhos e o estado de
+ * sync de cada registro com transação na outbox, com a base confirmada dele e o registro como a fila o deixa. `ready`
+ * só quando as collections já carregaram. As vistorias não abrem inteiras: a lista lê o resumo, e a tela de campo, a
+ * vistoria pelo id (ADR 0048).
  */
 export function useLocalStore() {
   const ownerId = useSession().user?.id;
@@ -31,6 +31,7 @@ export function useLocalStore() {
 
   const clients = useLiveQuery(() => store?.clients);
   const properties = useLiveQuery(() => store?.properties);
+  const templates = useLiveQuery(() => store?.templates);
   const drafts = useLiveQuery(() => store?.drafts);
   const snapshot = useSyncExternalStore(
     syncStatusStore.subscribe,
@@ -44,9 +45,11 @@ export function useLocalStore() {
       store !== undefined &&
       clients.isReady &&
       properties.isReady &&
+      templates.isReady &&
       drafts.isReady,
     clients: clients.data ?? [],
     properties: properties.data ?? [],
+    templates: templates.data ?? [],
     drafts: drafts.data ?? [],
     states: recordSyncStates(snapshot),
     /** O que o servidor confirmou de cada registro com transação na fila (vazio numa criação). */
