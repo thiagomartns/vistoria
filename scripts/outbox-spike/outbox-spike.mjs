@@ -55,6 +55,10 @@
 // o ambiente no roteiro depois não muda a vistoria. Com a rede, ela chega com os ambientes e os itens do roteiro, na
 // ordem, e ids diferentes dos dele. No 12i, antes de existir roteiro, a entrada mostra o roteiro padrão. Com SCREENS=1,
 // os prints da Nova vistoria em `.screens/nova-vistoria/`.
+// Desde o #171 o passo 12l muda a estrutura dessa entrada offline, na tela de campo: um item novo nomeado e avaliado,
+// arrastado para o topo, outro removido, um nome vazio que "Pronto" não aceita; no Sheet dos ambientes, um ambiente
+// novo, outro arrastado para o topo e um com itens removido pelo Dialog. Recarregada, segue; com a rede, o servidor tem
+// a lista nova, com as position na ordem da tela. Com SCREENS=1, os prints em `.screens/ambientes/`.
 // Desde o #133 o passo 13 passa pelo aviso de outro usuário (Cancelar faz o signOut da Bia e mantém a fila da Ana), e o
 // passo 15 prova a limpeza no IndexedDB de verdade: Sair com pendência pelo Dialog e "Apagar e entrar" de outro usuário.
 
@@ -134,6 +138,10 @@ const shootTemplates = shooter(templatesDir);
 // A Nova vistoria pelo roteiro (#174), com SCREENS=1.
 const newDir = process.env.SCREENS ? resolve(process.env.INIT_CWD ?? root, ".screens/nova-vistoria") : null;
 const shootNew = shooter(newDir);
+
+// Ambientes e itens na tela de campo (#171), com SCREENS=1.
+const structureDir = process.env.SCREENS ? resolve(process.env.INIT_CWD ?? root, ".screens/ambientes") : null;
+const shootStructure = shooter(structureDir);
 
 /** O print do Select do Roteiro aberto, no celular e no desktop: o Radix fecha o Select quando a janela muda. */
 async function shootTemplateOptions(page, name) {
@@ -1590,6 +1598,87 @@ try {
   const templateIds = new Set(idsOf(renamed.rooms));
   assert.ok(idsOf(fromServer.rooms).every((id) => !templateIds.has(id)), "ids novos, nenhum do roteiro");
   ok("a rede volta: a entrada chega com os 3 ambientes e os 6 itens do roteiro, ids novos, e o roteiro com o Lavabo");
+
+  step("12l", "Ambientes e itens (#171): offline, incluir, nomear, avaliar, arrastar e remover itens e ambientes; recarregada, segue; com a rede, chega na ordem da tela");
+  await context.setOffline(true);
+  await page.getByText("Você está offline").waitFor();
+  await openRoom(page, "Banheiro");
+  // A tela lê a outbox a cada segundo: o print espera ela saber que o 12k esvaziou a fila.
+  await wait(1500);
+  const visible = (name) => page.getByRole("button", { name, exact: true }).locator("visible=true").first();
+  await shootStructure(page, "avaliando");
+  await visible("Adicionar item").click();
+  await page.getByText("Editando itens · 3 de 60").waitFor();
+  await page.getByRole("textbox", { name: "Nome do item 3" }).fill("Espelho");
+  await drag(page, page.getByRole("button", { name: "Mover Espelho", exact: true }), page.getByRole("button", { name: "Mover Box", exact: true }));
+  await until(
+    async () => (await sortableOrder(page, "Itens")).join() === "Espelho,Box,Ralo",
+    "o Espelho arrastado para o topo",
+  );
+  await page.getByRole("button", { name: "Remover Ralo", exact: true }).click();
+  await shootStructure(page, "editando-itens");
+  await visible("Adicionar item").click();
+  await visible("Pronto").click();
+  await page.getByText("Informe o nome do item.").waitFor();
+  await shootStructure(page, "nome-invalido");
+  await page.getByRole("button", { name: "Remover Item 3", exact: true }).click();
+  await visible("Pronto").click();
+  await mark(page, "Espelho", "Bom");
+  ok("itens: o Espelho entra, nomeado, no topo e avaliado; o Ralo sai; o nome vazio não deixa sair da edição");
+
+  await page.getByRole("banner").getByRole("button", { name: "Mais ações" }).click();
+  await page.getByRole("menuitem", { name: "Editar ambientes" }).click();
+  const sheet = page.getByRole("dialog", { name: "Ambientes" });
+  await sheet.getByText("3 de 40 · Arraste pela alça para mudar a ordem.").waitFor();
+  await sheet.getByRole("button", { name: "Adicionar ambiente" }).click();
+  await sheet.getByRole("textbox", { name: "Nome do ambiente 4" }).fill("Varanda");
+  await drag(page, sheet.getByRole("button", { name: "Mover Cozinha", exact: true }), sheet.getByRole("button", { name: "Mover Banheiro", exact: true }));
+  const roomNames = async () =>
+    Promise.all((await sheet.getByRole("list", { name: "Ambientes" }).getByRole("textbox").all()).map((field) => field.inputValue()));
+  await until(async () => (await roomNames()).join() === "Cozinha,Banheiro,Sala,Varanda", "a Cozinha arrastada para o topo");
+  await shootStructure(page, "ambientes");
+  await sheet.getByRole("button", { name: "Remover Sala", exact: true }).click();
+  const confirmRemoval = page.getByRole("dialog", { name: "Remover ambiente?" });
+  await confirmRemoval.getByText("Sala tem 2 itens. Eles saem da vistoria junto com o ambiente.").waitFor();
+  await shootStructure(page, "remover-ambiente");
+  await confirmRemoval.getByRole("button", { name: "Remover ambiente", exact: true }).click();
+  await sheet.getByRole("button", { name: "Pronto" }).click();
+  await sheet.waitFor({ state: "hidden" });
+  await currentRoomIs(page, "Banheiro");
+  await openRoom(page, "Varanda");
+  await page.getByText("Nenhum item neste ambiente").waitFor();
+  await shootStructure(page, "ambiente-vazio");
+  await visible("Adicionar item").click();
+  await page.getByRole("textbox", { name: "Nome do item 1" }).fill("Piso");
+  await visible("Pronto").click();
+  await chipsOf(page, "Piso").waitFor();
+  ok("ambientes: a Varanda entra e ganha o Piso, a Cozinha vai para o topo e a Sala sai pelo Dialog");
+
+  await wait(1800);
+  await page.reload();
+  await currentRoomIs(page, "Varanda");
+  const stepNames = await page.getByRole("navigation", { name: "Ambientes" }).getByRole("button").allInnerTexts();
+  assert.deepEqual(
+    stepNames.map((text) => text.split("\n")[0].trim()).filter((text) => ["Cozinha", "Banheiro", "Varanda", "Sala"].includes(text)),
+    ["Cozinha", "Banheiro", "Varanda"],
+    "recarregada offline, a ordem nova segue",
+  );
+  ok("recarregada em modo avião, a vistoria segue com a estrutura nova");
+
+  await context.setOffline(false);
+  await until(async () => (await outboxCount(page, user)) === 0, "a estrutura nova sai quando a rede volta", 90_000);
+  const reshaped = (await serverInspection(user, fromTemplate)).body;
+  assert.deepEqual(
+    reshaped.rooms.map((room) => [room.name, room.position, room.items.map((thing) => [thing.name, thing.position])]),
+    [
+      ["Cozinha", 0, [["Torneira", 0], ["Pia", 1]]],
+      ["Banheiro", 1, [["Espelho", 0], ["Box", 1]]],
+      ["Varanda", 2, [["Piso", 0]]],
+    ],
+    "o servidor tem a lista da tela, com as position na ordem dela",
+  );
+  assert.equal(reshaped.rooms[1].items[0].condition, "good", "o Espelho chega avaliado");
+  ok("a rede volta: o servidor tem a Cozinha, o Banheiro (Espelho, Box) e a Varanda (Piso), sem a Sala e o Ralo");
   await goTo(page, "Clientes");
 
   step(13, "Outro usuário entra: a fila do anterior não sai com a conta dele");
