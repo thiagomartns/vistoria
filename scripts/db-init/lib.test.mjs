@@ -5,6 +5,7 @@ import {
   generateJwtKey,
   generatePassword,
   parseArgs,
+  prodEnv,
   readEnvValue,
   upsertEnvValue,
   userSecrets,
@@ -81,5 +82,21 @@ describe("parseArgs", () => {
     assert.deepEqual(parseArgs([]), { rotate: false });
     assert.deepEqual(parseArgs(["--rotate"]), { rotate: true });
     assert.throws(() => parseArgs(["--force"]), /Opção desconhecida/);
+  });
+});
+
+describe("prodEnv", () => {
+  it("traz a senha e a chave pelos nomes que o compose de produção lê", () => {
+    const text = prodEnv("Senha123abc", "chave+/=");
+    assert.equal(readEnvValue(text, "MSSQL_SA_PASSWORD"), "Senha123abc");
+    assert.equal(readEnvValue(text, "JWT_SIGNING_KEY"), "chave+/=");
+  });
+
+  it("gera uma senha e uma chave novas a cada chamada", () => {
+    const [a, b] = [prodEnv(), prodEnv()];
+    assert.notEqual(readEnvValue(a, "MSSQL_SA_PASSWORD"), readEnvValue(b, "MSSQL_SA_PASSWORD"));
+    assert.notEqual(readEnvValue(a, "JWT_SIGNING_KEY"), readEnvValue(b, "JWT_SIGNING_KEY"));
+    assert.match(readEnvValue(a, "MSSQL_SA_PASSWORD"), /^[A-Za-z0-9_-]{32}$/);
+    assert.equal(Buffer.from(readEnvValue(a, "JWT_SIGNING_KEY"), "base64").length, 64);
   });
 });

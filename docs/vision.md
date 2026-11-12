@@ -160,8 +160,8 @@ vistoria/
     decisions/                # ADRs: 0001-*.md, 0002-*.md...
   infra/
     docker-compose.dev.yml    # só o SQL Server
-    docker-compose.prod.yml   # proxy (Caddy), api, db
-    Caddyfile
+    docker-compose.prod.yml   # proxy (Caddy), migrate (efbundle), api, db
+    proxy/                    # Dockerfile (static export + Caddy) e Caddyfile
   scripts/
     seed/                     # cria dados via API (usa o client gerado)
   .github/workflows/ci.yml

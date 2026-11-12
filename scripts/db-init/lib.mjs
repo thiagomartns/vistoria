@@ -51,3 +51,16 @@ export function parseArgs(argv) {
   }
   return { rotate: argv.includes("--rotate") };
 }
+
+export const PROD_JWT_KEY = "JWT_SIGNING_KEY";
+
+// O infra/.env.prod do docker-compose de produção: a senha do SQL Server e a chave do JWT, que o compose repassa aos
+// containers por variável de ambiente. Uma senha e uma chave novas a cada chamada.
+export function prodEnv(password = generatePassword(), jwtKey = generateJwtKey()) {
+  return [
+    "# Gerado pelo pnpm prod:init. Nunca commitar, imprimir nem copiar para outro lugar (ADR 0025).",
+    `${PASSWORD_KEY}=${password}`,
+    `${PROD_JWT_KEY}=${jwtKey}`,
+    "",
+  ].join("\n");
+}

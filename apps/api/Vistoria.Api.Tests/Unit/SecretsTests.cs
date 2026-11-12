@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using AwesomeAssertions;
 using Vistoria.Api.Tests.Support;
@@ -33,12 +34,13 @@ public class SecretsTests
             .Which.Value.Should().NotBeNullOrWhiteSpace();
     }
 
-    // ADR 0025: um .env.example só lista nomes. Valor de exemplo commitado vira senha pública de quem copia.
+    // ADR 0025: um .env.example (ou .env.prod.example) só lista nomes. Valor de exemplo commitado vira senha pública
+    // de quem copia.
     [Fact]
     public void EnvExamples_HaveNoValues()
     {
-        var examples = RepoFiles(".env.example").ToList();
-        examples.Should().NotBeEmpty();
+        var examples = RepoFiles(".env*.example").ToList();
+        examples.Select(Path.GetFileName).Should().Contain([".env.example", ".env.prod.example"]);
 
         var withValue = examples
             .SelectMany(file => File.ReadLines(file)
@@ -50,17 +52,24 @@ public class SecretsTests
         withValue.Should().BeEmpty("o valor vai no .env local, gerado por pnpm db:init");
     }
 
-    // Senha no compose só por interpolação do .env, nunca literal.
+    // Senha, connection string e chave do JWT no compose só por interpolação do .env, nunca literal.
     [Fact]
-    public void ComposeFiles_TakePasswordsFromEnv()
+    public void ComposeFiles_TakeSecretsFromEnv()
     {
-        var literals = Directory.GetFiles(Path.Combine(RepoRoot.Path, "infra"), "docker-compose*.yml")
-            .SelectMany(file => File.ReadLines(file)
-                .Where(line => line.TrimStart().StartsWith("MSSQL_SA_PASSWORD:", StringComparison.Ordinal))
-                .Where(line => !line.Contains("${MSSQL_SA_PASSWORD", StringComparison.Ordinal)));
+        var files = Directory.GetFiles(Path.Combine(RepoRoot.Path, "infra"), "docker-compose*.yml");
+        files.Select(Path.GetFileName).Should().Contain(["docker-compose.dev.yml", "docker-compose.prod.yml"]);
+
+        var literals = files
+            .SelectMany(file => File.ReadLines(file).Select(line => (file: Path.GetFileName(file), line)))
+            .Where(entry => !entry.line.TrimStart().StartsWith('#') && LiteralSecret.IsMatch(entry.line))
+            .Select(entry => $"{entry.file}: {entry.line.Trim()}");
 
         literals.Should().BeEmpty();
     }
+
+    // Um marcador de segredo (fora de um ${...}) cujo valor não começa por ${...}.
+    private static readonly Regex LiteralSecret =
+        new(@"(?<!\$\{)(?:MSSQL_SA_PASSWORD:|Password=|SigningKey:)(?>\s*""?)(?!\$\{)", RegexOptions.Compiled);
 
     private static readonly HashSet<string> SkippedDirs = ["node_modules", ".git", "bin", "obj", ".next", "out"];
 

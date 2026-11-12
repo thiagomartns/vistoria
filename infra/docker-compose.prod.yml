@@ -1,0 +1,116 @@
+# Produção (backend.md, "Ambientes e hospedagem"; ADR 0011): o Caddy serve o static export e repassa /api/* para a
+# API, na mesma origem; o banco só existe na rede interna. Os segredos vêm do infra/.env.prod, gerado pelo
+# `pnpm prod:init` e nunca commitado (ADR 0025). Sobe com `pnpm prod:up`:
+#   docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod up -d --build --wait
+# Ordem: db saudável → migrate (efbundle) termina com sucesso → api saudável (/health/ready) → proxy.
+name: vistoria-prod
+
+x-api-environment: &api-environment
+  ConnectionStrings__Default: "Server=db,1433;Database=vistoria;User Id=sa;Password=${MSSQL_SA_PASSWORD:?rode pnpm prod:init para gerar infra/.env.prod};TrustServerCertificate=True"
+
+# A API e o migrate são a mesma imagem; os dois declaram o build para o `up --build` não tentar baixá-la.
+x-api-build: &api-build
+  context: ..
+  dockerfile: apps/api/Dockerfile
+
+services:
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      # Express: a edição gratuita licenciada para produção (a Developer, do compose de dev, não é). Limites: 10 GB por
+      # banco, 1 socket ou 4 núcleos e ~1,4 GB de buffer pool, folgados para a V1 (ADR 0056).
+      MSSQL_PID: Express
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?rode pnpm prod:init para gerar infra/.env.prod}
+    # Sem porta publicada: só a API, pela rede interna, fala com o banco.
+    volumes:
+      - sqldata:/var/opt/mssql
+    networks:
+      - backend
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          '/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$$MSSQL_SA_PASSWORD" -C -Q "SELECT 1" -b -o /dev/null',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # As migrações como etapa do deploy: o efbundle da imagem da API aplica as pendentes e sai. A connection string vem
+  # da configuração do host, como na API, sem passar pela linha de comando.
+  migrate:
+    image: vistoria-api
+    build: *api-build
+    entrypoint: ["/app/efbundle"]
+    restart: "no"
+    environment:
+      <<: *api-environment
+    networks:
+      - backend
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    image: vistoria-api
+    build: *api-build
+    restart: unless-stopped
+    environment:
+      <<: *api-environment
+      ASPNETCORE_ENVIRONMENT: Production
+      Jwt__SigningKey: ${JWT_SIGNING_KEY:?rode pnpm prod:init para gerar infra/.env.prod}
+      # Só o X-Forwarded-For vindo do proxy vale (o IP fixo dele, abaixo); de qualquer outro, é ignorado.
+      ForwardedHeaders__KnownProxies__0: 10.77.0.10
+    networks:
+      - backend
+      - edge
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8080/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  proxy:
+    image: vistoria-proxy
+    build:
+      context: ..
+      dockerfile: infra/proxy/Dockerfile
+    restart: unless-stopped
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
+    # Só nesta máquina por padrão. Abrir para a rede é uma escolha explícita (PROXY_BIND=0.0.0.0), da hospedagem (#50).
+    ports:
+      - "${PROXY_BIND:-127.0.0.1}:80:80"
+      - "${PROXY_BIND:-127.0.0.1}:443:443"
+      - "${PROXY_BIND:-127.0.0.1}:443:443/udp"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      edge:
+        ipv4_address: 10.77.0.10
+    depends_on:
+      api:
+        condition: service_healthy
+
+networks:
+  # Sem saída para fora: banco, migração e API.
+  backend:
+    internal: true
+  # Proxy e API. Subnet fixa, fora dos pools padrão do Docker, para o IP do proxy ser o que a API confia.
+  edge:
+    ipam:
+      config:
+        - subnet: 10.77.0.0/24
+
+volumes:
+  sqldata:
+  caddy_data:
+  caddy_config:

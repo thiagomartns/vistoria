@@ -13,12 +13,14 @@ builder.Services.AddMappings();
 builder.Services.AddDomainServices();
 builder.Services.AddIdempotency();
 builder.Services.AddDevCors(builder.Environment);
+builder.Services.AddProxyHeaders();
 builder.Services.AddRateLimits();
 builder.Services.AddAuth(builder.Configuration);
 
 var app = builder.Build();
 
-// Ordem de backend.md, "Ambientes e hospedagem": erros → CORS → rate limit → autenticação → autorização.
+// Ordem de backend.md, "Ambientes e hospedagem": IP do proxy → erros → CORS → rate limit → autenticação → autorização.
+app.UseProxyHeaders();
 app.UseErrorHandling();
 app.UseSerilogLogging();
 app.UseOpenApiDocs();
