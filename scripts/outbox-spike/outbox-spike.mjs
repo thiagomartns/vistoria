@@ -45,6 +45,11 @@
 // Desde o #168 o passo 12h abre o laudo da vistoria concluída pelo "Ver laudo": recarregado em modo avião, ele abre do
 // banco local, e o PDF (`page.pdf`, mídia de impressão) sai sem o shell, com uma página por ambiente. Com SCREENS=1, os
 // prints do laudo e o PDF em `.screens/laudo/`.
+// Desde o #173 o passo 12j cria um roteiro offline pelo editor (/templates/edit): no desktop, três ambientes com
+// itens e a reordenação arrastando pela alça; recarregado em modo avião, ele segue na lista com "Salvo no aparelho".
+// No celular (o viewport de 390), o segundo nível do ambiente ganha um item, arrastado para o topo. Com a rede, o
+// servidor tem o roteiro na ordem das telas, e cada transação chega uma vez só. Com SCREENS=1, os prints da lista e do
+// editor em `.screens/roteiros/`.
 // Desde o #133 o passo 13 passa pelo aviso de outro usuário (Cancelar faz o signOut da Bia e mantém a fila da Ana), e o
 // passo 15 prova a limpeza no IndexedDB de verdade: Sair com pendência pelo Dialog e "Apagar e entrar" de outro usuário.
 
@@ -65,6 +70,7 @@ import {
   createProperty,
   currentRoomIs,
   deleteOnServer,
+  drag,
   editNotes,
   goTo,
   heldDrafts,
@@ -91,8 +97,10 @@ import {
   serverClient,
   serverInspection,
   serverProperty,
+  serverTemplate,
   settled,
   shooter,
+  sortableOrder,
   shownPending,
   signIn,
   signUp,
@@ -114,6 +122,9 @@ const shoot = shooter(shotsDir);
 // O laudo (#168): os prints e o PDF, com SCREENS=1.
 const reportDir = process.env.SCREENS ? resolve(process.env.INIT_CWD ?? root, ".screens/laudo") : null;
 const shootReport = shooter(reportDir);
+// Os roteiros (#173), com SCREENS=1.
+const templatesDir = process.env.SCREENS ? resolve(process.env.INIT_CWD ?? root, ".screens/roteiros") : null;
+const shootTemplates = shooter(templatesDir);
 
 const server = await serve();
 const browser = await launch();
@@ -1392,6 +1403,91 @@ try {
   ok(`a rede volta: a saída chega com a referência e as ${copies.length} cópias, e só as duas condições marcadas`);
   await page.getByRole("link", { name: "Voltar", exact: true }).click();
   await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
+
+  step("12j", "Roteiro (#173): criar e reordenar offline, no desktop e no celular; recarregado, segue; com a rede, chega na ordem");
+  await context.setOffline(true);
+  await page.getByText("Você está offline").waitFor();
+  await goTo(page, "Roteiros");
+  await page.getByText("Nenhum roteiro ainda").waitFor();
+  await shootTemplates(page, "lista-vazia");
+  await page.getByRole("link", { name: "Novo roteiro" }).first().click();
+  await page.getByRole("heading", { level: 1, name: "Novo roteiro" }).waitFor();
+  await page.getByLabel("Nome do roteiro").fill("Roteiro do spike");
+  const addItems = async (...names) => {
+    for (const name of names) {
+      await page.getByRole("button", { name: "Adicionar item" }).click();
+      await page.getByRole("list", { name: "Itens" }).getByRole("textbox").last().fill(name);
+    }
+  };
+  await page.getByLabel("Nome do ambiente").fill("Sala");
+  await addItems("Piso", "Teto");
+  for (const [room, ...things] of [["Cozinha", "Pia"], ["Banheiro", "Box", "Ralo"]]) {
+    await page.getByRole("button", { name: "Adicionar ambiente" }).click();
+    await page.getByLabel("Nome do ambiente").fill(room);
+    await addItems(...things);
+  }
+  assert.deepEqual(await sortableOrder(page, "Ambientes"), ["Sala", "Cozinha", "Banheiro"]);
+  await drag(page, page.getByRole("button", { name: "Mover Banheiro", exact: true }), page.getByRole("button", { name: "Mover Sala", exact: true }));
+  await until(async () => (await sortableOrder(page, "Ambientes"))[0] === "Banheiro", "o Banheiro arrastado para o topo");
+  await page.getByRole("list", { name: "Ambientes" }).getByRole("button", { name: /^Sala/ }).click();
+  await until(async () => (await page.getByLabel("Nome do ambiente").inputValue()) === "Sala", "a Sala aberta");
+  await drag(page, page.getByRole("button", { name: "Mover Teto", exact: true }), page.getByRole("button", { name: "Mover Piso", exact: true }), async () => {
+    if (!templatesDir) return;
+    mkdirSync(templatesDir, { recursive: true });
+    await page.screenshot({ path: join(templatesDir, "editor-arrastando-desktop.png") });
+    ok("print editor-arrastando (desktop)");
+  });
+  await until(async () => (await sortableOrder(page, "Itens"))[0] === "Teto", "o Teto arrastado acima do Piso");
+  assert.deepEqual(await sortableOrder(page, "Ambientes"), ["Banheiro", "Sala", "Cozinha"]);
+  await shootTemplates(page, "editor");
+  await page.getByRole("button", { name: "Salvar roteiro" }).click();
+  await page.getByRole("heading", { level: 1, name: "Roteiros" }).waitFor();
+  const templateRow = page.getByRole("row", { name: /Roteiro do spike/ });
+  await templateRow.getByText("Salvo no aparelho").waitFor();
+  const templateId = new URL(await templateRow.getByRole("link").getAttribute("href"), "http://x").searchParams.get("id");
+  ok("desktop, offline: três ambientes com itens, o Banheiro e o Teto arrastados pela alça, e \"Salvo no aparelho\" na lista");
+
+  await page.reload();
+  await templateRow.getByText("Salvo no aparelho").waitFor();
+  await shootTemplates(page, "lista");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("link", { name: /Roteiro do spike/ }).locator("visible=true").first().click();
+  await page.getByRole("heading", { level: 1, name: "Roteiro do spike" }).waitFor();
+  await shootTemplates(page, "editor-ambientes");
+  await page.getByRole("list", { name: "Ambientes" }).getByRole("button", { name: /^Cozinha/ }).click();
+  await page.getByRole("heading", { level: 1, name: "Cozinha" }).waitFor();
+  await addItems("Torneira");
+  await drag(page, page.getByRole("button", { name: "Mover Torneira", exact: true }), page.getByRole("button", { name: "Mover Pia", exact: true }));
+  await until(async () => (await sortableOrder(page, "Itens"))[0] === "Torneira", "a Torneira arrastada para o topo");
+  await page.getByRole("banner").getByRole("button", { name: "Voltar" }).click();
+  await page.getByRole("heading", { level: 1, name: "Roteiro do spike" }).waitFor();
+  assert.equal(await page.getByLabel("Nome do roteiro").inputValue(), "Roteiro do spike");
+  await page.getByRole("button", { name: "Salvar roteiro" }).click();
+  await page.getByRole("heading", { level: 1, name: "Roteiros" }).waitFor();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  assert.equal((await serverTemplate(user, templateId)).status, 404, "o roteiro não pode estar no servidor ainda");
+  ok("recarregado em modo avião, segue; no celular, a Torneira entra na Cozinha e vai para o topo, e o Voltar não perde nada");
+
+  const templatesSentFrom = Date.now();
+  await context.setOffline(false);
+  await until(async () => (await outboxCount(page, user)) === 0, "o roteiro sai quando a rede volta", 90_000);
+  const sentTemplate = (await serverTemplate(user, templateId)).body;
+  assert.equal(sentTemplate.name, "Roteiro do spike");
+  assert.deepEqual(
+    sentTemplate.rooms.map((room) => [room.name, room.position, room.items.map((thing) => thing.name)]),
+    [
+      ["Banheiro", 0, ["Box", "Ralo"]],
+      ["Sala", 1, ["Teto", "Piso"]],
+      ["Cozinha", 2, ["Torneira", "Pia"]],
+    ],
+    "o servidor tem os ambientes e os itens na ordem das telas",
+  );
+  const templatePuts = puts.filter((put) => put.entity === "templates" && put.at >= templatesSentFrom);
+  const acceptedKeys = templatePuts.filter(succeeded).map((put) => put.key);
+  assert.ok(acceptedKeys.length >= 1, "o roteiro chega por PUT");
+  assert.equal(new Set(acceptedKeys).size, acceptedKeys.length, "cada transação chega uma vez só");
+  await templateRow.getByText("Salvo no aparelho").waitFor({ state: "hidden" });
+  ok(`a rede volta: o roteiro chega em ${acceptedKeys.length} PUT, cada chave uma vez, com os ambientes e os itens na ordem`);
 
   await goTo(page, "Clientes");
 

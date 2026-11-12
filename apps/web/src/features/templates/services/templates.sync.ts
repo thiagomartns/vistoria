@@ -6,25 +6,37 @@ import {
 } from "@/shared/api/generated";
 import type { Client } from "@/shared/api/generated/client";
 import { type DraftsCollection, clearDraft, keepConflictData } from "@/shared/sync/drafts";
+import { type FetchOutcome, fetchMissing } from "@/shared/sync/fetch";
 import { flatConflictOf } from "@/shared/sync/flat-conflict";
 import { newId } from "@/shared/sync/ids";
 import { recordShape } from "@/shared/sync/merge";
 import { type Outbox, type OutboxMutationFn, enqueue } from "@/shared/sync/outbox";
-import type { PullEntity } from "@/shared/sync/pull";
-import { registerRecordLabel } from "@/shared/sync/sync-view";
-import { type MergeStrategy, flatMerge, upsertMutation } from "@/shared/sync/upsert";
+import { type CursorsCollection, type PullEntity, pulledOnce } from "@/shared/sync/pull";
+import { registerConflictView, registerRecordLabel } from "@/shared/sync/sync-view";
+import {
+  type MergeStrategy,
+  flatMerge,
+  resolveConflict,
+  upsertMutation,
+} from "@/shared/sync/upsert";
 
 import { TEMPLATE_ENTITY, type TemplateRecord, type TemplateRoom } from "../models/template";
 import type { TemplatesCollection } from "./templates.collection";
 
-// Os roteiros no banco local (#172): o mesmo caminho de clientes e imóveis, sem tela ainda. As telas, com o
-// ConflictResolver e o `registerConflictView`, são da #173; a Nova vistoria a partir de um roteiro, da #174.
+// Os roteiros no banco local (#172) e as telas deles (#173): o mesmo caminho de clientes e imóveis, com o
+// ConflictResolver em /templates/conflict. A Nova vistoria a partir de um roteiro é da #174.
 
 export const UPSERT_TEMPLATE = "upsertTemplate";
 /** O laço de roteiros no pull, que dá nome ao cursor e às marcas. */
 export const TEMPLATES_PULL = "templates";
 
-registerRecordLabel(UPSERT_TEMPLATE, (record) => `Roteiro · ${String(record.name ?? "")}`);
+const templateLabel = (record: Record<string, unknown>) => `Roteiro · ${String(record.name ?? "")}`;
+
+/** O ConflictResolver de um roteiro. */
+export const templateConflictHref = (id: string) => `/templates/conflict?id=${encodeURIComponent(id)}`;
+
+registerRecordLabel(UPSERT_TEMPLATE, templateLabel);
+registerConflictView(TEMPLATE_ENTITY, { title: templateLabel, href: templateConflictHref });
 
 const byPosition = <T extends { position: number }>(rows: readonly T[]) =>
   rows.toSorted((a, b) => a.position - b.position);
@@ -39,8 +51,8 @@ const ordered = (rooms: readonly TemplateRoom[]): TemplateRoom[] =>
   }));
 
 /**
- * O merge de um conflito de roteiro: o plano por campo (ADR 0038), com `rooms` como um campo só. Provisório: a #173,
- * que traz o ConflictResolver, pode trocá-lo pelo merge por id de ambiente e item, como o da vistoria.
+ * O merge de um conflito de roteiro: o plano por campo (ADR 0038), com `rooms` como um campo só (ADR 0057). Quando os
+ * dois lados mudaram os ambientes, a pessoa escolhe a lista inteira de um lado no ConflictResolver.
  */
 const templateMerge: MergeStrategy<TemplateRecord> = {
   shape: (current, like) => {
@@ -105,9 +117,51 @@ export function saveTemplate(
   return id;
 }
 
+/**
+ * Envia a resolução do ConflictResolver de um roteiro (`resolveConflict`): o `current` vai para a store e o escolhido
+ * vira transação nova, com chave nova e `If-Match` da `version` do `current`. Os ambientes escolhidos saem na ordem
+ * da `position`.
+ */
+export function resolveTemplateConflict(
+  {
+    templates,
+    drafts,
+    outbox,
+  }: { templates: TemplatesCollection; drafts: DraftsCollection; outbox: Outbox },
+  { resolved, server }: { resolved: TemplateRecord; server: TemplateRecord },
+): Promise<void> {
+  return resolveConflict({
+    store: templates,
+    drafts,
+    outbox,
+    mutationFnName: UPSERT_TEMPLATE,
+    server,
+    resolved: { ...resolved, rooms: ordered(resolved.rooms) },
+  });
+}
+
 /** Do DTO do servidor para o registro local: fica o que vai no `PUT` e a `version`; as datas são do servidor. */
 export function templateRecordOf(dto: TemplateDto): TemplateRecord {
   return { id: dto.id, version: dto.version, name: dto.name, rooms: ordered(dto.rooms) };
+}
+
+/**
+ * Abre pelo id um roteiro que não está no aparelho (`fetchMissing`): `GET /api/v1/templates/{id}`. Depois do primeiro
+ * pull completo de roteiros (`cursors`), o que falta não é pedido.
+ */
+export function fetchTemplate(
+  store: { templates: TemplatesCollection; drafts: DraftsCollection; cursors?: CursorsCollection },
+  id: string,
+  client?: Client,
+): Promise<FetchOutcome> {
+  return fetchMissing({
+    store: store.templates,
+    drafts: store.drafts,
+    id,
+    get: (request) => getTemplate({ client, ...request }),
+    shape: templateRecordOf,
+    synced: () => store.cursors !== undefined && pulledOnce(store.cursors, TEMPLATES_PULL),
+  });
 }
 
 /**
