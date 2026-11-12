@@ -310,7 +310,7 @@ function RoomPanel({ control, index, itemsMax, newItem, onRemove, desktop }: Roo
                 variant="ghost"
                 size="icon"
                 aria-label={`Remover ${itemName(position)}`}
-                className="shrink-0 self-start"
+                className="shrink-0"
                 onClick={() => items.remove(position)}
               >
                 <Trash2 aria-hidden="true" />
