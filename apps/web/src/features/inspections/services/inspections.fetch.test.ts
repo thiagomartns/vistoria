@@ -15,7 +15,7 @@ import type { CursorsCollection } from "@/shared/sync/pull";
 
 import type { InspectionRecord } from "../models/inspection";
 import type { InspectionsCollection } from "./inspections.collection";
-import { newMoveInInspection } from "./inspections.factory";
+import { DEFAULT_TEMPLATE, newMoveInInspection } from "./inspections.factory";
 import { fetchInspection } from "./inspections.sync";
 
 // A leitura por id dos três recursos contra um servidor falso, que responde o `GET` pela rota: o registro local que
@@ -49,7 +49,7 @@ const apto: PropertyRecord = {
 };
 
 const vistoria: InspectionRecord = {
-  ...newMoveInInspection(apto.id),
+  ...newMoveInInspection(apto.id, DEFAULT_TEMPLATE),
   id: "01a16032-2dfb-77de-84a2-1f165bdd9903",
   version: "AAAAAAAAB9O=",
 };

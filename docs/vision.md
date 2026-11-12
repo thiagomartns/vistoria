@@ -111,7 +111,7 @@ O fluxo que importa: **lista → nova vistoria → ambiente por ambiente → con
 | Login | `/login` | H1 | E-mail e senha, pelo pattern Auth do Sanjou sem "Lembrar-me" ([ADR 0019](decisions/0019-login-da-v1-com-o-pattern-auth-do-sanjou.md)); também é a tela de sessão expirada |
 | Criar conta | `/signup` | H1 | Nome, e-mail e senha; entra direto, sem verificação de e-mail na V1 |
 | Vistorias | `/inspections` | H10, H11 | Lista com busca e filtros locais; `SyncBadge` por linha; `SyncStatus` no header |
-| Nova vistoria | `/inspections/new` | H4, H5 | Escolhe imóvel e tipo; entrada parte de um roteiro, saída parte de uma entrada concluída |
+| Nova vistoria | `/inspections/new` | H4, H5 | Escolhe imóvel e tipo; entrada parte de um roteiro do aparelho (sem nenhum, de um roteiro padrão embutido, que não vira registro), saída parte de uma entrada concluída |
 | Vistoria em campo | `/inspections/edit?id=` | H6, H7, H8 | O formulário profundo: um passo por ambiente, itens com condição em um toque e observação; na saída, o estado de entrada ao lado |
 | Laudo | `/inspections/report?id=` | H9 | Página de impressão (CSS `@media print`); só para vistoria concluída e confirmada pelo servidor |
 | Conflito | `/inspections/conflict?id=`, `/clients/conflict?id=`, `/properties/conflict?id=`, `/templates/conflict?id=` | H8, H11 | `ConflictResolver`: diff por ambiente e item na vistoria, por campo no cliente, no imóvel e no roteiro |

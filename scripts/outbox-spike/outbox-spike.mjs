@@ -50,6 +50,11 @@
 // No celular (o viewport de 390), o segundo nível do ambiente ganha um item, arrastado para o topo. Com a rede, o
 // servidor tem o roteiro na ordem das telas, e cada transação chega uma vez só. Com SCREENS=1, os prints da lista e do
 // editor em `.screens/roteiros/`.
+// Desde o #174 o passo 12k cria a entrada offline a partir do "Roteiro do spike" do 12j (a conta é nova, sem o
+// "Apartamento" do seed): o Select do Roteiro só tem ele, a tela de campo abre no Banheiro, o primeiro dele, e renomear
+// o ambiente no roteiro depois não muda a vistoria. Com a rede, ela chega com os ambientes e os itens do roteiro, na
+// ordem, e ids diferentes dos dele. No 12i, antes de existir roteiro, a entrada mostra o roteiro padrão. Com SCREENS=1,
+// os prints da Nova vistoria em `.screens/nova-vistoria/`.
 // Desde o #133 o passo 13 passa pelo aviso de outro usuário (Cancelar faz o signOut da Bia e mantém a fila da Ana), e o
 // passo 15 prova a limpeza no IndexedDB de verdade: Sair com pendência pelo Dialog e "Apagar e entrar" de outro usuário.
 
@@ -57,6 +62,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
+import { VIEWPORTS } from "../screens/lib.mjs";
 import {
   askToDelete,
   callApi,
@@ -125,6 +131,28 @@ const shootReport = shooter(reportDir);
 // Os roteiros (#173), com SCREENS=1.
 const templatesDir = process.env.SCREENS ? resolve(process.env.INIT_CWD ?? root, ".screens/roteiros") : null;
 const shootTemplates = shooter(templatesDir);
+// A Nova vistoria pelo roteiro (#174), com SCREENS=1.
+const newDir = process.env.SCREENS ? resolve(process.env.INIT_CWD ?? root, ".screens/nova-vistoria") : null;
+const shootNew = shooter(newDir);
+
+/** O print do Select do Roteiro aberto, no celular e no desktop: o Radix fecha o Select quando a janela muda. */
+async function shootTemplateOptions(page, name) {
+  if (!newDir) return;
+  mkdirSync(newDir, { recursive: true });
+  const original = page.viewportSize();
+  for (const viewport of VIEWPORTS) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await wait(400);
+    await page.getByLabel("Roteiro", { exact: true }).click();
+    await page.getByRole("listbox").waitFor();
+    await wait(300);
+    await page.screenshot({ path: join(newDir, `${name}-${viewport.name}.png`) });
+    await page.keyboard.press("Escape");
+    await page.getByRole("listbox").waitFor({ state: "hidden" });
+  }
+  await page.setViewportSize(original);
+  ok(`print ${name} (celular e desktop)`);
+}
 
 const server = await serve();
 const browser = await launch();
@@ -1350,6 +1378,13 @@ try {
   await page.getByRole("heading", { level: 1, name: "Nova vistoria" }).waitFor();
   await page.getByLabel("Imóvel").click();
   await page.getByRole("option", { name: "Rua do Roteiro, 10 · Imobiliária Beta" }).click();
+  // Antes do 12j a conta não tem roteiro: a entrada parte do roteiro padrão (#174).
+  assert.equal(
+    await page.getByLabel("Roteiro", { exact: true }).textContent(),
+    "Roteiro padrão · 5 ambientes, 29 itens",
+    "sem roteiro no aparelho, o padrão",
+  );
+  await shootNew(page, "roteiro-padrao");
   await page.getByRole("radio", { name: "Saída" }).click();
   await page.getByText("Este imóvel não tem vistoria de entrada concluída").waitFor();
   assert.ok(await page.getByRole("button", { name: "Começar vistoria" }).isDisabled(), "sem entrada, não começa");
@@ -1489,6 +1524,72 @@ try {
   await templateRow.getByText("Salvo no aparelho").waitFor({ state: "hidden" });
   ok(`a rede volta: o roteiro chega em ${acceptedKeys.length} PUT, cada chave uma vez, com os ambientes e os itens na ordem`);
 
+  await goTo(page, "Clientes");
+
+  step("12k", "Nova vistoria pelo roteiro (#174): offline, a entrada parte do \"Roteiro do spike\"; renomear o ambiente no roteiro não a muda; com a rede, chega com os ambientes dele e ids novos");
+  await context.setOffline(true);
+  await page.getByText("Você está offline").waitFor();
+  await goTo(page, "Vistorias");
+  await page.getByRole("link", { name: "Nova vistoria" }).first().click();
+  await page.getByRole("heading", { level: 1, name: "Nova vistoria" }).waitFor();
+  await page.getByLabel("Imóvel").click();
+  // No imóvel do 12h: o passo 14 abre a vistoria do Rua do Roteiro pelo endereço, que precisa ser a única de lá.
+  await page.getByRole("option", { name: conclusaoOption }).click();
+  const templateSelect = page.getByLabel("Roteiro", { exact: true });
+  const spikeTemplate = "Roteiro do spike · 3 ambientes, 6 itens";
+  await until(async () => (await templateSelect.textContent()) === spikeTemplate, "o roteiro do aparelho vem escolhido");
+  await templateSelect.click();
+  assert.deepEqual(await page.getByRole("option").allTextContents(), [spikeTemplate], "só os roteiros do aparelho, sem o padrão");
+  await page.getByRole("option", { name: spikeTemplate }).click();
+  await shootTemplateOptions(page, "roteiro-escolhido");
+  await page.getByRole("button", { name: "Começar vistoria" }).click();
+  await page.waitForURL(/\/inspections\/edit\?id=/);
+  await currentRoomIs(page, "Banheiro");
+  const fromTemplate = new URL(page.url()).searchParams.get("id");
+  await mark(page, "Box", "Bom");
+  await openRoom(page, "Cozinha");
+  await chipsOf(page, "Torneira").waitFor();
+  await wait(1800);
+  ok("offline: a entrada nasce do roteiro do aparelho, aberta no Banheiro, o primeiro dele, com a Torneira na Cozinha");
+
+  await goTo(page, "Roteiros");
+  await page.getByRole("link", { name: /Roteiro do spike/ }).locator("visible=true").first().click();
+  await page.getByRole("heading", { level: 1, name: "Roteiro do spike" }).waitFor();
+  await page.getByRole("list", { name: "Ambientes" }).getByRole("button", { name: /^Banheiro/ }).click();
+  await until(async () => (await page.getByLabel("Nome do ambiente").inputValue()) === "Banheiro", "o Banheiro aberto");
+  await page.getByLabel("Nome do ambiente").fill("Lavabo");
+  await page.getByRole("button", { name: "Salvar roteiro" }).click();
+  await page.getByRole("heading", { level: 1, name: "Roteiros" }).waitFor();
+  await page.goto(new URL(`/inspections/edit?id=${fromTemplate}`, page.url()).href);
+  // O rascunho guarda o ambiente aberto (ADR 0036): ela volta na Cozinha.
+  await currentRoomIs(page, "Cozinha");
+  await openRoom(page, "Banheiro");
+  assert.ok(await checked(page, "Box", "Bom"), "a marcação segue");
+  const steps = page.getByRole("navigation", { name: "Ambientes" });
+  assert.equal(await steps.getByRole("button", { name: /^Lavabo/ }).count(), 0, "o roteiro renomeado não muda a vistoria");
+  await wait(1800);
+  await page.reload();
+  await currentRoomIs(page, "Banheiro");
+  ok("ainda offline, o Banheiro vira Lavabo no roteiro; a vistoria, reaberta e recarregada, segue com o Banheiro e a marcação");
+
+  await context.setOffline(false);
+  await until(async () => (await outboxCount(page, user)) === 0, "a entrada e o roteiro saem quando a rede volta", 90_000);
+  const fromServer = (await serverInspection(user, fromTemplate)).body;
+  assert.deepEqual(
+    fromServer.rooms.map((room) => [room.name, room.position, room.items.map((thing) => thing.name)]),
+    [
+      ["Banheiro", 0, ["Box", "Ralo"]],
+      ["Sala", 1, ["Teto", "Piso"]],
+      ["Cozinha", 2, ["Torneira", "Pia"]],
+    ],
+    "a entrada tem os ambientes e os itens do roteiro, na ordem dele",
+  );
+  const renamed = (await serverTemplate(user, templateId)).body;
+  assert.equal(renamed.rooms[0].name, "Lavabo", "o roteiro chega renomeado");
+  const idsOf = (rooms) => rooms.flatMap((room) => [room.id, ...room.items.map((thing) => thing.id)]);
+  const templateIds = new Set(idsOf(renamed.rooms));
+  assert.ok(idsOf(fromServer.rooms).every((id) => !templateIds.has(id)), "ids novos, nenhum do roteiro");
+  ok("a rede volta: a entrada chega com os 3 ambientes e os 6 itens do roteiro, ids novos, e o roteiro com o Lavabo");
   await goTo(page, "Clientes");
 
   step(13, "Outro usuário entra: a fila do anterior não sai com a conta dele");

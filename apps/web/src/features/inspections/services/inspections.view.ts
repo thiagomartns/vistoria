@@ -16,6 +16,7 @@ import {
 } from "../models/inspection";
 import type { InspectionSummary } from "../models/inspection-summary";
 import { CONDITIONS, roomOfError } from "../schemas/inspection.schemas";
+import { DEFAULT_TEMPLATE, type RoomMold } from "./inspections.factory";
 import type { InspectionCollision } from "./inspections.merge";
 import { type ChangeSummary, type InspectionConflict, collisionKey } from "./inspections.resolve";
 
@@ -689,4 +690,47 @@ export function referenceOf(item: ItemRecord): ItemReference | undefined {
   return item.referenceCondition
     ? { condition: CONDITIONS[item.referenceCondition], notes: item.referenceNotes ?? null }
     : undefined;
+}
+
+/** Uma opção do Roteiro na nova vistoria: o id, "Apartamento · 5 ambientes, 29 itens" e os ambientes a copiar. */
+export interface TemplateOption {
+  value: string;
+  label: string;
+  rooms: readonly RoomMold[];
+}
+
+/** O valor da opção do roteiro padrão, que não é id de roteiro nenhum. */
+export const DEFAULT_TEMPLATE_ID = "padrao";
+
+const templateLabel = (name: string, rooms: readonly RoomMold[]) =>
+  `${name} · ${plural(rooms.length, "ambiente", "ambientes")}, ${plural(
+    rooms.reduce((total, room) => total + room.items.length, 0),
+    "item",
+    "itens",
+  )}`;
+
+/**
+ * As opções do Roteiro na entrada (#174): os roteiros do aparelho, na ordem recebida (a da lista de roteiros, por
+ * nome), com os ambientes na ordem da `position`. Roteiro sem ambiente fica de fora: a vistoria nasceria sem nada para
+ * avaliar, e a tela de campo não cria ambiente. Sem nenhum que sirva, a opção única do roteiro padrão.
+ */
+export function templateOptionsOf(
+  templates: readonly { id: string; name: string; rooms: readonly RoomMold[] }[],
+): [TemplateOption, ...TemplateOption[]] {
+  const [first, ...rest] = templates
+    .filter((template) => template.rooms.length > 0)
+    .map((template) => ({
+      value: template.id,
+      label: templateLabel(template.name, template.rooms),
+      rooms: template.rooms,
+    }));
+  return first
+    ? [first, ...rest]
+    : [
+        {
+          value: DEFAULT_TEMPLATE_ID,
+          label: templateLabel("Roteiro padrão", DEFAULT_TEMPLATE),
+          rooms: DEFAULT_TEMPLATE,
+        },
+      ];
 }

@@ -2,26 +2,29 @@
 
 import { describe, expect, it } from "vitest";
 
+import type { TemplateRoom } from "@/features/templates/models/template";
+
 import type { InspectionRecord } from "../models/inspection";
-import { FIXED_TEMPLATE, newMoveInInspection, newMoveOutInspection } from "./inspections.factory";
+import { DEFAULT_TEMPLATE, newMoveInInspection, newMoveOutInspection } from "./inspections.factory";
 
 const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
-describe("FIXED_TEMPLATE", () => {
+describe("DEFAULT_TEMPLATE", () => {
   it("cinco ambientes comuns, com itens, nos limites do servidor (nomes de 1 a 60, até 40 ambientes e 60 itens)", () => {
-    expect(FIXED_TEMPLATE.map((room) => room.name)).toEqual([
+    expect(DEFAULT_TEMPLATE.map((room) => room.name)).toEqual([
       "Sala",
       "Cozinha",
       "Banheiro",
       "Quarto",
       "Área de serviço",
     ]);
-    expect(FIXED_TEMPLATE.length).toBeLessThanOrEqual(40);
-    for (const room of FIXED_TEMPLATE) {
-      expect(room.items.length).toBeGreaterThan(0);
-      expect(room.items.length).toBeLessThanOrEqual(60);
-      expect(new Set(room.items).size).toBe(room.items.length);
-      for (const name of [room.name, ...room.items]) {
+    expect(DEFAULT_TEMPLATE.length).toBeLessThanOrEqual(40);
+    for (const room of DEFAULT_TEMPLATE) {
+      const names = room.items.map((item) => item.name);
+      expect(names.length).toBeGreaterThan(0);
+      expect(names.length).toBeLessThanOrEqual(60);
+      expect(new Set(names).size).toBe(names.length);
+      for (const name of [room.name, ...names]) {
         expect(name.length).toBeGreaterThanOrEqual(1);
         expect(name.length).toBeLessThanOrEqual(60);
       }
@@ -31,9 +34,33 @@ describe("FIXED_TEMPLATE", () => {
 
 describe("newMoveInInspection", () => {
   const now = new Date("2026-10-26T13:00:00.000Z");
+  // Os ambientes de um roteiro "Casa" do aparelho, como o banco local guarda: ids do roteiro, na ordem da position.
+  const casa = (): TemplateRoom[] => [
+    {
+      id: "r-quintal",
+      name: "Quintal",
+      position: 0,
+      items: [
+        { id: "i-piso", name: "Piso", position: 0 },
+        { id: "i-muro", name: "Muro", position: 1 },
+        { id: "i-portao", name: "Portão", position: 2 },
+      ],
+    },
+    {
+      id: "r-garagem",
+      name: "Garagem",
+      position: 1,
+      items: [{ id: "i-portao-2", name: "Portão", position: 0 }],
+    },
+    { id: "r-varanda", name: "Varanda", position: 2, items: [] },
+  ];
+  const idsOf = (inspection: InspectionRecord) => [
+    inspection.id,
+    ...inspection.rooms.flatMap((room) => [room.id, ...room.items.map((item) => item.id)]),
+  ];
 
   it("entrada em andamento do imóvel, começada agora no aparelho, só no aparelho (sem version)", () => {
-    const inspection = newMoveInInspection("p1", now);
+    const inspection = newMoveInInspection("p1", casa(), now);
 
     expect(inspection).toMatchObject({
       version: null,
@@ -43,40 +70,72 @@ describe("newMoveInInspection", () => {
       startedAt: "2026-10-26T13:00:00.000Z",
       generalNotes: null,
     });
+    expect(inspection).not.toHaveProperty("referenceInspectionId");
   });
 
-  it("copia o roteiro em ordem, com posições a partir de 0 e nenhum item avaliado", () => {
-    const { rooms } = newMoveInInspection("p1", now);
+  it("copia o roteiro escolhido em ordem, com posições a partir de 0 e nenhum item avaliado", () => {
+    const { rooms } = newMoveInInspection("p1", casa(), now);
 
-    expect(rooms.map((room) => [room.name, room.position])).toEqual(
-      FIXED_TEMPLATE.map((room, position) => [room.name, position]),
-    );
-    for (const [index, room] of rooms.entries()) {
-      expect(room.notes).toBeNull();
-      expect(room.items).toEqual(
-        FIXED_TEMPLATE[index]!.items.map((name, position) => ({
-          id: expect.any(String),
-          name,
-          position,
-          condition: null,
-          notes: null,
-        })),
-      );
-    }
+    expect(
+      rooms.map(({ id: _id, items, ...room }) => ({
+        ...room,
+        items: items.map(({ id: _i, ...item }) => item),
+      })),
+    ).toEqual([
+      {
+        name: "Quintal",
+        position: 0,
+        notes: null,
+        items: [
+          { name: "Piso", position: 0, condition: null, notes: null },
+          { name: "Muro", position: 1, condition: null, notes: null },
+          { name: "Portão", position: 2, condition: null, notes: null },
+        ],
+      },
+      {
+        name: "Garagem",
+        position: 1,
+        notes: null,
+        items: [{ name: "Portão", position: 0, condition: null, notes: null }],
+      },
+      { name: "Varanda", position: 2, notes: null, items: [] },
+    ]);
   });
 
-  it("ids v7 do cliente, únicos na vistoria inteira e novos a cada vistoria", () => {
-    const first = newMoveInInspection("p1", now);
-    const second = newMoveInInspection("p1", now);
-    const idsOf = (inspection: typeof first) => [
-      inspection.id,
-      ...inspection.rooms.flatMap((room) => [room.id, ...room.items.map((item) => item.id)]),
-    ];
+  it("ids v7 novos: nenhum é do roteiro, únicos na vistoria inteira e novos a cada vistoria", () => {
+    const template = casa();
+    const first = newMoveInInspection("p1", template, now);
+    const second = newMoveInInspection("p1", template, now);
+    const templateIds = template.flatMap((room) => [room.id, ...room.items.map((item) => item.id)]);
 
     const ids = idsOf(first);
     for (const id of ids) expect(id).toMatch(UUID_V7);
     expect(new Set(ids).size).toBe(ids.length);
+    expect(ids.some((id) => templateIds.includes(id))).toBe(false);
     expect(idsOf(second).some((id) => ids.includes(id))).toBe(false);
+  });
+
+  it("editar o roteiro depois não muda a vistoria: renomear, tirar, acrescentar e reordenar ambientes e itens", () => {
+    const template = casa();
+    const inspection = newMoveInInspection("p1", template, now);
+    const before = structuredClone(inspection);
+
+    template[0]!.name = "Jardim";
+    template[0]!.items[0]!.name = "Grama";
+    template[0]!.items.pop();
+    template[1]!.items.push({ id: "i-luz", name: "Iluminação", position: 1 });
+    template.reverse();
+    template.push({ id: "r-nova", name: "Edícula", position: 3, items: [] });
+
+    expect(inspection).toEqual(before);
+  });
+
+  it("o roteiro padrão, num aparelho sem roteiro: os cinco ambientes dele, com os itens", () => {
+    const { rooms } = newMoveInInspection("p1", DEFAULT_TEMPLATE, now);
+
+    expect(rooms.map((room) => [room.name, room.items.map((item) => item.name)])).toEqual(
+      DEFAULT_TEMPLATE.map((room) => [room.name, room.items.map((item) => item.name)]),
+    );
   });
 });
 

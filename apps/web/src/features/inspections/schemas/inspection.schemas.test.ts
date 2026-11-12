@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { newMoveInInspection } from "../services/inspections.factory";
+import { DEFAULT_TEMPLATE, newMoveInInspection } from "../services/inspections.factory";
 import {
   NOTES_MAX,
   NOTES_TOO_LONG,
@@ -43,7 +43,7 @@ describe("caminho do erro do servidor → campo do formulário", () => {
 
 describe("valores do formulário ↔ registro", () => {
   it("observação null vira '' e volta null quando fica em branco; o resto do registro fica", () => {
-    const record = newMoveInInspection("p1");
+    const record = newMoveInInspection("p1", DEFAULT_TEMPLATE);
     const values = formValuesOf(record);
     expect(values.rooms[0]?.items[0]).toEqual({ condition: null, notes: "" });
 
@@ -61,7 +61,7 @@ describe("valores do formulário ↔ registro", () => {
   });
 
   it("sem valores para um item, o do registro fica", () => {
-    const record = newMoveInInspection("p1");
+    const record = newMoveInInspection("p1", DEFAULT_TEMPLATE);
 
     expect(recordWith(record, { rooms: [] })).toEqual(record);
   });
@@ -69,7 +69,7 @@ describe("valores do formulário ↔ registro", () => {
 
 describe("withUnsaved: a versão do pull com a marcação que não chegou ao rascunho (ADR 0043)", () => {
   it("o que difere da base fica, pelo id do item, mesmo com a estrutura nova; o resto vem da versão nova", () => {
-    const shown = newMoveInInspection("p1");
+    const shown = newMoveInInspection("p1", DEFAULT_TEMPLATE);
     const defaults = formValuesOf(shown);
     const values = formValuesOf(shown);
     values.rooms[0]!.items[1] = { condition: "poor", notes: "Trinca" };
@@ -93,7 +93,7 @@ describe("withUnsaved: a versão do pull com a marcação que não chegou ao ras
   });
 
   it("sem marcação pendente: os valores da versão nova", () => {
-    const shown = newMoveInInspection("p1");
+    const shown = newMoveInInspection("p1", DEFAULT_TEMPLATE);
     const next = { ...shown, rooms: shown.rooms.slice(1) };
 
     expect(withUnsaved(next, shown, formValuesOf(shown), formValuesOf(shown))).toEqual(
@@ -121,7 +121,7 @@ describe("roomStepSchema", () => {
 
 describe("completeInspectionSchema (concluir, vision.md \"Regras de negócio\")", () => {
   it("tudo avaliado: nada falta", () => {
-    const record = newMoveInInspection("p1");
+    const record = newMoveInInspection("p1", DEFAULT_TEMPLATE);
     const done = {
       rooms: record.rooms.map((room) => ({
         ...room,
@@ -133,7 +133,7 @@ describe("completeInspectionSchema (concluir, vision.md \"Regras de negócio\")"
   });
 
   it("item sem condição e ambiente sem item: as chaves no caminho do backend, com as mensagens do .NET", () => {
-    const record = newMoveInInspection("p1");
+    const record = newMoveInInspection("p1", DEFAULT_TEMPLATE);
     const rooms = record.rooms.map((room) => ({
       ...room,
       items: room.items.map((item) => ({ ...item, condition: "good" as const })),

@@ -9,7 +9,7 @@ import { type Outbox, enqueue, startOutbox } from "@/shared/sync/outbox";
 
 import type { InspectionRecord } from "../models/inspection";
 import type { InspectionsCollection } from "./inspections.collection";
-import { newMoveInInspection } from "./inspections.factory";
+import { DEFAULT_TEMPLATE, newMoveInInspection } from "./inspections.factory";
 import {
   DELETE_INSPECTION,
   LOCKED_TITLE,
@@ -193,7 +193,7 @@ async function start(server: ReturnType<typeof fakeServer>, local = localInspect
   const store = { inspections: local.inspections, drafts: local.draftsCollection, outbox };
   /** Uma vistoria que o servidor já aceitou, na versão "v1". */
   const known = () => {
-    const record = { ...newMoveInInspection(PROPERTY_ID), version: "v1" };
+    const record = { ...newMoveInInspection(PROPERTY_ID, DEFAULT_TEMPLATE), version: "v1" };
     local.confirmed.set(record.id, record);
     local.inspections.insert(record);
     return record;
@@ -364,7 +364,7 @@ describe("exclusão da vistoria na outbox", () => {
     canSend = false;
     const server = fakeServer();
     const local = await start(server);
-    const inspection = newMoveInInspection(PROPERTY_ID);
+    const inspection = newMoveInInspection(PROPERTY_ID, DEFAULT_TEMPLATE);
     enqueue(local.outbox, UPSERT_INSPECTION, () => local.inspections.insert(inspection));
     await tick();
 
@@ -381,7 +381,7 @@ describe("exclusão da vistoria na outbox", () => {
   it("criação recusada, só no rascunho: o rascunho some e nada vai para a fila", async () => {
     const server = fakeServer();
     const local = await start(server);
-    const inspection = newMoveInInspection(PROPERTY_ID);
+    const inspection = newMoveInInspection(PROPERTY_ID, DEFAULT_TEMPLATE);
     local.drafts.set(inspection.id, {
       id: inspection.id,
       entity: "inspection",
