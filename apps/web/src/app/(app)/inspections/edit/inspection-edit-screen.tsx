@@ -8,6 +8,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { CompleteInspection } from "@/features/inspections/components/complete-inspection";
 import { DeleteInspection } from "@/features/inspections/components/delete-inspection";
 import { RoomStep } from "@/features/inspections/components/room-step";
+import { RoomsSheet } from "@/features/inspections/components/rooms-sheet";
 import { INSPECTIONS_HREF } from "@/features/inspections/hooks/useInspections";
 import { useInspectionDraft } from "@/features/inspections/hooks/useInspectionDraft";
 import { RecordUnavailable } from "@/shared/components/record-unavailable";
@@ -22,7 +23,8 @@ import { PageHeader } from "../../shell-header";
 // sem nada faltando, o Dialog confirma, e a conclusão vai para a fila. Concluída, só leitura e sem o "···". Em
 // andamento, o "···" do header exclui a vistoria (#107): confirmada, a exclusão vai para a fila e a tela volta para a
 // lista; aberta com a exclusão na fila, fica só leitura. Concluída e confirmada, "Ver laudo" no header (#168).
-// Uma vistoria que o aparelho não tem é buscada no servidor, com o imóvel e o cliente (#101).
+// Uma vistoria que o aparelho não tem é buscada no servidor, com o imóvel e o cliente (#101). Ambientes e itens (#171):
+// "Adicionar item" e "Editar itens" no ambiente, e "Editar ambientes" no "···", que abre o Sheet dos ambientes.
 
 export function InspectionEditScreen() {
   const id = useSearchParams().get("id");
@@ -61,6 +63,8 @@ export function InspectionEditScreen() {
                 await field.remove();
                 router.push(INSPECTIONS_HREF);
               }}
+              onEditRooms={field.roomsEditor.openSheet}
+              editRoomsDisabled={field.readOnly}
             />
           ) : field.reportHref ? (
             // Figma 177:16524, estado 7: "Ver laudo" no desktop; no celular, só o ícone.
@@ -106,8 +110,26 @@ export function InspectionEditScreen() {
           conflict={field.conflict}
           deletion={field.deletion}
           completion={field.completion}
+          editing={field.editing}
+          onEdit={field.startEditing}
+          onFinishEditing={field.finishEditing}
+          itemsMax={field.itemsMax}
+          newItem={field.newItem}
         />
       </StepperForm>
+      <RoomsSheet
+        form={field.form}
+        open={field.roomsEditor.open}
+        rooms={field.roomsEditor.rooms}
+        max={field.roomsEditor.max}
+        onClose={field.roomsEditor.close}
+        onAdd={field.roomsEditor.add}
+        onMove={field.roomsEditor.move}
+        onRemove={field.roomsEditor.requestRemove}
+        removal={field.roomsEditor.removal}
+        onConfirmRemoval={field.roomsEditor.confirmRemoval}
+        onCancelRemoval={field.roomsEditor.cancelRemoval}
+      />
       <CompleteInspection
         open={field.confirming}
         onOpenChange={field.setConfirming}

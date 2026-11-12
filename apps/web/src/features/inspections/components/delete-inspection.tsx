@@ -13,13 +13,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@sanjou/ui/dropdown-menu";
-import { Ellipsis, Trash2 } from "lucide-react";
+import { Ellipsis, GripVertical, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 // Excluir uma vistoria em andamento (frames do #107): o "···" (Mais ações) abre um DropdownMenu só com "Excluir
 // vistoria", que pede confirmação num Dialog. Com alteração ainda não enviada, o Dialog diz que ela é descartada e que,
 // sem rede, a exclusão sai quando a conexão voltar (estado 3). Fica no header da tela de campo e na linha da lista
-// (desktop); quem usa decide quando ele aparece (nunca na concluída nem na que já está saindo).
+// (desktop); quem usa decide quando ele aparece (nunca na concluída nem na que já está saindo). Na tela de campo, o menu
+// também leva a "Editar ambientes" (#171), acima de "Excluir vistoria", desabilitado com o envio no ar.
 
 export const DELETE_TITLE = "Excluir esta vistoria?";
 
@@ -29,6 +30,9 @@ type DeleteInspectionProps = {
   /** Há alteração da vistoria que o servidor ainda não tem. */
   pending: boolean;
   onConfirm: () => void;
+  /** "Editar ambientes" (só na tela de campo): abre o Sheet dos ambientes. */
+  onEditRooms?: () => void;
+  editRoomsDisabled?: boolean;
   className?: string;
 };
 
@@ -36,6 +40,8 @@ export function DeleteInspection({
   subject,
   pending,
   onConfirm,
+  onEditRooms,
+  editRoomsDisabled = false,
   className,
 }: DeleteInspectionProps) {
   const [confirming, setConfirming] = useState(false);
@@ -49,6 +55,12 @@ export function DeleteInspection({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-48">
+          {onEditRooms ? (
+            <DropdownMenuItem disabled={editRoomsDisabled} onSelect={onEditRooms}>
+              <GripVertical aria-hidden="true" />
+              Editar ambientes
+            </DropdownMenuItem>
+          ) : null}
           <DropdownMenuItem variant="destructive" onSelect={() => setConfirming(true)}>
             <Trash2 aria-hidden="true" />
             Excluir vistoria

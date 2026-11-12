@@ -281,6 +281,35 @@ describe("version-conflict na outbox", () => {
     expect(local.drafts.size).toBe(0);
   });
 
+  it("#171: item incluído neste aparelho e outro removido no outro: o reenvio leva os dois, com as position renumeradas", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const server = fakeServer(
+      edited((v) => {
+        v.rooms[0]!.items = [{ ...itemOf(v, "t2"), position: 0 }];
+        v.version = "V2";
+      }),
+    );
+    const local = localStores();
+    const { outbox, optimistic } = await start(server, local);
+
+    save(
+      outbox,
+      optimistic,
+      edited((v) => v.rooms[0]!.items.push({ ...item("t9", "Ar-condicionado", 2), condition: "good" })),
+    );
+    await drained(outbox, server);
+
+    expect(server.sent).toHaveLength(2);
+    const resent = server.sent[1]!;
+    const items = (resent.body.rooms as { items: { id: string; position: number }[] }[])[0]!.items;
+    expect(items.map((entry) => [entry.id, entry.position])).toEqual([
+      ["t2", 0],
+      ["t9", 1],
+    ]);
+    expect(server.current().rooms[0]?.items.map((entry) => entry.id)).toEqual(["t2", "t9"]);
+    expect(local.drafts.size).toBe(0);
+  });
+
   it("o mesmo item com condições diferentes: não reenvia, não entra em laço, e o rascunho fica em conflito", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const server = fakeServer(

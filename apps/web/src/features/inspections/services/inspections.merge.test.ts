@@ -280,6 +280,74 @@ describe("mergeInspection", () => {
     });
   });
 
+  // #171: a tela de campo inclui, remove e reordena ambientes e itens; dois aparelhos fazendo isso convergem.
+  describe("estrutura nos dois aparelhos (#171)", () => {
+    it("item incluído num aparelho e outro removido no outro: os dois valem, sem colisão, renumerados", () => {
+      const ar = { ...item("t9", "Ar-condicionado", 2), condition: "good" as const };
+      const { merged, collisions } = mergeInspection(
+        base,
+        local((v) => room(v, "r1").items.push(ar)),
+        server((v) => {
+          room(v, "r1").items = [{ ...itemOf(v, "r1", "t2"), position: 0 }];
+        }),
+      );
+      expect(collisions).toEqual([]);
+      expect(ids(room(merged, "r1").items)).toEqual(["t2@0", "t9@1"]);
+      expect(itemOf(merged, "r1", "t9")).toEqual({ ...ar, position: 1 });
+    });
+
+    it("o inverso: removido no aparelho e incluído no servidor, os dois valem", () => {
+      const { merged, collisions } = mergeInspection(
+        base,
+        local((v) => {
+          room(v, "r2").items = [{ ...itemOf(v, "r2", "t4"), position: 0 }];
+        }),
+        server((v) => room(v, "r2").items.push(item("t8", "Coifa", 2))),
+      );
+      expect(collisions).toEqual([]);
+      expect(ids(room(merged, "r2").items)).toEqual(["t4@0", "t8@1"]);
+    });
+
+    it("um aparelho reordena e inclui um ambiente, o outro remove um item e renomeia outro: tudo entra", () => {
+      const { merged, collisions } = mergeInspection(
+        base,
+        local((v) => {
+          v.rooms = [
+            { ...room(v, "r2"), position: 0 },
+            { ...room(v, "r1"), position: 1 },
+            { id: "r3", name: "Varanda", position: 2, notes: null, items: [item("t7", "Piso", 0)] },
+          ];
+        }),
+        server((v) => {
+          room(v, "r1").items = [{ ...itemOf(v, "r1", "t2"), name: "Paredes", position: 0 }];
+        }),
+      );
+      expect(collisions).toEqual([]);
+      expect(ids(merged.rooms)).toEqual(["r2@0", "r1@1", "r3@2"]);
+      expect(room(merged, "r1").items).toEqual([{ ...item("t2", "Paredes", 0) }]);
+    });
+
+    it("os dois renomeiam o mesmo item para nomes diferentes: colisão no nome, e fica o local até a escolha", () => {
+      const { merged, collisions } = mergeInspection(
+        base,
+        local((v) => (itemOf(v, "r1", "t1").name = "Piso de madeira")),
+        server((v) => (itemOf(v, "r1", "t1").name = "Piso laminado")),
+      );
+      expect(collisions).toEqual([
+        {
+          kind: "field",
+          roomId: "r1",
+          itemId: "t1",
+          field: "name",
+          base: "Piso",
+          local: "Piso de madeira",
+          server: "Piso laminado",
+        },
+      ]);
+      expect(itemOf(merged, "r1", "t1").name).toBe("Piso de madeira");
+    });
+  });
+
   describe("raiz", () => {
     it("o que só um lado mudou entra; o que os dois mudaram colide sem caminho de ambiente", () => {
       const { merged, collisions } = mergeInspection(

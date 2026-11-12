@@ -7,7 +7,7 @@ import Link from "next/link";
 import type { FormEventHandler } from "react";
 import { type Control, type UseFormReturn, useFieldArray, useWatch } from "react-hook-form";
 
-import { SortableList, SortableRow } from "./sortable-list";
+import { SortableList, SortableRow } from "@/shared/components/sortable-list";
 
 // O editor de /templates/edit (Figma "Roteiros (#173)", estados 3 a 5). No desktop, o nome do roteiro e dois painéis:
 // os ambientes à esquerda (o selecionado abre os itens à direita) e o ambiente aberto, com o nome, "Remover

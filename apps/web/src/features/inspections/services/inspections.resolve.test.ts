@@ -10,7 +10,10 @@ import {
   inspectionConflictOf,
   recreatedInspection,
   resolveInspection,
+  withUnsaved,
 } from "./inspections.resolve";
+import { DEFAULT_TEMPLATE, newMoveInInspection } from "./inspections.factory";
+import { formValuesOf } from "../schemas/inspection.schemas";
 import { conflictGroups, conflictPlaces, deletedConflictView } from "./inspections.view";
 
 // As escolhas do ConflictResolver sobre o merge da vistoria (#103): campo da raiz, do ambiente e do item, e ambiente ou
@@ -395,5 +398,73 @@ describe("conflictGroups", () => {
     const places = conflictPlaces(inspectionConflictOf(draftOf(local, server)));
     expect([...places.rooms]).toEqual(["r1", "r2"]);
     expect([...places.items]).toEqual(["t1", "t2"]);
+  });
+});
+
+describe("withUnsaved: a versão nova com o que a pessoa mudou e não chegou ao rascunho (ADR 0043, ADR 0058)", () => {
+  it("o que difere da base fica, pelo id do item, mesmo com a estrutura nova; o resto vem da versão nova", () => {
+    const shown = newMoveInInspection("p1", DEFAULT_TEMPLATE);
+    const defaults = formValuesOf(shown);
+    const values = formValuesOf(shown);
+    values.rooms[0]!.items[1] = { ...values.rooms[0]!.items[1]!, condition: "poor", notes: "Trinca" };
+    // A versão nova tem um item a mais antes do marcado e outro item mudado no outro aparelho.
+    const room = shown.rooms[0]!;
+    const added = { ...room.items[0]!, id: "novo", name: "Rodapé", condition: "good" as const };
+    const changed = room.items.map((entry, i) =>
+      i === 0 ? { ...entry, condition: "fair" as const } : entry,
+    );
+    const next = {
+      ...shown,
+      rooms: [{ ...room, items: [added, ...changed] }, ...shown.rooms.slice(1)],
+    };
+
+    const merged = withUnsaved(next, shown, values, defaults);
+
+    expect(merged.rooms[0]?.items[0]).toMatchObject({ itemId: "novo", condition: "good", notes: "" });
+    expect(merged.rooms[0]?.items[1]).toMatchObject({ condition: "fair", notes: "" });
+    expect(merged.rooms[0]?.items[2]).toMatchObject({ condition: "poor", notes: "Trinca" });
+    expect(merged.rooms.length).toBe(shown.rooms.length);
+  });
+
+  it("sem nada pendente: os valores da versão nova", () => {
+    const shown = newMoveInInspection("p1", DEFAULT_TEMPLATE);
+    const next = { ...shown, rooms: shown.rooms.slice(1) };
+
+    expect(withUnsaved(next, shown, formValuesOf(shown), formValuesOf(shown))).toEqual(
+      formValuesOf(next),
+    );
+  });
+
+  it("o item incluído, o renomeado e a ordem nova, ainda não salvos, ficam; o que saiu na versão nova sai com a marcação", () => {
+    const shown = newMoveInInspection("p1", DEFAULT_TEMPLATE);
+    const defaults = formValuesOf(shown);
+    const values = formValuesOf(shown);
+    const sala = values.rooms[0]!;
+    const [first, second, ...rest] = sala.items;
+    sala.items = [
+      { ...second!, name: "Paredes e teto" },
+      first!,
+      { ...rest[0]!, condition: "poor" },
+      ...rest.slice(1),
+      { itemId: "novo", name: "Ar-condicionado", condition: "good", notes: "" },
+    ];
+    // No outro aparelho, o item que a pessoa marcou saiu.
+    const next = {
+      ...shown,
+      rooms: [
+        { ...shown.rooms[0]!, items: shown.rooms[0]!.items.filter((_, i) => i !== 2) },
+        ...shown.rooms.slice(1),
+      ],
+    };
+
+    const merged = withUnsaved(next, shown, values, defaults).rooms[0]!.items;
+
+    expect(merged.map((entry) => entry.itemId)).toEqual([
+      second!.itemId,
+      first!.itemId,
+      ...rest.slice(1).map((entry) => entry.itemId),
+      "novo",
+    ]);
+    expect(merged[0]?.name).toBe("Paredes e teto");
   });
 });

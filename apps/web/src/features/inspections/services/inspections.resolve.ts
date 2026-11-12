@@ -5,6 +5,11 @@ import { sameValue } from "@/shared/sync/merge";
 
 import type { InspectionRecord, ItemRecord, RoomRecord } from "../models/inspection";
 import { inspectionRecordOf } from "./inspections.mappers";
+import {
+  type InspectionFormValues,
+  formValuesOf,
+  recordWith,
+} from "../schemas/inspection.schemas";
 import { type InspectionCollision, mergeInspection } from "./inspections.merge";
 
 // A decisão da pessoa no ConflictResolver (frontend.md, "Conflito"): o merge refeito a partir do rascunho em conflito
@@ -105,7 +110,7 @@ function withServerSide<T extends Positioned>(list: T[], id: string, server: T |
  * renumerada no fim. A `version` é a do `current`, a `baseVersion` do reenvio. Colisão sem escolha segue o local.
  */
 export function resolveInspection(
-  conflict: InspectionConflict,
+  conflict: Pick<InspectionConflict, "merged" | "collisions" | "server">,
   choices: Readonly<Record<string, ConflictChoice>>,
 ): InspectionRecord {
   const resolved = structuredClone(conflict.merged);
@@ -189,4 +194,26 @@ export function recreatedInspection(record: InspectionRecord): InspectionRecord 
       items: room.items.map((item) => ({ ...item, id: newId() })),
     })),
   };
+}
+
+/**
+ * Os valores do formulário para `next`, uma versão nova que chegou com a tela aberta (o pull ou um merge sem colisão),
+ * sem perder o que a pessoa mudou e ainda não foi para o rascunho (ADR 0043, ADR 0058): o merge de três vias com base =
+ * `defaults` (o que o formulário tinha por último salvo), local = `values` e servidor = `next`, as duas primeiras sobre
+ * `shown` (o registro que o formulário mostrava). O que só a pessoa mudou fica, inclusive ambientes e itens incluídos,
+ * removidos, renomeados ou movidos; o que só `next` mudou entra; no que os dois mudaram, fica o da pessoa. Um ambiente
+ * ou item que saiu em `next` leva a marcação junto, como o servidor tem.
+ */
+export function withUnsaved(
+  next: InspectionRecord,
+  shown: InspectionRecord,
+  values: InspectionFormValues,
+  defaults: InspectionFormValues,
+): InspectionFormValues {
+  const merge = mergeInspection(recordWith(shown, defaults), recordWith(shown, values), next);
+  const removed = merge.collisions.filter((collision) => collision.kind === "removed");
+  const choices = Object.fromEntries(
+    removed.map((collision) => [collisionKey(collision), "servidor" as const]),
+  );
+  return formValuesOf(resolveInspection({ ...merge, server: next }, choices));
 }
