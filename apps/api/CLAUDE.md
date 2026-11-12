@@ -30,7 +30,8 @@ Pastas em [Estrutura de pastas](../../docs/architecture/backend.md#estrutura-de-
 - **Rota exige access token por padrão** (fallback policy). Só `/auth/*` leva `[AllowAnonymous]`, além do
   documento OpenAPI de dev e dos health checks (`/health/live` e `/health/ready`, mapeados pelo nativo em
   `HealthConfig`, fora de `/api/v1` e do contrato: a única rota que não é controller). Rate limit por política
-  nomeada em `RateLimitConfig` (`[EnableRateLimiting]`).
+  nomeada em `RateLimitConfig` (`[EnableRateLimiting]`), pelo IP do cliente: atrás do Caddy, o `ProxyConfig` lê o
+  `X-Forwarded-For` só vindo de um IP de `ForwardedHeaders:KnownProxies`; sem nenhum, ignora o cabeçalho.
 - **Todo endpoint tem `[EndpointName]` em camelCase** (vira o `operationId` e o nome da função no front).
 - **Endpoint que pode falhar declara `[ProblemResponses(...)]`** com os status da tabela de
   [Endpoints](../../docs/architecture/backend.md#endpoints); o OpenAPI os publica como `application/problem+json`.
@@ -65,7 +66,8 @@ Cenários esperados em [Testes de integração](../../docs/architecture/backend.
 - `pnpm test:api` (raiz): `dotnet test` na `Vistoria.sln`.
 - `dotnet build` em `apps/api`: compila e regenera `openapi.json` (ou `/gen-api`).
 - Migrações (em `apps/api`, depois de `dotnet tool restore`): `dotnet ef migrations add <Nome> --project Vistoria.Api`.
-  Em Development o startup aplica as pendentes (`MigrateAsync`); em produção, o `efbundle` no deploy (M5).
+  Em Development o startup aplica as pendentes (`MigrateAsync`); em produção, o `efbundle` da imagem (`Dockerfile`), rodado
+  pelo serviço `migrate` do `infra/docker-compose.prod.yml` antes da API subir.
   `DatabaseModelTests` falha se o modelo mudou sem migração.
 - Connection string `ConnectionStrings:Default` e chave do JWT `Jwt:SigningKey`: User Secrets em dev, gravadas
   pelo `pnpm db:init` (raiz), `ConnectionStrings__Default` e `Jwt__SigningKey` no container. Nunca em
