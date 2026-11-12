@@ -17,4 +17,4 @@ Uma imagem a menos para manter. A migração falha antes de a API nova subir, e 
 - A imagem da API carrega o bundle, cerca de 80 MB, mesmo sem usá-lo depois do deploy.
 - Uma migração que trava segura o deploy inteiro, porque não há timeout próprio: o `api` não sobe.
 - A subnet e o IP fixos podem colidir com uma rede da máquina de hospedagem. Mudar o IP é mexer no compose em dois lugares.
-- O `sa` continua sendo o usuário da API em produção. Um login SQL dedicado fica para depois.
+- O banco de produção é o SQL Server Express, a edição gratuita licenciada para produção: 10 GB por banco, 1 socket ou 4 núcleos e ~1,4 GB de buffer pool. Passar disso é trocar a edição e pagar a licença. O `sa` continua sendo o usuário da API; um login SQL dedicado fica para depois.

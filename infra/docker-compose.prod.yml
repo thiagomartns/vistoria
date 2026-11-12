@@ -19,7 +19,9 @@ services:
     restart: unless-stopped
     environment:
       ACCEPT_EULA: "Y"
-      MSSQL_PID: Developer
+      # Express: a edição gratuita licenciada para produção (a Developer, do compose de dev, não é). Limites: 10 GB por
+      # banco, 1 socket ou 4 núcleos e ~1,4 GB de buffer pool, folgados para a V1 (ADR 0056).
+      MSSQL_PID: Express
       MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?rode pnpm prod:init para gerar infra/.env.prod}
     # Sem porta publicada: só a API, pela rede interna, fala com o banco.
     volumes:

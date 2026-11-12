@@ -326,7 +326,7 @@ Em produção, front e API ficam na **mesma origem**, atrás de um proxy. Isso e
 | --- | --- | --- |
 | Front | `next dev` em `localhost:3000` | Arquivos do static export servidos pelo Caddy |
 | API | `dotnet watch` em `localhost:8080` | Container `api` atrás do Caddy em `/api/*` |
-| Banco | SQL Server em container local | Container `db` com volume persistente |
+| Banco | SQL Server (Developer) em container local | SQL Server Express no container `db`, com volume persistente |
 | CORS | Origem `http://localhost:3000` com `AllowCredentials()`, expondo `ETag` e `Retry-After` | Desligado (mesma origem) |
 | Cookie | `Secure` funciona em `localhost`; portas diferentes contam como mesmo site | Mesma origem |
 | Migrações | `Database.MigrateAsync()` no startup | Bundle `efbundle` executado como etapa do deploy |
