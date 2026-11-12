@@ -164,6 +164,40 @@ jobs:
         if: failure()
         run: tail -n 300 "$RUNNER_TEMP/api.log"
 
+  # O docker-compose de produção (#177): as duas imagens, a migração pelo efbundle e o Caddy servindo o front e a API na
+  # mesma origem, com TLS. O roteiro curto entra, sincroniza, renova a sessão pelo cookie e confere o IP do rate limit.
+  prod:
+    name: prod
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Gerados no infra/.env.prod (0600) e mascarados: nenhum segredo no workflow (ADR 0025).
+      - name: Segredos desta execução
+        run: pnpm prod:init
+
+      - name: Compose de produção
+        run: pnpm prod:up
+
+      - name: Roteiro de produção
+        run: pnpm smoke:prod
+
+      - name: Logs do compose
+        if: failure()
+        run: docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod logs --tail 200
+
   security:
     name: security
     runs-on: ubuntu-24.04
