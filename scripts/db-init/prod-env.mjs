@@ -17,5 +17,6 @@ if (existsSync(path)) {
 
 if (process.env.GITHUB_ACTIONS === "true") {
   const text = readFileSync(path, "utf8");
-  for (const key of [PASSWORD_KEY, PROD_JWT_KEY]) console.log(`::add-mask::${readEnvValue(text, key)}`);
+  for (const key of [PASSWORD_KEY, PROD_JWT_KEY])
+    console.log(`::add-mask::${readEnvValue(text, key)}`);
 }

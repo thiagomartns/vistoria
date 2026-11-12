@@ -24,7 +24,8 @@ async function launch() {
   }
 }
 
-const synced = (page) => page.getByRole("button", { name: /^Pendências: Sincronizado/ }).waitFor({ timeout: 15_000 });
+const synced = (page) =>
+  page.getByRole("button", { name: /^Pendências: Sincronizado/ }).waitFor({ timeout: 15_000 });
 
 const user = {
   name: "Roteiro de produção",
@@ -60,7 +61,9 @@ try {
   await page.getByRole("link", { name: "Novo cliente" }).first().click();
   await page.getByRole("heading", { level: 1, name: "Novo cliente" }).waitFor();
   await page.getByLabel("Nome").fill(clientName);
-  const put = page.waitForResponse((res) => res.url().startsWith(`${base}/api/v1/clients/`) && res.request().method() === "PUT");
+  const put = page.waitForResponse(
+    (res) => res.url().startsWith(`${base}/api/v1/clients/`) && res.request().method() === "PUT",
+  );
   await page.getByRole("button", { name: "Salvar" }).click();
   assert.equal((await put).status(), 201, "o PUT do cliente pelo proxy");
   await synced(page);
@@ -68,7 +71,10 @@ try {
   const id = new URL(await link.getAttribute("href"), base).searchParams.get("id");
   ok(`cliente ${id} no servidor; SyncStatus sincronizado`);
 
-  step(4, "Recarrega: o access token some e a sessão volta pelo cookie do refresh (Secure, SameSite=Strict)");
+  step(
+    4,
+    "Recarrega: o access token some e a sessão volta pelo cookie do refresh (Secure, SameSite=Strict)",
+  );
   const refresh = page.waitForResponse((res) => res.url() === `${base}/api/v1/auth/refresh`);
   await page.reload();
   assert.equal((await refresh).status(), 200, "o refresh pelo cookie, na mesma origem");
@@ -77,7 +83,10 @@ try {
   assert.ok(!page.url().includes("/login"), "a sessão não pediu login de novo");
   ok("sessão renovada pelo cookie, sem login");
 
-  step(5, "Um aparelho novo entra, baixa o cliente pelo pull e abre /clients/edit?id= (try_files do Caddy)");
+  step(
+    5,
+    "Um aparelho novo entra, baixa o cliente pelo pull e abre /clients/edit?id= (try_files do Caddy)",
+  );
   const other = await browser.newContext(contextOptions);
   const document = await other.request.get(`${base}/clients/edit?id=${id}`);
   assert.equal(document.status(), 200);
