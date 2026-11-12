@@ -68,7 +68,7 @@ Ficam todos em `apps/web/src/shared/components/` e são feitos só com primitivo
 | InspectionItem (42:1758) | `import { InspectionItem } from "@/shared/components/inspection-item"` | `layout` desktop, celular · `tipo` entrada, saída | Específico |
 | ListRow (64:1706) | `import { ListRow } from "@/shared/components/list-row"` | — | Candidato |
 | EmptyState (64:1722) | `import { EmptyState } from "@/shared/components/empty-state"` | — | Candidato |
-| SortableItem (64:1818) | `import { SortableItem } from "@/shared/components/sortable-item"` | `tipo` texto, campo (o conteúdo entra como `children`) · `estado` selecionado → `selected`; o levantado do arrasto ("Roteiros (#173)", estado 4) → `dragging`, com sombra. No editor de roteiro, pelo `SortableRow` de `@/features/templates/components/sortable-list`, que liga a alça ao dnd-kit (ADR 0057) | Candidato |
+| SortableItem (64:1818) | `import { SortableItem } from "@/shared/components/sortable-item"` | `tipo` texto, campo (o conteúdo entra como `children`) · `estado` selecionado → `selected`; o levantado do arrasto ("Roteiros (#173)", estado 4) → `dragging`, com sombra. No editor de roteiro e na tela de campo (itens em edição e o Sheet dos ambientes), pelo `SortableList` e o `SortableRow` de `@/shared/components/sortable-list`, que ligam a alça ao dnd-kit (ADR 0057, ADR 0058) | Candidato |
 | Avis/Mark (103:1744) | `import { AvisMark } from "@/shared/components/avis-mark"` | `size` default, small (no código, pelo tamanho: small abaixo de 32 px) | Específico (marca) |
 | Avis/Lockup (103:1759) | `import { AvisLockup } from "@/shared/components/avis-lockup"` | `layout` horizontal, vertical · `legenda` (`caption`) | Específico (marca) |
 
