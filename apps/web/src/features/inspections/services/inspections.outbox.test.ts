@@ -13,7 +13,7 @@ import { UPSERT_PROPERTY, upsertPropertyMutation } from "@/features/properties/s
 
 import type { InspectionRecord } from "../models/inspection";
 import type { InspectionsCollection } from "./inspections.collection";
-import { newMoveInInspection } from "./inspections.factory";
+import { DEFAULT_TEMPLATE, newMoveInInspection } from "./inspections.factory";
 import {
   LOCKED_DESCRIPTION,
   LOCKED_TITLE,
@@ -232,7 +232,7 @@ describe("vistoria na outbox", () => {
     const server = fakeServer();
     const local = localStores();
     const { outbox, properties, inspections } = await start(server, local);
-    const inspection = newMoveInInspection(property.id);
+    const inspection = newMoveInInspection(property.id, DEFAULT_TEMPLATE);
 
     enqueue(outbox, UPSERT_PROPERTY, () => properties.insert(property));
     enqueue(outbox, UPSERT_INSPECTION, () => inspections.insert(inspection));
@@ -253,7 +253,7 @@ describe("vistoria na outbox", () => {
     const server = fakeServer({ rejectProperty: true });
     const local = localStores();
     const { outbox, properties, inspections } = await start(server, local);
-    const inspection = newMoveInInspection(property.id);
+    const inspection = newMoveInInspection(property.id, DEFAULT_TEMPLATE);
     vi.spyOn(console, "warn").mockImplementation(() => {});
 
     enqueue(outbox, UPSERT_PROPERTY, () => properties.insert(property));
@@ -287,7 +287,7 @@ describe("vistoria na outbox", () => {
     await vi.waitFor(async () => expect(await known.outbox.peekOutbox()).toHaveLength(0), { timeout: 5_000 });
 
     canSend = false;
-    const inspection = newMoveInInspection(property.id);
+    const inspection = newMoveInInspection(property.id, DEFAULT_TEMPLATE);
     enqueue(known.outbox, UPSERT_INSPECTION, () => known.inspections.insert(inspection));
     await vi.waitFor(async () => expect(await known.outbox.peekOutbox()).toHaveLength(1));
     known.outbox.dispose();
@@ -317,7 +317,7 @@ describe("concluir pela outbox (#179)", () => {
   /** O imóvel e a vistoria já no servidor; a vistoria com tudo avaliado, menos o que `pending` deixar sem condição. */
   async function synced(server: ReturnType<typeof fakeServer>, local: ReturnType<typeof localStores>) {
     const started = await start(server, local);
-    const inspection = newMoveInInspection(property.id);
+    const inspection = newMoveInInspection(property.id, DEFAULT_TEMPLATE);
     enqueue(started.outbox, UPSERT_PROPERTY, () => started.properties.insert(property));
     enqueue(started.outbox, UPSERT_INSPECTION, () => started.inspections.insert(inspection));
     await vi.waitFor(() => expect(local.confirmed.has(inspection.id)).toBe(true), { timeout: 5_000 });

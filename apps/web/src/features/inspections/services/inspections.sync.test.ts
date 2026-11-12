@@ -11,7 +11,7 @@ import { describeSync } from "@/shared/sync/sync-view";
 
 import type { InspectionRecord } from "../models/inspection";
 import type { InspectionsCollection } from "./inspections.collection";
-import { newMoveInInspection } from "./inspections.factory";
+import { DEFAULT_TEMPLATE, newMoveInInspection } from "./inspections.factory";
 import { UPSERT_INSPECTION, upsertInspectionMutation } from "./inspections.sync";
 
 // A mutationFn de inspections com um fetch falso. O caminho comum (chave, If-Match, store depois do 2xx) é o mesmo de
@@ -19,7 +19,10 @@ import { UPSERT_INSPECTION, upsertInspectionMutation } from "./inspections.sync"
 // encadeamento das versões e os erros por caminho aninhado.
 
 const idempotencyKey = "01a16032-2dfc-7334-9752-3da4fdcc2e87";
-const record: InspectionRecord = newMoveInInspection("01a16032-2dfb-77de-84a2-1f165bdd993e");
+const record: InspectionRecord = newMoveInInspection(
+  "01a16032-2dfb-77de-84a2-1f165bdd993e",
+  DEFAULT_TEMPLATE,
+);
 const { id } = record;
 
 const dtoOf = (sent: InspectionRecord, version: string) => ({

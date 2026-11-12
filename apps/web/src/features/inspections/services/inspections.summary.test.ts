@@ -5,7 +5,7 @@ import { V, closeDevices, device, fakeApi, indexedDbInspections } from "@/shared
 
 import type { InspectionRecord, ItemCondition } from "../models/inspection";
 import type { InspectionsCollection } from "./inspections.collection";
-import { newMoveInInspection } from "./inspections.factory";
+import { DEFAULT_TEMPLATE, newMoveInInspection } from "./inspections.factory";
 import { summaryOf } from "./inspections.summary";
 import { deleteInspection } from "./inspections.sync";
 
@@ -29,7 +29,7 @@ const PROPERTY = "01a16032-2dfb-77de-84a2-1f165bdd9a00";
 
 /** A vistoria `n`, confirmada na versão `version`. */
 const inspectionOf = (n: number, version = V(n)): InspectionRecord => ({
-  ...newMoveInInspection(PROPERTY, new Date(Date.UTC(2026, 9, 29, 9, n))),
+  ...newMoveInInspection(PROPERTY, DEFAULT_TEMPLATE, new Date(Date.UTC(2026, 9, 29, 9, n))),
   id: `01a16032-2dfb-77de-84a2-1f165bdd9b${String(n).padStart(2, "0")}`,
   version,
 });

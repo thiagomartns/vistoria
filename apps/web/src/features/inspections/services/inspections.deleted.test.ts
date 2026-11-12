@@ -8,7 +8,7 @@ import { type Outbox, startOutbox } from "@/shared/sync/outbox";
 
 import type { InspectionRecord } from "../models/inspection";
 import type { InspectionsCollection } from "./inspections.collection";
-import { newMoveInInspection } from "./inspections.factory";
+import { DEFAULT_TEMPLATE, newMoveInInspection } from "./inspections.factory";
 import {
   DELETE_INSPECTION,
   UPSERT_INSPECTION,
@@ -200,7 +200,7 @@ async function start(server: ReturnType<typeof fakeServer>, local = localInspect
   const store = { inspections: local.inspections, drafts: local.draftsCollection, outbox };
   /** Uma vistoria que o servidor já aceitou, na versão "v1". */
   const known = () => {
-    const record = { ...newMoveInInspection(PROPERTY_ID), version: "v1" };
+    const record = { ...newMoveInInspection(PROPERTY_ID, DEFAULT_TEMPLATE), version: "v1" };
     local.confirmed.set(record.id, record);
     local.inspections.insert(record);
     server.known.set(record.id, record);

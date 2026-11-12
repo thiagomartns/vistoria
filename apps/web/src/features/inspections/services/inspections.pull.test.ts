@@ -6,7 +6,7 @@ import { DELETED_AT, V, closeDevices, device, fakeApi } from "@/shared/sync/pull
 
 import { INSPECTION_ENTITY, type InspectionRecord, type ItemCondition } from "../models/inspection";
 import type { InspectionsCollection } from "./inspections.collection";
-import { newMoveInInspection } from "./inspections.factory";
+import { DEFAULT_TEMPLATE, newMoveInInspection } from "./inspections.factory";
 import { deleteInspection } from "./inspections.sync";
 
 // O pull da vistoria (frontend.md, "Leitura (pull)"; ADR 0041 e 0043), com o harness de `shared/sync/pull.harness.ts`:
@@ -30,7 +30,7 @@ const PROPERTY = "01a16032-2dfb-77de-84a2-1f165bdd9a00";
 
 /** A vistoria como os dois aparelhos a confirmaram (V1). */
 const inspectionV1: InspectionRecord = {
-  ...newMoveInInspection(PROPERTY, new Date("2026-10-29T09:00:00Z")),
+  ...newMoveInInspection(PROPERTY, DEFAULT_TEMPLATE, new Date("2026-10-29T09:00:00Z")),
   id: ID,
   version: V(1),
 };

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -7,13 +7,14 @@ import type { InspectionRecord } from "@/features/inspections/models/inspection"
 import type { InspectionSummary } from "@/features/inspections/models/inspection-summary";
 import { saveInspection } from "@/features/inspections/services/inspections.sync";
 import type { PropertyRecord } from "@/features/properties/models/property";
+import type { TemplateRecord } from "@/features/templates/models/template";
 import { resetSession } from "@/shared/auth/session";
 import { resetSyncStatus } from "@/shared/sync/sync-status";
 
 import { AppShell } from "../../app-shell";
 import { NewInspectionScreen } from "./new-inspection-screen";
 
-// /inspections/new (wireframes 68:1644 e 68:1878), com o banco local simulado no hook, os resumos e a vistoria por id
+// /inspections/new (wireframes 68:1644 e 68:1878, e a seção "Nova vistoria · roteiro (#174)"), com o banco local simulado no hook, os resumos e a vistoria por id
 // simulados, e o saveInspection espionado.
 
 const navigation = vi.hoisted(() => ({ push: vi.fn<(href: string) => void>() }));
@@ -32,6 +33,9 @@ const local = vi.hoisted(() => ({
     ready: true,
     clients: [] as ClientRecord[],
     properties: [] as PropertyRecord[],
+    templates: [] as TemplateRecord[],
+    drafts: [],
+    states: new Map(),
     pending: new Map<string, { mutationFnName: string; record: unknown; removed: boolean }>(),
     outboxRead: true,
   },
@@ -88,6 +92,19 @@ const property = (id: string, street: string): PropertyRecord => ({
   notes: null,
 });
 
+// Um roteiro do aparelho, com os ambientes e itens na ordem dada.
+const template = (id: string, name: string, rooms: [string, string[]][]): TemplateRecord => ({
+  id,
+  version: "A",
+  name,
+  rooms: rooms.map(([room, items], position) => ({
+    id: `${id}-${position}`,
+    name: room,
+    position,
+    items: items.map((item, index) => ({ id: `${id}-${position}-${index}`, name: item, position: index })),
+  })),
+});
+
 function open(properties: PropertyRecord[]) {
   local.value = { ...local.value, clients: [lar], properties };
   return render(
@@ -141,7 +158,7 @@ async function chooseMoveOut(user: ReturnType<typeof userEvent.setup>, propertyL
 afterEach(() => {
   inspections.summaries = [];
   inspections.records = new Map();
-  local.value = { ...local.value, pending: new Map() };
+  local.value = { ...local.value, templates: [], pending: new Map() };
   navigation.push.mockReset();
   vi.mocked(saveInspection).mockClear();
   resetSyncStatus();
@@ -149,7 +166,7 @@ afterEach(() => {
 });
 
 describe("NewInspectionScreen", () => {
-  it("Tipo com Entrada marcada e Saída disponível; Roteiro padrão; Voltar e Cancelar para a lista", () => {
+  it("Tipo com Entrada marcada e Saída disponível; sem roteiro no aparelho, o padrão e o link para Roteiros; Voltar e Cancelar para a lista", () => {
     open([property("p1", "Rua das Flores")]);
 
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Nova vistoria");
@@ -159,6 +176,10 @@ describe("NewInspectionScreen", () => {
     expect((screen.getByRole("radio", { name: "Saída" }) as HTMLButtonElement).disabled).toBe(false);
     expect(screen.getByLabelText("Roteiro").textContent).toBe(
       "Roteiro padrão · 5 ambientes, 29 itens",
+    );
+    const description = screen.getByText(/Nenhum roteiro neste aparelho: a entrada parte do roteiro padrão/);
+    expect(within(description).getByRole("link", { name: "Roteiros" }).getAttribute("href")).toBe(
+      "/templates",
     );
     expect(screen.getByRole("link", { name: "Cancelar" }).getAttribute("href")).toBe(
       "/inspections",
@@ -176,7 +197,7 @@ describe("NewInspectionScreen", () => {
     expect(saveInspection).not.toHaveBeenCalled();
   });
 
-  it("escolher o imóvel e começar: cria a entrada pelo roteiro fixo e abre a tela de campo", async () => {
+  it("escolher o imóvel e começar, sem roteiro no aparelho: cria a entrada pelo roteiro padrão e abre a tela de campo", async () => {
     const user = userEvent.setup();
     open([property("p2", "Rua do Porto"), property("p1", "Rua das Flores")]);
 
@@ -201,6 +222,50 @@ describe("NewInspectionScreen", () => {
       "Quarto",
       "Área de serviço",
     ]);
+  });
+
+  it("com roteiros no aparelho: lista os que têm ambiente por nome, o primeiro escolhido, e a entrada copia o escolhido com ids novos", async () => {
+    const user = userEvent.setup();
+    const sala = template("t-sala", "Sala comercial", [
+      ["Recepção", ["Piso", "Vidraça"]],
+      ["Copa", ["Pia"]],
+    ]);
+    local.value = {
+      ...local.value,
+      templates: [sala, template("t-casa", "Casa térrea", [["Quintal", ["Muro"]]]), template("t-vazio", "Vazio", [])],
+    };
+    open([property("p1", "Rua das Flores")]);
+
+    const select = screen.getByLabelText("Roteiro");
+    expect(select.textContent).toBe("Casa térrea · 1 ambiente, 1 item");
+    expect(screen.queryByText(/Nenhum roteiro neste aparelho/)).toBeNull();
+    expect(
+      screen.getByText(
+        "Ambientes e itens são copiados para a vistoria; depois de criada, ela não depende mais do roteiro.",
+      ),
+    ).toBeDefined();
+    await user.click(select);
+    expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual([
+      "Casa térrea · 1 ambiente, 1 item",
+      "Sala comercial · 2 ambientes, 3 itens",
+    ]);
+    await user.click(screen.getByRole("option", { name: "Sala comercial · 2 ambientes, 3 itens" }));
+    await user.click(screen.getByLabelText("Imóvel"));
+    await user.click(await screen.findByRole("option", { name: "Rua das Flores, 120 · Imobiliária Lar" }));
+    await user.click(screen.getByRole("button", { name: "Começar vistoria" }));
+
+    await vi.waitFor(() =>
+      expect(navigation.push).toHaveBeenCalledWith("/inspections/edit?id=nova"),
+    );
+    const created = vi.mocked(saveInspection).mock.calls[0]?.[1];
+    expect(created).toMatchObject({ propertyId: "p1", kind: "moveIn", status: "inProgress" });
+    expect(created?.rooms.map((room) => [room.name, room.items.map((item) => item.name)])).toEqual([
+      ["Recepção", ["Piso", "Vidraça"]],
+      ["Copa", ["Pia"]],
+    ]);
+    const templateIds = sala.rooms.flatMap((room) => [room.id, ...room.items.map((item) => item.id)]);
+    const ids = created?.rooms.flatMap((room) => [room.id, ...room.items.map((item) => item.id)]) ?? [];
+    expect(ids.some((id) => templateIds.includes(id))).toBe(false);
   });
 
   it("sem imóvel no aparelho: o aviso leva ao cadastro, e começar fica desabilitado", () => {

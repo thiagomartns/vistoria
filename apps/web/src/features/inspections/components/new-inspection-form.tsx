@@ -9,7 +9,6 @@ import {
   FormLabel,
   FormMessage,
 } from "@sanjou/ui/form";
-import { Label } from "@sanjou/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@sanjou/ui/select";
 import { TriangleAlert } from "lucide-react";
 import Link from "next/link";
@@ -18,8 +17,9 @@ import type { UseFormReturn } from "react-hook-form";
 
 import { ToggleGroup, ToggleGroupItem } from "@/shared/components/toggle-group";
 
-// O formulário de /inspections/new (wireframes 68:1644 e 68:1878): Imóvel e Tipo; na entrada, o Roteiro (o fixo, a
-// única opção até os roteiros editáveis); na saída, a Vistoria de entrada de onde ela parte, ou, sem entrada concluída
+// O formulário de /inspections/new (wireframes 68:1644 e 68:1878, e a seção "Nova vistoria · roteiro (#174)"): Imóvel
+// e Tipo; na entrada, o Roteiro, entre os do aparelho, ou o roteiro padrão num aparelho sem nenhum, com o link para
+// Roteiros; na saída, a Vistoria de entrada de onde ela parte, ou, sem entrada concluída
 // no imóvel, o aviso e "Começar vistoria" desabilitado (68:1759). "Começar vistoria" e "Cancelar". No desktop, 560 px;
 // no celular, largura cheia e botões lg. Sem imóvel no aparelho, um aviso leva ao cadastro. O `form` vem do hook da
 // página.
@@ -30,10 +30,21 @@ export interface Option {
 }
 
 type NewInspectionFormProps = {
-  form: UseFormReturn<{ propertyId: string; kind: "moveIn" | "moveOut"; moveInId: string }>;
+  form: UseFormReturn<{
+    propertyId: string;
+    kind: "moveIn" | "moveOut";
+    moveInId: string;
+    templateId: string;
+  }>;
   onSubmit: FormEventHandler<HTMLFormElement>;
   propertyOptions: Option[];
-  templateLabel: string;
+  /** Os roteiros do aparelho, ou só o roteiro padrão. */
+  templateOptions: Option[];
+  /** O roteiro de onde a entrada parte: o escolhido, ou o primeiro. */
+  templateId: string;
+  /** Sem roteiro no aparelho: a opção é o roteiro padrão. */
+  defaultTemplate: boolean;
+  templatesHref: string;
   /** O tipo escolhido é saída. */
   moveOut: boolean;
   /** As entradas concluídas do imóvel escolhido. */
@@ -49,13 +60,14 @@ type NewInspectionFormProps = {
   cancelHref: string;
 };
 
-const TEMPLATE = "fixo";
-
 export function NewInspectionForm({
   form,
   onSubmit,
   propertyOptions,
-  templateLabel,
+  templateOptions,
+  templateId,
+  defaultTemplate,
+  templatesHref,
   moveOut,
   moveInOptions,
   moveInId,
@@ -138,21 +150,48 @@ export function NewInspectionForm({
           )}
         />
         {!moveOut ? (
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="roteiro">Roteiro</Label>
-            <Select value={TEMPLATE} disabled={noProperties}>
-              <SelectTrigger id="roteiro" className="w-full" aria-describedby="roteiro-descricao">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={TEMPLATE}>{templateLabel}</SelectItem>
-              </SelectContent>
-            </Select>
-            <p id="roteiro-descricao" className="text-sm text-muted-foreground">
-              Ambientes e itens são copiados para a vistoria; depois de criada, ela não depende mais
-              do roteiro.
-            </p>
-          </div>
+          <FormField
+            control={form.control}
+            name="templateId"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Roteiro</FormLabel>
+                <Select
+                  name={field.name}
+                  value={templateId}
+                  onValueChange={field.onChange}
+                  disabled={noProperties}
+                >
+                  <FormControl>
+                    <SelectTrigger ref={field.ref} onBlur={field.onBlur} className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {templateOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormDescription>
+                  {defaultTemplate ? (
+                    <>
+                      Nenhum roteiro neste aparelho: a entrada parte do roteiro padrão. Crie os seus
+                      em{" "}
+                      <Link href={templatesHref} className="font-medium text-foreground underline">
+                        Roteiros
+                      </Link>
+                      .
+                    </>
+                  ) : (
+                    "Ambientes e itens são copiados para a vistoria; depois de criada, ela não depende mais do roteiro."
+                  )}
+                </FormDescription>
+              </FormItem>
+            )}
+          />
         ) : noMoveIn ? (
           <Alert variant="warning">
             <TriangleAlert aria-hidden="true" />

@@ -28,7 +28,9 @@ import {
   roomViews,
   roomsSummary,
   startedLabel,
+  templateOptionsOf,
 } from "./inspections.view";
+import { DEFAULT_TEMPLATE } from "./inspections.factory";
 import { summaryOf } from "./inspections.summary";
 
 const inspection = (id: string, over: Partial<InspectionRecord> = {}): InspectionRecord => ({
@@ -535,5 +537,40 @@ describe("referenceOf", () => {
       }),
     ).toEqual({ condition: "Regular", notes: "Pintura nova." });
     expect(referenceOf({ id: "t2", name: "Teto", position: 1, condition: null, notes: null })).toBeUndefined();
+  });
+});
+
+describe("templateOptionsOf", () => {
+  const room = (name: string, items: string[]) => ({ name, items: items.map((item) => ({ name: item })) });
+
+  it("os roteiros do aparelho na ordem recebida, com as contagens no rótulo e os ambientes para a cópia", () => {
+    const casa = [room("Quintal", ["Piso", "Muro"]), room("Garagem", ["Portão"])];
+    const sala = [room("Sala", ["Piso"])];
+
+    expect(
+      templateOptionsOf([
+        { id: "t-casa", name: "Casa térrea", rooms: casa },
+        { id: "t-sala", name: "Sala comercial", rooms: sala },
+      ]),
+    ).toEqual([
+      { value: "t-casa", label: "Casa térrea · 2 ambientes, 3 itens", rooms: casa },
+      { value: "t-sala", label: "Sala comercial · 1 ambiente, 1 item", rooms: sala },
+    ]);
+  });
+
+  it("roteiro sem ambiente fica de fora: a vistoria nasceria sem nada para avaliar", () => {
+    const options = templateOptionsOf([
+      { id: "t-vazio", name: "Vazio", rooms: [] },
+      { id: "t-casa", name: "Casa", rooms: [room("Sala", [])] },
+    ]);
+
+    expect(options.map((option) => [option.value, option.label])).toEqual([["t-casa", "Casa · 1 ambiente, 0 itens"]]);
+  });
+
+  it("sem roteiro que sirva, a opção única do roteiro padrão", () => {
+    const only = [{ value: "padrao", label: "Roteiro padrão · 5 ambientes, 29 itens", rooms: DEFAULT_TEMPLATE }];
+
+    expect(templateOptionsOf([])).toEqual(only);
+    expect(templateOptionsOf([{ id: "t-vazio", name: "Vazio", rooms: [] }])).toEqual(only);
   });
 });
