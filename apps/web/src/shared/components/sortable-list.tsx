@@ -18,11 +18,12 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import type { ReactNode } from "react";
 
-import { SortableItem } from "@/shared/components/sortable-item";
+import { SortableItem } from "./sortable-item";
 
-// A lista que se reordena arrastando pela alça (ADR 0057), para ambientes e itens do roteiro: o dnd-kit com o ponteiro
-// (mouse e toque, a partir de 4 px, para o toque na alça não virar arrasto sem querer) e o teclado (Espaço pega, setas
-// movem, Espaço solta, Esc cancela), com os anúncios do leitor de tela em português. A ordem nova sai por `onMove`.
+// A lista que se reordena arrastando pela alça (ADR 0057), para ambientes e itens do roteiro e da tela de campo
+// (ADR 0058): o dnd-kit com o ponteiro (mouse e toque, a partir de 4 px, para o toque na alça não virar arrasto sem
+// querer) e o teclado (Espaço pega, setas movem, Espaço solta, Esc cancela), com os anúncios do leitor de tela em
+// português. A ordem nova sai por `onMove`. Candidato ao Sanjou, junto do `SortableItem`.
 
 const INSTRUCTIONS =
   "Para mover, pressione Espaço. Use as setas para cima e para baixo para mudar a posição, Espaço de novo para soltar e Esc para cancelar.";

@@ -1,10 +1,15 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ClientRecord } from "@/features/clients/models/client";
 import type { InspectionRecord } from "@/features/inspections/models/inspection";
-import { NO_CONDITION } from "@/features/inspections/schemas/inspection.schemas";
+import {
+  ITEM_NAME_LENGTH,
+  ITEM_NAME_REQUIRED,
+  NO_CONDITION,
+  ROOM_NAME_REQUIRED,
+} from "@/features/inspections/schemas/inspection.schemas";
 import {
   completeInspection,
   deleteInspection,
@@ -248,13 +253,14 @@ describe("InspectionEditScreen", () => {
     expect(screen.getByRole("button", { name: "Adicionar observação: Bancada" })).toBeDefined();
   });
 
-  it("estado 2: ambiente sem itens mostra o EmptyState, sem ação; no último ambiente, Próximo vira 'Concluir vistoria'", async () => {
+  it("estado 2: ambiente sem itens mostra o EmptyState com 'Adicionar item'; no último ambiente, Próximo vira 'Concluir vistoria'", async () => {
     const user = userEvent.setup();
     open();
 
     await user.click(within(steps()).getByRole("button", { name: /Varanda/ }));
 
     expect(screen.getByText("Nenhum item neste ambiente")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Adicionar item" })).toBeDefined();
     expect(screen.getByText("Nenhum item ainda")).toBeDefined();
     expect(within(steps()).getByText("0 itens")).toBeDefined();
     expect(screen.queryByRole("button", { name: "Próximo" })).toBeNull();
@@ -456,6 +462,8 @@ describe("InspectionEditScreen", () => {
 
     expect((chip("Piso", "Novo") as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByRole("button", { name: /Adicionar observação/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Adicionar item" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Editar itens" })).toBeNull();
     expect(screen.getAllByText("Enviando").length).toBeGreaterThan(0);
 
     await user.click(screen.getByRole("button", { name: "Próximo" }));
@@ -946,6 +954,236 @@ describe("InspectionEditScreen", () => {
 
       expect(screen.getByText("Não foi possível buscar esta vistoria agora.")).toBeDefined();
       await vi.waitFor(() => expect(vi.mocked(fetchInspection)).toHaveBeenCalledTimes(2));
+    });
+  });
+});
+
+// #171 (Figma "Ambientes e itens (#171)"): adicionar, renomear, remover e reordenar ambientes e itens, pelo rascunho e
+// pela fila, com o `PUT` levando a lista completa e as posições; os limites do contrato barram no aparelho.
+describe("InspectionEditScreen · ambientes e itens (#171)", () => {
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+  const queued = () => vi.mocked(saveInspection).mock.lastCall?.[1];
+  const placed = (list: { id: string; position: number }[] | undefined) =>
+    list?.map((entry) => [entry.id, entry.position]);
+  const named = (list: { name: string; position: number }[] | undefined) =>
+    list?.map((entry) => [entry.name, entry.position]);
+
+  // O jsdom não mede layout: cada linha de lista reordenável mede 56 px, uma embaixo da outra (como no roteiro).
+  beforeEach(() => {
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: Element,
+    ) {
+      const row = this.closest("li");
+      const index = row?.parentElement ? [...row.parentElement.children].indexOf(row) : 0;
+      const top = row ? index * 64 : 0;
+      const height = row ? 56 : 0;
+      return {
+        x: 0,
+        y: top,
+        top,
+        left: 0,
+        width: 300,
+        height,
+        right: 300,
+        bottom: top + height,
+        toJSON: () => ({}),
+      };
+    });
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  async function moveDown(user: ReturnType<typeof userEvent.setup>, handle: HTMLElement) {
+    act(() => handle.focus());
+    await user.keyboard(" ");
+    await user.keyboard("{ArrowDown}");
+    await user.keyboard(" ");
+  }
+
+  async function openRooms(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "Mais ações" }));
+    await user.click(screen.getByRole("menuitem", { name: "Editar ambientes" }));
+    return screen.getByRole("dialog", { name: "Ambientes" });
+  }
+
+  it("adicionar item: entra na edição com o nome em foco; nomeado e avaliado, vai para a fila com a lista completa e as position certas", async () => {
+    const user = userEvent.setup();
+    open();
+
+    await user.click(screen.getAllByRole("button", { name: "Adicionar item" })[0]!);
+
+    expect(screen.getByText("Editando itens · 3 de 60")).toBeDefined();
+    expect(screen.queryByRole("radiogroup")).toBeNull();
+    const input = screen.getByRole("textbox", { name: "Nome do item 3" });
+    await vi.waitFor(() => expect(document.activeElement).toBe(input));
+    await user.type(input, "Ar-condicionado");
+    await user.click(screen.getByRole("button", { name: "Pronto" }));
+    await user.click(chip("Ar-condicionado", "Bom"));
+
+    await vi.waitFor(
+      () => expect(queued()?.rooms[0]?.items[2]?.condition).toBe("good"),
+      { timeout: 3000 },
+    );
+    const sent = queued()!;
+    expect(placed(sent.rooms)).toEqual([
+      ["r1", 0],
+      ["r2", 1],
+      ["r3", 2],
+    ]);
+    expect(named(sent.rooms[0]?.items)).toEqual([
+      ["Piso", 0],
+      ["Paredes", 1],
+      ["Ar-condicionado", 2],
+    ]);
+    expect(sent.rooms[0]?.items[2]?.id).toMatch(UUID);
+    expect(sent.rooms[0]?.items[2]?.notes).toBeNull();
+    expect(placed(sent.rooms[1]?.items)).toEqual([
+      ["t3", 0],
+      ["t4", 1],
+      ["t5", 2],
+    ]);
+    expect(screen.getAllByText("Não enviado").length).toBeGreaterThan(0);
+  });
+
+  it("remover e reordenar itens (pela alça, no teclado) e renomear: o PUT sai sem o removido, com as position novas", async () => {
+    const user = userEvent.setup();
+    open();
+    await user.click(screen.getByRole("button", { name: "Próximo" }));
+
+    await user.click(screen.getAllByRole("button", { name: "Editar itens" })[0]!);
+    await user.click(screen.getByRole("button", { name: "Remover Paredes" }));
+    await moveDown(user, screen.getByRole("button", { name: "Mover Piso" }));
+    const bancada = screen.getByRole("textbox", { name: "Nome do item 1" });
+    await vi.waitFor(() => expect((bancada as HTMLInputElement).value).toBe("Bancada"));
+    await user.clear(bancada);
+    await user.type(bancada, "Bancada de granito");
+    await user.click(screen.getByRole("button", { name: "Pronto" }));
+
+    expect(screen.getByRole("radiogroup", { name: "Condição: Bancada de granito" })).toBeDefined();
+    await vi.waitFor(() => expect(saveInspection).toHaveBeenCalled(), { timeout: 3000 });
+    const sent = queued()!;
+    expect(placed(sent.rooms[1]?.items)).toEqual([
+      ["t5", 0],
+      ["t3", 1],
+    ]);
+    expect(sent.rooms[1]?.items.map((entry) => entry.name)).toEqual(["Bancada de granito", "Piso"]);
+    expect(sent.rooms[1]?.items[1]?.condition).toBe("good");
+    expect(placed(sent.rooms[0]?.items)).toEqual([
+      ["t1", 0],
+      ["t2", 1],
+    ]);
+  });
+
+  it("ambientes no Sheet: incluir, reordenar e remover (com o Dialog quando tem itens); o aberto segue aberto e o PUT leva a lista nova", async () => {
+    const user = userEvent.setup();
+    open();
+    const sheet = await openRooms(user);
+    expect(within(sheet).getByText("3 de 40 · Arraste pela alça para mudar a ordem.")).toBeDefined();
+
+    await user.click(within(sheet).getByRole("button", { name: "Adicionar ambiente" }));
+    const name = within(sheet).getByRole("textbox", { name: "Nome do ambiente 4" });
+    await vi.waitFor(() => expect(document.activeElement).toBe(name));
+    await user.type(name, "Lavanderia");
+    await moveDown(user, within(sheet).getByRole("button", { name: "Mover Sala" }));
+    await user.click(within(sheet).getByRole("button", { name: "Remover Varanda" }));
+    await user.click(within(sheet).getByRole("button", { name: "Remover Cozinha" }));
+    const confirm = screen.getByRole("dialog", { name: "Remover ambiente?" });
+    expect(confirm.textContent).toContain(
+      "Cozinha tem 3 itens, 2 já avaliados. Eles saem da vistoria junto com o ambiente.",
+    );
+    await user.click(within(confirm).getByRole("button", { name: "Remover ambiente" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Ambientes" })).getByRole("button", { name: "Pronto" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(currentStep().textContent).toContain("Sala");
+    expect(within(steps()).getByRole("button", { name: /Lavanderia/ })).toBeDefined();
+    await vi.waitFor(() => expect(saveInspection).toHaveBeenCalled(), { timeout: 3000 });
+    const sent = queued()!;
+    expect(named(sent.rooms)).toEqual([
+      ["Sala", 0],
+      ["Lavanderia", 1],
+    ]);
+    expect(sent.rooms[0]?.id).toBe("r1");
+    expect(sent.rooms[1]?.id).toMatch(UUID);
+    expect(sent.rooms[1]?.items).toEqual([]);
+  });
+
+  describe("os limites do contrato barram no aparelho", () => {
+    const many = (count: number, prefix: string) =>
+      Array.from({ length: count }, (_, index) => item(`${prefix}${index}`, `Item ${index + 1}`, index));
+
+    it("com 60 itens, 'Adicionar item' desabilita, também em edição", async () => {
+      const user = userEvent.setup();
+      const cheio = structuredClone(vistoria);
+      cheio.rooms[0]!.items = many(60, "x");
+      open({ inspections: [cheio] });
+
+      for (const button of screen.getAllByRole("button", { name: "Adicionar item" })) {
+        expect((button as HTMLButtonElement).disabled).toBe(true);
+      }
+      await user.click(screen.getAllByRole("button", { name: "Editar itens" })[0]!);
+      expect(screen.getByText("Editando itens · 60 de 60")).toBeDefined();
+      for (const button of screen.getAllByRole("button", { name: "Adicionar item" })) {
+        expect((button as HTMLButtonElement).disabled).toBe(true);
+      }
+    });
+
+    it("com 40 ambientes, 'Adicionar ambiente' desabilita", async () => {
+      const user = userEvent.setup();
+      const cheia = structuredClone(vistoria);
+      cheia.rooms = Array.from({ length: 40 }, (_, index) => ({
+        id: `a${index}`,
+        name: `Ambiente ${index + 1}`,
+        position: index,
+        notes: null,
+        items: [item(`a${index}i`, "Piso", 0)],
+      }));
+      open({ inspections: [cheia] });
+
+      const sheet = await openRooms(user);
+
+      expect(within(sheet).getByText("40 de 40 · Arraste pela alça para mudar a ordem.")).toBeDefined();
+      expect(
+        (within(sheet).getByRole("button", { name: "Adicionar ambiente" }) as HTMLButtonElement).disabled,
+      ).toBe(true);
+    });
+
+    it("nome de item vazio ou com 61 caracteres: a mensagem do .NET, 'Pronto' e Próximo não saem da edição, e nada vai para a fila", async () => {
+      const user = userEvent.setup();
+      open();
+
+      await user.click(screen.getAllByRole("button", { name: "Adicionar item" })[0]!);
+      await user.click(screen.getByRole("button", { name: "Pronto" }));
+
+      expect(screen.getByText(ITEM_NAME_REQUIRED)).toBeDefined();
+      expect(screen.getByText("Editando itens · 3 de 60")).toBeDefined();
+
+      await user.type(screen.getByRole("textbox", { name: "Nome do item 3" }), "x".repeat(61));
+      await user.click(screen.getByRole("button", { name: "Pronto" }));
+      expect(screen.getByText(ITEM_NAME_LENGTH)).toBeDefined();
+
+      await user.click(screen.getByRole("button", { name: "Próximo" }));
+      expect(currentStep().textContent).toContain("Sala");
+      expect(screen.getByText("Editando itens · 3 de 60")).toBeDefined();
+
+      await new Promise((done) => setTimeout(done, 1700));
+      expect(saveInspection).not.toHaveBeenCalled();
+      expect(vi.mocked(saveInspectionDraft).mock.lastCall?.[1].rooms[0]?.items[2]?.name).toBe(
+        "x".repeat(61),
+      );
+    });
+
+    it("nome de ambiente vazio: o Sheet não fecha e mostra a mensagem do .NET", async () => {
+      const user = userEvent.setup();
+      open();
+      const sheet = await openRooms(user);
+
+      await user.clear(within(sheet).getByRole("textbox", { name: "Nome do ambiente 2" }));
+      await user.click(within(sheet).getByRole("button", { name: "Pronto" }));
+
+      expect(screen.getByRole("dialog", { name: "Ambientes" })).toBeDefined();
+      expect(within(sheet).getByText(ROOM_NAME_REQUIRED)).toBeDefined();
+      await new Promise((done) => setTimeout(done, 1700));
+      expect(saveInspection).not.toHaveBeenCalled();
     });
   });
 });

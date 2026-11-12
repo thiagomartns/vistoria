@@ -432,26 +432,35 @@ export function roomsSummary(rooms: readonly RoomView[]): string {
   return `${done} de ${plural(rooms.length, "concluído", "concluídos")}`;
 }
 
-type ItemValues = { id: string; condition: unknown; notes: unknown };
+type ItemValues = { id: string; name: unknown; condition: unknown; notes: unknown };
 
 const itemsOf = (record: Record<string, unknown> | undefined): ItemValues[] =>
   list(record?.rooms).flatMap((room) => list(room.items)) as ItemValues[];
 
 /**
  * Os itens que mudaram no aparelho e o servidor ainda não confirmou: os que diferem da base (o `original` da transação
- * mais antiga do registro na fila). Numa criação não há base: conta o que a pessoa já marcou.
+ * mais antiga do registro na fila) no nome, na condição ou na observação, e os que ela não tem (incluídos aqui). Mudar
+ * de posição não conta. Numa criação não há base: conta o que a pessoa já marcou ou renomeou.
  */
 export function pendingItemIds(
   current: Pick<InspectionRecord, "rooms">,
   base: Record<string, unknown> | undefined,
 ): Set<string> {
   const confirmed = new Map(itemsOf(base).map((item) => [item.id, item]));
+  // Uma base sem ambientes é a de uma criação: o item novo só conta se a pessoa já mexeu nele.
+  const created = list(base?.rooms).length === 0;
   const pending = new Set<string>();
   for (const item of current.rooms.flatMap((room) => room.items)) {
     const before = confirmed.get(item.id);
-    const condition = before?.condition ?? null;
-    const notes = before?.notes ?? null;
-    if (item.condition !== condition || (item.notes ?? null) !== notes) pending.add(item.id);
+    if (!created && !before) {
+      pending.add(item.id);
+      continue;
+    }
+    const changed =
+      item.condition !== (before?.condition ?? null) ||
+      (item.notes ?? null) !== (before?.notes ?? null) ||
+      (before !== undefined && item.name !== before.name);
+    if (changed) pending.add(item.id);
   }
   return pending;
 }

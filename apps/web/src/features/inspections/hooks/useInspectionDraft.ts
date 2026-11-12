@@ -3,6 +3,7 @@ import {
   type FieldErrors,
   type FieldPath,
   type UseFormReturn,
+  useFieldArray,
   useForm,
   useFormState,
   useWatch,
@@ -12,29 +13,35 @@ import { useLocalStore } from "@/features/local-store/hooks/useLocalStore";
 import type { FieldSyncState } from "@/shared/components/field-sync-indicator";
 import type { SyncBadgeState } from "@/shared/components/sync-badge";
 import type { DraftRecord } from "@/shared/sync/drafts";
+import { newId } from "@/shared/sync/ids";
 import { type UnavailableMessages, useFetchMissing } from "@/shared/sync/useFetchMissing";
 
 import { INSPECTION_ENTITY, type InspectionRecord } from "../models/inspection";
 import {
   CONDITIONS,
   CONDITION_VALUES,
+  ITEMS_MAX,
   type InspectionFormValues,
+  type ItemFormValues,
   NOTES_MAX,
   NO_CONDITION,
   NO_ITEMS,
   NO_ROOMS,
+  ROOMS_MAX,
+  type RoomFormValues,
   completionErrors,
   formPathOf,
   formValuesOf,
   recordWith,
   roomOfError,
   roomStepSchema,
-  withUnsaved,
+  structureErrors,
 } from "../schemas/inspection.schemas";
 import {
   conflictHref,
   conflictKindOf,
   inspectionConflictOf,
+  withUnsaved,
 } from "../services/inspections.resolve";
 import {
   completeInspection,
@@ -95,6 +102,9 @@ export const UNAVAILABLE: UnavailableMessages = {
   failed: "Não foi possível buscar esta vistoria agora.",
 };
 
+/** O nome de um ambiente ainda sem nome, no Sheet e no Dialog de remover. */
+export const UNNAMED_ROOM = "Ambiente sem nome";
+
 /** O aviso do estado 6 do #107: a exclusão está na fila, e a tela fica só leitura. */
 export const DELETION_TITLE = "Exclusão aguardando envio";
 export const DELETION_DESCRIPTION = "Esta vistoria será excluída quando a conexão voltar.";
@@ -115,23 +125,44 @@ const emptied = (record: InspectionRecord): InspectionRecord => ({
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** As chaves `rooms[r].items[i].campo` dos erros que o formulário tem agora (os do servidor e os do Próximo). */
+/**
+ * As chaves `rooms[r].name` e `rooms[r].items[i].campo` dos erros que o formulário tem agora (os do servidor, os do
+ * Próximo e os nomes conferidos ao sair da edição).
+ */
 function errorKeys(errors: FieldErrors<InspectionFormValues>): Record<string, string[]> {
   const keys: Record<string, string[]> = {};
   const rooms = Array.isArray(errors.rooms) ? errors.rooms : [];
   rooms.forEach((room, r) => {
-    const items: (
-      | FieldErrors<InspectionFormValues["rooms"][number]["items"][number]>
-      | undefined
-    )[] = Array.isArray(room?.items) ? room.items : [];
+    const name = room?.name?.message;
+    if (name) keys[`rooms[${r}].name`] = [name];
+    const items: (FieldErrors<ItemFormValues> | undefined)[] = Array.isArray(room?.items)
+      ? room.items
+      : [];
     items.forEach((item, i) => {
-      for (const field of ["condition", "notes"] as const) {
+      for (const field of ["name", "condition", "notes"] as const) {
         const message = item?.[field]?.message;
         if (message) keys[`rooms[${r}].items[${i}].${field}`] = [message];
       }
     });
   });
   return keys;
+}
+
+/** Um ambiente novo, sem itens, com o id gerado no aparelho. */
+const newRoom = (): RoomFormValues => ({ roomId: newId(), name: "", items: [] });
+/** Um item novo, sem nome nem condição, com o id gerado no aparelho. */
+export const newItem = (): ItemFormValues => ({
+  itemId: newId(),
+  name: "",
+  condition: null,
+  notes: "",
+});
+
+/** "Cozinha tem 8 itens, 3 já avaliados. Eles saem da vistoria junto com o ambiente." */
+export function removalDescription(name: string, items: number, evaluated: number): string {
+  const count = `${name} tem ${plural(items, "item", "itens")}`;
+  const done = evaluated > 0 ? `, ${evaluated} já ${evaluated === 1 ? "avaliado" : "avaliados"}` : "";
+  return `${count}${done}. ${items === 1 ? "Ele sai" : "Eles saem"} da vistoria junto com o ambiente.`;
 }
 
 /**
@@ -226,6 +257,7 @@ export function useInspectionDraft(id: string | null) {
   const concluded = record?.status === "completed" && draft?.status !== "rejected";
 
   const form = useForm<InspectionFormValues>({ defaultValues: { rooms: [] } });
+  const roomList = useFieldArray({ control: form.control, name: "rooms" });
   const watched = useWatch({ control: form.control }) as InspectionFormValues;
   const { isDirty, errors } = useFormState({ control: form.control });
   const [step, setStep] = useState(0);
@@ -337,7 +369,9 @@ export function useInspectionDraft(id: string | null) {
     const next = withoutVersion(recordWith(source, values));
     saveInspectionDraft(store, next, at);
     const untouchedRejection = rejected !== null && JSON.stringify(values) === openedWith.current;
-    if (enqueue && isDirty && !untouchedRejection && !inConflict) {
+    // Nome vazio ou longo demais, ou lista acima do limite: fica só no rascunho, porque o servidor recusaria o `PUT`.
+    const valid = Object.keys(structureErrors(values)).length === 0;
+    if (enqueue && isDirty && valid && !untouchedRejection && !inConflict) {
       setEnqueued({ base: baseNow, version: record?.version ?? null });
       saveInspection(store, next);
       form.reset(values);
@@ -394,6 +428,82 @@ export function useInspectionDraft(id: string | null) {
     : [];
   const room = current?.rooms[step];
   const sending = id ? states.get(id) === "enviando" : false;
+  /** Só leitura: o envio no ar, a exclusão na fila, a exclusão recusada à espera da pessoa ou concluída. */
+  const locked = sending || deleting || removalConflict || concluded;
+
+  // --- Ambientes e itens (#171, ADR 0058) ---
+
+  /** O ambiente com os itens em edição: os chips dão lugar às linhas com o nome, a alça e a lixeira. */
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const editing = !locked && editingId !== null && editingId === room?.id;
+  /** O Sheet dos ambientes. */
+  const [roomsOpen, setRoomsOpen] = useState(false);
+  /** O ambiente com itens esperando a confirmação para sair. */
+  const [removalId, setRemovalId] = useState<string | null>(null);
+
+  /** Marca os erros da estrutura (`structureErrors`) cujo caminho passa em `only`; diz se havia algum. */
+  function markStructure(only: (key: string) => boolean): boolean {
+    const found = Object.entries(structureErrors(form.getValues())).filter(([key]) => only(key));
+    for (const [key, message] of found) {
+      form.setError(key as ItemPath, { type: "structure", message });
+    }
+    return found.length > 0;
+  }
+
+  /** "Pronto" nos itens: com um nome vazio ou longo demais, marca e segue em edição. */
+  function finishEditing(): boolean {
+    if (markStructure((key) => key.startsWith(`rooms.${step}.items`))) return false;
+    setEditingId(null);
+    return true;
+  }
+
+  /** "Pronto" (ou fechar) no Sheet dos ambientes: com um nome errado, marca e o Sheet fica aberto. */
+  function closeRooms(): boolean {
+    if (markStructure((key) => /^rooms(\.\d+\.name)?$/.test(key))) return false;
+    setRoomsOpen(false);
+    return true;
+  }
+
+  // Os ambientes na ordem e com os ids dos `fields`, que mudam no mesmo render do `append`, do `remove` e do `move`;
+  // os nomes e os itens vêm do `useWatch`, pelo id (como no editor de roteiro).
+  const liveRooms = new Map(watched.rooms?.map((entry) => [entry.roomId, entry]));
+  const sheetRooms = roomList.fields.map((entry) => {
+    const live = liveRooms.get(entry.roomId);
+    const items = live?.items ?? entry.items;
+    return {
+      id: entry.roomId,
+      name: (live?.name ?? entry.name).trim() || UNNAMED_ROOM,
+      items: items.length,
+      evaluated: items.filter((each) => each.condition !== null).length,
+    };
+  });
+
+  function addRoom() {
+    if (roomList.fields.length >= ROOMS_MAX) return;
+    roomList.append(newRoom(), { focusName: `rooms.${roomList.fields.length}.name` });
+  }
+
+  /** Reordena os ambientes; o ambiente aberto segue aberto, na posição nova. */
+  function moveRoom(from: number, to: number) {
+    const ids = roomList.fields.map((entry) => entry.roomId);
+    const openId = ids[step];
+    const [moved] = ids.splice(from, 1);
+    if (moved === undefined) return;
+    ids.splice(to, 0, moved);
+    roomList.move(from, to);
+    if (openId) setStep(Math.max(0, ids.indexOf(openId)));
+  }
+
+  /** Tira um ambiente; o aberto segue aberto, ou o vizinho abre no lugar do que saiu. O último não sai. */
+  function removeRoom(index: number) {
+    const total = roomList.fields.length;
+    if (total <= 1) return;
+    roomList.remove(index);
+    if (index < step) setStep(step - 1);
+    else if (index === step) setStep(Math.min(step, total - 2));
+  }
+
+  const removal = sheetRooms.findIndex((entry) => entry.id === removalId);
 
   /**
    * Vai para outro ambiente. Avançar confere o ambiente atual (roomStepSchema) sem bloquear: o que estiver errado fica
@@ -401,6 +511,8 @@ export function useInspectionDraft(id: string | null) {
    */
   function goTo(index: number) {
     if (!current || index < 0 || index >= current.rooms.length) return;
+    // Editando os itens, só sai com os nomes certos; ao sair, a edição termina.
+    if (editing && !finishEditing()) return;
     if (index > step) {
       const result = roomStepSchema.safeParse(form.getValues(`rooms.${step}`));
       for (const issue of result.error?.issues ?? []) {
@@ -421,6 +533,7 @@ export function useInspectionDraft(id: string | null) {
    */
   function requestCompletion() {
     if (!source || !hydrated || concluded) return;
+    if (editing && !finishEditing()) return;
     const values = form.getValues();
     const missing = completionErrors(recordWith(source, values));
     const keys = Object.keys(missing);
@@ -449,7 +562,7 @@ export function useInspectionDraft(id: string | null) {
     // A vistoria está saindo ou concluída: o estado por campo não diz mais nada (estado 6 do #107; 164:12824).
     if (deleting || concluded) return undefined;
     const itemErrors = errors.rooms?.[step]?.items?.[index];
-    if (itemErrors?.condition || itemErrors?.notes) return "rejeitado";
+    if (itemErrors?.name || itemErrors?.condition || itemErrors?.notes) return "rejeitado";
     if (disputed.items.has(itemId)) return "conflito";
     if (!pending.has(itemId)) return undefined;
     return sending ? "enviando" : "local";
@@ -468,7 +581,7 @@ export function useInspectionDraft(id: string | null) {
           : undefined;
 
   const itemErrors = Object.keys(errorKeys(errors)).filter(
-    (key) => key.endsWith(".condition") || key.endsWith(".notes"),
+    (key) => key.endsWith(".condition") || key.endsWith(".notes") || key.endsWith(".name"),
   );
   const errorRooms = [...new Set(itemErrors.map(roomOfError))];
   const roomNames = current?.rooms.map((each) => each.name) ?? [];
@@ -521,7 +634,52 @@ export function useInspectionDraft(id: string | null) {
      * Envio da vistoria no ar (ADR 0021), exclusão na fila, exclusão recusada à espera da pessoa ou concluída: o
      * formulário fica só leitura.
      */
-    readOnly: sending || deleting || removalConflict || concluded,
+    readOnly: locked,
+    /** Os itens do ambiente aberto em edição (Figma "Ambientes e itens (#171)", estados 3 a 6). */
+    editing,
+    /** "Editar itens" (e "Adicionar item", que entra na edição com o item novo). */
+    startEditing: () => {
+      if (!locked && room) setEditingId(room.id);
+    },
+    /** "Pronto": sai da edição se os nomes estão certos. */
+    finishEditing,
+    itemsMax: ITEMS_MAX,
+    newItem,
+    /** O Sheet dos ambientes (estados 7 e 8): aberto pelo "Editar ambientes" do "···". */
+    roomsEditor: {
+      open: roomsOpen,
+      rooms: sheetRooms,
+      max: ROOMS_MAX,
+      openSheet: () => {
+        if (!locked) setRoomsOpen(true);
+      },
+      /** Fechar ou "Pronto": só com os nomes certos. */
+      close: closeRooms,
+      add: addRoom,
+      move: moveRoom,
+      /** Remover um ambiente com itens pede confirmação; sem itens, sai direto. O último não sai. */
+      requestRemove: (index: number) => {
+        const target = sheetRooms[index];
+        if (!target || sheetRooms.length <= 1) return;
+        if (target.items > 0) setRemovalId(target.id);
+        else removeRoom(index);
+      },
+      removal:
+        removal === -1
+          ? null
+          : {
+              description: removalDescription(
+                sheetRooms[removal]!.name,
+                sheetRooms[removal]!.items,
+                sheetRooms[removal]!.evaluated,
+              ),
+            },
+      confirmRemoval: () => {
+        if (removal !== -1) removeRoom(removal);
+        setRemovalId(null);
+      },
+      cancelRemoval: () => setRemovalId(null),
+    },
     /** Estado 6 do #107: a exclusão está na fila. */
     deletion: deleting ? { title: DELETION_TITLE, description: DELETION_DESCRIPTION } : null,
     /** O "···" com "Excluir vistoria": só em andamento e uma vez só. */

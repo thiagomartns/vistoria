@@ -5,23 +5,17 @@ import {
   zUpsertTemplateItemDto,
   zUpsertTemplateRoomDto,
 } from "@/shared/api/generated/zod.gen";
+import { maxItemsOf } from "@/shared/api/zod-limits";
 
 // O editor de roteiro sobre o Zod gerado: os limites vêm do contrato (nome de 1 a 60, até 40 ambientes, até 60 itens
 // por ambiente, nomes até 60). A UI soma o que o OpenAPI não expressa (nome de ambiente e de item obrigatório, trim) e
 // tira a `position` do índice: a ordem é a da lista, como o servidor guarda. As mensagens são as do .NET
 // (TemplateDtos.cs), que confere tudo de novo.
 
-/** O `.max()` de uma lista do Zod gerado, pelo JSON Schema dela. */
-function maxOf(schema: z.ZodArray): number {
-  const { maxItems } = z.toJSONSchema(schema);
-  if (maxItems === undefined) throw new Error("Lista do contrato sem limite.");
-  return maxItems;
-}
-
 /** Até quantos ambientes um roteiro tem (o contador "6 de 40" e o botão que desabilita no limite). */
-export const ROOMS_MAX = maxOf(zUpsertTemplateDto.shape.rooms);
+export const ROOMS_MAX = maxItemsOf(zUpsertTemplateDto.shape.rooms);
 /** Até quantos itens um ambiente tem. */
-export const ITEMS_MAX = maxOf(zUpsertTemplateRoomDto.shape.items);
+export const ITEMS_MAX = maxItemsOf(zUpsertTemplateRoomDto.shape.items);
 
 const required = (schema: z.ZodString) => z.string().trim().pipe(schema.min(1));
 

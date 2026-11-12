@@ -413,6 +413,32 @@ describe("tela de campo", () => {
     expect([...pendingItemIds(current, undefined)]).toEqual(["a", "b"]);
   });
 
+  it("#171: item incluído aqui e item renomeado ficam pendentes; mudar de posição, não", () => {
+    const base = {
+      rooms: [
+        {
+          items: [
+            { id: "a", name: "Piso", position: 0, condition: null, notes: null },
+            { id: "b", name: "Parede", position: 1, condition: null, notes: null },
+          ],
+        },
+      ],
+    };
+    const current = {
+      rooms: [
+        {
+          items: [
+            { id: "b", name: "Parede", position: 0, condition: null, notes: null },
+            { id: "a", name: "Piso de madeira", position: 1, condition: null, notes: null },
+            { id: "n", name: "Ar-condicionado", position: 2, condition: null, notes: null },
+          ],
+        },
+      ],
+    } as never;
+
+    expect([...pendingItemIds(current, base)]).toEqual(["a", "n"]);
+  });
+
   it("cabeçalho: endereço, tipo, cliente e início; no celular, só o tipo", () => {
     const startedAt = new Date(2026, 9, 19, 9, 12).toISOString();
 
