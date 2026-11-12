@@ -184,7 +184,7 @@ describe("pull: registro com pendência (ADR 0041)", () => {
 });
 
 describe("pull: o laço por entidade", () => {
-  it("sem pendência: o registro recebe a versão do servidor, o excluído sai, e a ordem é cliente, imóvel e vistoria", async () => {
+  it("sem pendência: o registro recebe a versão do servidor, o excluído sai, e a ordem é cliente, imóvel, roteiro e vistoria", async () => {
     const api = fakeApi();
     const removed = clientOf(1);
     api.seed("clients", clientV1);
@@ -207,6 +207,7 @@ describe("pull: o laço por entidade", () => {
     expect(api.requests).toEqual([
       "GET /api/v1/sync/clients?cursor=2",
       "GET /api/v1/sync/properties",
+      "GET /api/v1/sync/templates",
       "GET /api/v1/sync/inspections",
     ]);
   });
@@ -229,6 +230,7 @@ describe("pull: o laço por entidade", () => {
     expect(api.requests).toEqual([
       "GET /api/v1/sync/clients?cursor=4",
       "GET /api/v1/sync/properties",
+      "GET /api/v1/sync/templates",
       "GET /api/v1/sync/inspections",
     ]);
     expect([...phone.clients.confirmed.keys()]).toEqual([1, 2, 3, 4, 5].map((n) => clientOf(n).id));
@@ -359,6 +361,7 @@ describe("pull: resync", () => {
         "GET /api/v1/sync/clients?cursor=3",
         "GET /api/v1/sync/clients",
         "GET /api/v1/sync/properties",
+        "GET /api/v1/sync/templates",
         "GET /api/v1/sync/inspections",
       ]);
       expect([...phone.clients.confirmed.values()]).toEqual([

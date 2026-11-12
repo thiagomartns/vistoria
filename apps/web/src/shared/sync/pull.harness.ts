@@ -38,6 +38,14 @@ import {
 import type { PropertyRecord } from "@/features/properties/models/property";
 import type { PropertiesCollection } from "@/features/properties/services/properties.collection";
 import { propertiesPull } from "@/features/properties/services/properties.sync";
+import type { TemplateRecord } from "@/features/templates/models/template";
+import type { TemplatesCollection } from "@/features/templates/services/templates.collection";
+import {
+  UPSERT_TEMPLATE,
+  saveTemplate,
+  templatesPull,
+  upsertTemplateMutation,
+} from "@/features/templates/services/templates.sync";
 
 import type { DraftRecord, DraftsCollection } from "./drafts";
 import { type Outbox, startOutbox } from "./outbox";
@@ -85,7 +93,7 @@ function fakeLocks() {
 
 Object.defineProperty(navigator, "locks", { value: fakeLocks(), configurable: true });
 
-type Entity = "clients" | "properties" | "inspections";
+type Entity = "clients" | "properties" | "templates" | "inspections";
 type Row = SyncRecord & Record<string, unknown> & { seq: number; deleted?: boolean };
 
 /** Quando o servidor falso excluiu um registro (o `deletedAt` do 410). */
@@ -101,6 +109,7 @@ export function fakeApi({ pageSize = 500 } = {}) {
   const tables: Record<Entity, Map<string, Row>> = {
     clients: new Map(),
     properties: new Map(),
+    templates: new Map(),
     inspections: new Map(),
   };
   const requests: string[] = [];
@@ -381,7 +390,7 @@ export function closeDevices() {
 }
 
 /**
- * O aparelho: clientes, imóveis e vistorias já confirmados, os rascunhos, os cursores, as marcas, a outbox e o pull, na
+ * O aparelho: clientes, imóveis, roteiros e vistorias já confirmados, os rascunhos, os cursores, as marcas, a outbox e o pull, na
  * ordem do `local-store.ts`.
  */
 export async function device(
@@ -389,6 +398,7 @@ export async function device(
   {
     clients = [] as ClientRecord[],
     properties = [] as PropertyRecord[],
+    templates = [] as TemplateRecord[],
     inspections = [] as InspectionRecord[],
     cursors = undefined as CursorStore | undefined,
     /** As vistorias na collection por id de verdade, sobre IndexedDB (`indexedDbInspections`), e não na falsa. */
@@ -398,6 +408,8 @@ export async function device(
   vi.spyOn(console, "warn").mockImplementation(() => {});
   const clientStore = await syncedStore(clients);
   const propertyStore = await syncedStore(properties);
+  const templateStore = await syncedStore(templates);
+  const templatesCollection = templateStore.collection as unknown as TemplatesCollection;
   const inspectionStore = indexedDb
     ? (indexedDb as unknown as Awaited<ReturnType<typeof syncedStore<InspectionRecord>>>)
     : await syncedStore(inspections);
@@ -408,9 +420,14 @@ export async function device(
   const inspectionsCollection = inspectionStore.collection as unknown as InspectionsCollection;
   const outbox = startOutbox({
     ownerId: "ana",
-    collections: { clients: clientStore.collection, inspections: inspectionStore.collection },
+    collections: {
+      clients: clientStore.collection,
+      templates: templateStore.collection,
+      inspections: inspectionStore.collection,
+    },
     mutationFns: {
       [UPSERT_CLIENT]: upsertClientMutation(clientsCollection, drafts, api.client),
+      [UPSERT_TEMPLATE]: upsertTemplateMutation(templatesCollection, drafts, api.client),
       [UPSERT_INSPECTION]: upsertInspectionMutation(inspectionsCollection, drafts, api.client),
       [DELETE_INSPECTION]: deleteInspectionMutation(inspectionsCollection, drafts, api.client),
     },
@@ -429,11 +446,13 @@ export async function device(
   const entities: PullEntity[] = [
     clientsPull(clientsCollection, api.client),
     propertiesPull(propertyStore.collection as unknown as PropertiesCollection, api.client),
+    templatesPull(templatesCollection, api.client),
     inspectionsPull(inspectionsCollection, api.client),
   ];
   return {
     clients: clientStore,
     properties: propertyStore,
+    templates: templateStore,
     inspections: inspectionStore,
     drafts,
     cursorRows,
@@ -446,6 +465,11 @@ export async function device(
     saveClient: (values: ClientRecord) => {
       const { version: _version, ...rest } = values;
       saveClient({ clients: clientsCollection, drafts, outbox }, rest);
+    },
+    /** Salva o roteiro, como o editor de roteiro (#173). */
+    saveTemplate: (values: TemplateRecord) => {
+      const { version: _version, ...rest } = values;
+      saveTemplate({ templates: templatesCollection, drafts, outbox }, rest);
     },
     /** Põe a vistoria na fila, como a tela de campo. */
     saveInspection: (values: InspectionRecord) => {

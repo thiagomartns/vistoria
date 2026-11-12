@@ -45,14 +45,25 @@ import {
   propertiesPull,
   upsertPropertyMutation,
 } from "@/features/properties/services/properties.sync";
+import {
+  type TemplatesCollection,
+  createTemplatesCollection,
+} from "@/features/templates/services/templates.collection";
+import {
+  UPSERT_TEMPLATE,
+  templatesPull,
+  upsertTemplateMutation,
+} from "@/features/templates/services/templates.sync";
 
 // O banco local do usuário: as collections de cada feature, uma outbox só para todas e o pull. É o único módulo que
 // junta as features, porque a fila é uma: um imóvel criado com um cliente pendente sai depois dele, e uma vistoria,
-// depois do imóvel (ADR 0034). O pull também segue a ordem: clientes, imóveis e só então vistorias.
+// depois do imóvel e do roteiro (ADR 0034). O pull também segue a ordem: clientes, imóveis, roteiros e só então
+// vistorias.
 
 export interface LocalStore {
   clients: ClientsCollection;
   properties: PropertiesCollection;
+  templates: TemplatesCollection;
   /** Por id, sob demanda: a lista lê `inspectionSummaries` (ADR 0048). */
   inspections: InspectionsCollection;
   inspectionSummaries: InspectionSummaryStore;
@@ -69,14 +80,16 @@ async function open(ownerId: string): Promise<LocalStore> {
   const db = await openLocalDb(ownerId);
   const clients = createClientsCollection(db);
   const properties = createPropertiesCollection(db);
+  const templates = createTemplatesCollection(db);
   const { inspections, inspectionSummaries } = createInspectionCollections(db);
   const drafts = createDraftsCollection(db);
   const outbox = startOutbox({
     ownerId,
-    collections: { clients, properties, inspections },
+    collections: { clients, properties, templates, inspections },
     mutationFns: {
       [UPSERT_CLIENT]: upsertClientMutation(clients, drafts),
       [UPSERT_PROPERTY]: upsertPropertyMutation(properties, drafts),
+      [UPSERT_TEMPLATE]: upsertTemplateMutation(templates, drafts),
       [UPSERT_INSPECTION]: upsertInspectionMutation(inspections, drafts),
       [DELETE_INSPECTION]: deleteInspectionMutation(inspections, drafts),
     },
@@ -92,7 +105,12 @@ async function open(ownerId: string): Promise<LocalStore> {
     marks: skipMarksOf(skipped),
     queued: async () => queuedIds(await outbox.peekOutbox()),
   };
-  const entities = [clientsPull(clients), propertiesPull(properties), inspectionsPull(inspections)];
+  const entities = [
+    clientsPull(clients),
+    propertiesPull(properties),
+    templatesPull(templates),
+    inspectionsPull(inspections),
+  ];
   const pull = startPull({
     ownerId,
     drafts,
@@ -101,7 +119,7 @@ async function open(ownerId: string): Promise<LocalStore> {
     // abrem inteiras: o pull as lê da store por id, e a pendência delas está na camada otimista e na fila (ADR 0048).
     run: async () => {
       await Promise.all(
-        [clients, properties, drafts, cursors, skipped].map((c) => c.preload()),
+        [clients, properties, templates, drafts, cursors, skipped].map((c) => c.preload()),
       );
       return pullOnce(state, entities);
     },
@@ -109,6 +127,7 @@ async function open(ownerId: string): Promise<LocalStore> {
   return {
     clients,
     properties,
+    templates,
     inspections,
     inspectionSummaries,
     drafts,
@@ -129,6 +148,7 @@ async function close(ownerId: string, opening: Promise<LocalStore>): Promise<voi
   // cleanup do TanStack DB 1.0 recusa enquanto alguém lê a collection, e a troca de usuário pararia aqui.
   await store?.clients.cleanup(ending);
   await store?.properties.cleanup(ending);
+  await store?.templates.cleanup(ending);
   await store?.inspections.cleanup(ending);
   await store?.inspectionSummaries.cleanup();
   await store?.drafts.cleanup(ending);
