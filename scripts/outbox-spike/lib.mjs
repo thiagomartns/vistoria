@@ -272,6 +272,10 @@ export async function serverProperty(user, id) {
   return callApi(`/api/v1/properties/${id}`, { headers: { authorization: `Bearer ${user.token}` } });
 }
 
+export async function serverTemplate(user, id) {
+  return callApi(`/api/v1/templates/${id}`, { headers: { authorization: `Bearer ${user.token}` } });
+}
+
 export async function serverInspection(user, id) {
   return callApi(`/api/v1/inspections/${id}`, { headers: { authorization: `Bearer ${user.token}` } });
 }
@@ -362,7 +366,7 @@ export async function markRoom(page, except = []) {
 export function watchPuts(page) {
   const puts = [];
   page.on("request", (req) => {
-    const entity = req.url().match(/\/api\/v1\/(clients|properties|inspections)\//)?.[1];
+    const entity = req.url().match(/\/api\/v1\/(clients|properties|templates|inspections)\//)?.[1];
     if (req.method() !== "PUT" || !entity) return;
     const entry = {
       at: Date.now(),
@@ -641,6 +645,35 @@ export async function inspectionSettled(page, user, what) {
       (await banner.getByText("Enviando", { exact: true }).count()) === 0,
     `${what}: a tela vê a fila vazia`,
   );
+}
+
+/**
+ * Arrasta `handle` (a alça de uma linha reordenável, #173) até o centro de `target` com o mouse, em passos, como o
+ * dnd-kit precisa para medir. `during` roda com a linha ainda levantada (o print do arrasto).
+ */
+export async function drag(page, handle, target, during = async () => {}) {
+  const from = await handle.boundingBox();
+  const to = await target.boundingBox();
+  const [x, y] = [from.x + from.width / 2, from.y + from.height / 2];
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x, y + (to.y > from.y ? 10 : -10), { steps: 4 });
+  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 15 });
+  await wait(200);
+  await during();
+  await page.mouse.up();
+  await wait(300);
+}
+
+/** Os nomes das linhas de uma lista reordenável do editor de roteiro: ambientes (o texto) ou itens (o campo). */
+export async function sortableOrder(page, list) {
+  const scope = page.getByRole("list", { name: list });
+  if (list === "Itens") {
+    const fields = await scope.getByRole("textbox").all();
+    return Promise.all(fields.map((field) => field.inputValue()));
+  }
+  const rows = await scope.getByRole("listitem").allInnerTexts();
+  return rows.map((text) => text.split("\n").map((line) => line.trim()).find(Boolean));
 }
 
 /** Tira prints em `dir` (nada sem `dir`): o mesmo estado no celular e no desktop, trocando o viewport. */
