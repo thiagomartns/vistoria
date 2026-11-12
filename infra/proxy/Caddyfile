@@ -1,0 +1,31 @@
+# Produção (backend.md, "Ambientes e hospedagem"): front e API na mesma origem, atrás deste proxy.
+# SITE_ADDRESS é o domínio; sem ele, `localhost`, com o certificado da CA interna do Caddy.
+# Sem `log`: o Caddy não grava access log, e o IP de quem acessa não fica em lugar nenhum.
+
+{$SITE_ADDRESS:localhost} {
+	encode zstd gzip
+
+	# A API. O Caddy repassa o IP de quem falou com ele no X-Forwarded-For e descarta o que veio do cliente; a API só
+	# confia no cabeçalho vindo do IP fixo deste serviço na rede do compose.
+	handle /api/* {
+		reverse_proxy api:8080
+	}
+
+	# O static export. As rotas não têm segmento dinâmico (o id vai na query string): /clients/edit → clients/edit.html.
+	handle {
+		root * /srv
+		try_files {path} {path}.html {path}/index.html
+		file_server
+
+		# O service worker precisa ser conferido a cada visita, ou o app novo não chega; os arquivos com hash no nome
+		# nunca mudam.
+		header /sw.js Cache-Control "no-cache"
+		header /_next/static/* Cache-Control "public, max-age=31536000, immutable"
+	}
+
+	handle_errors 404 {
+		root * /srv
+		rewrite * /404.html
+		file_server
+	}
+}

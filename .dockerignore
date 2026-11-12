@@ -1,0 +1,13 @@
+# Context das imagens de produção (apps/api/Dockerfile e infra/proxy/Dockerfile): a raiz do repositório.
+# Fora: dependências e saídas locais (cada imagem instala e compila as suas) e qualquer segredo local.
+**/node_modules/
+**/bin/
+**/obj/
+**/TestResults/
+**/.next/
+apps/web/out/
+.git/
+.screens/
+infra/.env
+infra/.env.*
+**/.env
