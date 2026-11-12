@@ -40,7 +40,7 @@ public static class RateLimitConfig
         return app;
     }
 
-    // Atrás do proxy de produção, o IP real depende do ForwardedHeaders (M5, hospedagem).
+    // Atrás do Caddy, o RemoteIpAddress já é o do cliente: o ProxyConfig o troca antes, confiando só no proxy.
     private static RateLimitPartition<string> PerIp(HttpContext context, int permitLimit, TimeSpan window) =>
         RateLimitPartition.GetFixedWindowLimiter(
             context.Connection.RemoteIpAddress?.ToString() ?? "",
