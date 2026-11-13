@@ -4,7 +4,9 @@
 // - o primeiro pull completo, da resposta do signin até a lista com todas as vistorias;
 // - o tamanho do banco local (IndexedDB);
 // - a live query da lista: da resposta do delta com uma mudança até a linha mudar;
-// - a abertura do app recarregado em modo avião até a lista pronta, e a da tela de campo pela lista.
+// - a abertura do app recarregado em modo avião até a lista pronta, e a da tela de campo pela lista;
+// - a busca e os filtros (#175), em modo avião: o reload com um filtro na URL até a lista filtrada pronta, e a busca
+//   pelo nome de um cliente, da digitação até a lista só com as vistorias dele.
 // As metas ficaram fixadas antes de medir (frontend.md, Spike 2); uma meta não cumprida quebra o roteiro. A do reload
 // offline foi cumprida pela lista pelo resumo (#154, ADR 0048).
 // `--inspections` é o mínimo de vistorias vivas que o servidor precisa ter (10 mil por padrão; o CI roda com 200).
@@ -23,6 +25,7 @@ import {
   listedTotal,
   markListReady,
   pageValue,
+  serverDelta,
   serverInspections,
   setOffline,
 } from "./lib.mjs";
@@ -37,6 +40,9 @@ const TARGETS = {
   liveQuery: { label: "Live query (delta → linha)", unit: "ms", phone: 500, desktop: 200 },
   reload: { label: "Reload offline → lista pronta", unit: "ms", phone: 2000, desktop: 1000 },
   field: { label: "Lista → tela de campo", unit: "ms", phone: 1000, desktop: 500 },
+  // As da busca e dos filtros (#175), fixadas antes de medir: as metas da lista, a da live query e a do reload.
+  filteredReload: { label: "Reload offline filtrado → lista", unit: "ms", phone: 2000, desktop: 1000 },
+  search: { label: "Busca (digitação → lista)", unit: "ms", phone: 500, desktop: 200 },
 };
 
 const DEVICES = [
@@ -107,6 +113,40 @@ async function moveToAnotherProperty(user, id) {
     }),
   });
   assert.equal(status, 200, `o PUT do outro aparelho respondeu ${status}`);
+}
+
+/** Sem acento e sem caixa, como a busca do app (`shared/search.ts`). */
+const fold = (value) => value.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLocaleLowerCase("pt-BR");
+
+/**
+ * O nome da busca: o de cliente com mais vistorias concluídas, entre os que não aparecem dentro de outro nome nem de um
+ * endereço (a busca casaria com eles também). O seed repete nomes (500 clientes de 224 nomes), então o nome vale por
+ * todos os clientes que o têm. Devolve o nome, quantas concluídas casam com ele e quantas concluídas o aparelho tem.
+ */
+async function searchTarget(user) {
+  const [clients, properties, inspections] = await Promise.all([
+    serverDelta(user, "clients"),
+    serverDelta(user, "properties"),
+    serverInspections(user),
+  ]);
+  const nameOf = new Map(clients.map((client) => [client.id, client.name]));
+  const clientOf = new Map(properties.map((property) => [property.id, property.clientId]));
+  const completed = inspections.filter((inspection) => inspection.status === "completed");
+  const addresses = properties.map((property) => fold([property.street, property.number, property.complement].join(" ")));
+  const names = [...new Set(clients.map((client) => client.name))];
+  const counts = new Map();
+  for (const inspection of completed) {
+    const name = nameOf.get(clientOf.get(inspection.propertyId));
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  const unique = names.filter(
+    (name) =>
+      !names.some((other) => other !== name && fold(other).includes(fold(name))) &&
+      !addresses.some((address) => address.includes(fold(name))),
+  );
+  const best = unique.toSorted((a, b) => (counts.get(b) ?? 0) - (counts.get(a) ?? 0))[0];
+  assert.ok(best && counts.get(best), "há um nome de cliente com vistorias concluídas e único para a busca");
+  return { name: best, matches: counts.get(best), completed: completed.length };
 }
 
 /** As linhas que a lista montou. */
@@ -270,8 +310,64 @@ async function measure(browser, device, user, server) {
     assert.equal(await listedTotal(page), server.count, "offline, a lista diz todas as vistorias");
     results.reload = median(reload);
     results.field = median(field);
+
     ok(`reload offline → lista: ${reload.map((t) => format(t, "ms")).join(", ")} (mediana ${format(results.reload, "ms")})`);
     ok(`lista → tela de campo: ${field.map((t) => format(t, "ms")).join(", ")} (mediana ${format(results.field, "ms")})`);
+
+    // 5. Busca e filtros (#175), ainda em modo avião. O reload com `?status=completed&q=<cliente>` até a lista
+    // filtrada pronta; depois, com o Status ainda em "Concluída", a busca apagada e escrita de novo, do evento de
+    // input até a lista só com as vistorias do cliente e o contador certo.
+    const wanted = await searchTarget(server.user);
+    const filteredRows = Math.min(wanted.matches, 50);
+    await markListReady(context, filteredRows, "__filteredReadyAt");
+    const filteredUrl = `/inspections?status=completed&q=${encodeURIComponent(wanted.name)}`;
+    const filteredReload = [];
+    const search = [];
+    for (let run = 0; run < RUNS; run++) {
+      await page.goto(new URL(filteredUrl, page.url()).href, { waitUntil: "commit" });
+      filteredReload.push(await pageValue(page, "__filteredReadyAt", "a lista filtrada depois do reload"));
+      await until(async () => (await listedTotal(page)) === wanted.matches, "o contador da lista filtrada");
+      // Sem a busca: só o filtro de status.
+      await page.getByRole("searchbox", { name: "Buscar vistorias" }).fill("");
+      await until(async () => (await listedTotal(page)) === wanted.completed, "a lista só com as concluídas");
+      search.push(
+        await page.evaluate(
+          ([name, total, rows]) =>
+            new Promise((resolve) => {
+              const input = document.querySelector('input[aria-label="Buscar vistorias"]');
+              const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+              const done = () => {
+                const lines = [...document.querySelectorAll("tbody tr")];
+                // O contador, como o `listedTotal` o lê: "12 vistorias", "50 de 1.234 vistorias".
+                const count = [...document.querySelectorAll("main p")].some((p) => {
+                  const match = p.textContent.match(/^(?:[\d.]+ de )?([\d.]+) vistorias?$/);
+                  return match && Number(match[1].replaceAll(".", "")) === total;
+                });
+                return count && lines.length === rows && lines.every((tr) => tr.cells[1].textContent === name);
+              };
+              const typed = performance.now();
+              setValue.call(input, name);
+              input.dispatchEvent(new Event("input", { bubbles: true }));
+              const check = () => (done() ? resolve(performance.now() - typed) : requestAnimationFrame(check));
+              requestAnimationFrame(check);
+            }),
+          [wanted.name, wanted.matches, filteredRows],
+        ),
+      );
+    }
+    assert.equal(await listedTotal(page), wanted.matches, "a lista filtrada diz as concluídas do cliente");
+    assert.ok(new URL(page.url()).search.includes("status=completed"), "o filtro segue na URL");
+    results.filteredReload = median(filteredReload);
+    results.search = median(search);
+    ok(
+      `busca por "${wanted.name}" com Status "Concluída": ${wanted.matches} de ${wanted.completed} concluídas ` +
+        `(${server.count} vistorias)`,
+    );
+    ok(
+      `reload offline filtrado → lista: ${filteredReload.map((t) => format(t, "ms")).join(", ")} ` +
+        `(mediana ${format(results.filteredReload, "ms")})`,
+    );
+    ok(`busca → lista: ${search.map((t) => format(t, "ms")).join(", ")} (mediana ${format(results.search, "ms")})`);
     return results;
   } finally {
     await context.close();
@@ -326,7 +422,10 @@ try {
   const measured = {};
   let n = 1;
   for (const device of DEVICES) {
-    step(++n, `${device.title}: aparelho limpo, primeiro pull, banco, live query, reload offline e tela de campo`);
+    step(
+      ++n,
+      `${device.title}: aparelho limpo, primeiro pull, banco, live query, reload offline, tela de campo e busca`,
+    );
     measured[device.name] = await measure(browser, device, user, context);
   }
 

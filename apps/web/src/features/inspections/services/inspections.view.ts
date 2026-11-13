@@ -1,3 +1,5 @@
+import { clock } from "@/shared/clock";
+import { byText, fold } from "@/shared/search";
 import {
   type DraftRecord,
   type DraftSyncState,
@@ -14,6 +16,13 @@ import {
   type ItemRecord,
   type RoomRecord,
 } from "../models/inspection";
+import {
+  INSPECTION_PERIODS,
+  type InspectionFilters,
+  type InspectionPeriod,
+  NO_FILTERS,
+  isFiltered,
+} from "../models/inspection-filters";
 import type { InspectionSummary } from "../models/inspection-summary";
 import { CONDITIONS, roomOfError } from "../schemas/inspection.schemas";
 import { DEFAULT_TEMPLATE, type RoomMold } from "./inspections.factory";
@@ -41,6 +50,8 @@ export interface PlaceView {
   /** "Rua das Flores, 120 · ap 32". */
   address: string;
   clientName: string | null;
+  /** O cliente do imóvel, para o filtro por cliente (#175). */
+  clientId?: string;
 }
 
 export interface InspectionRow {
@@ -155,9 +166,10 @@ export function inspectionRows(
 }
 
 /**
- * As primeiras `limit` linhas da lista e quantas ela tem. A ordem sai de uma chave leve (status e início, do resumo, da
- * fila ou do rascunho que vence), e só as linhas da página são montadas: com 10 mil vistorias, montar todas a cada
- * render custava 200 ms no celular (ADR 0048).
+ * As primeiras `limit` linhas da lista, quantas casam com a busca e os filtros (`total`) e quantas o aparelho tem
+ * (`all`). O filtro vem antes da ordem e da página, então "Mostrar mais" anda sobre o resultado filtrado (#175). A
+ * ordem sai de uma chave leve (status e início, do resumo, da fila ou do rascunho que vence), e só as linhas da página
+ * são montadas: com 10 mil vistorias, montar todas a cada render custava 200 ms no celular (ADR 0048).
  */
 export function inspectionPage(
   summaries: readonly InspectionSummary[],
@@ -166,14 +178,16 @@ export function inspectionPage(
   states: ReadonlyMap<string, RecordSyncState>,
   places: ReadonlyMap<string, PlaceView>,
   limit: number,
-): { rows: InspectionRow[]; total: number } {
-  const entries = listEntries(summaries, pending, allDrafts);
+  filters: InspectionFilters = NO_FILTERS,
+): { rows: InspectionRow[]; total: number; all: number } {
+  const all = listEntries(summaries, pending, allDrafts);
+  const entries = isFiltered(filters) ? all.filter(matcherOf(filters, places, clock.now())) : all;
   entries.sort((a, b) => Number(a.completed) - Number(b.completed) || newest(a, b));
   const rows = entries
     .slice(0, limit)
     .map((entry) => inspectionRowOf(entry.inspection, entry.draft, states.get(entry.id), places))
     .filter((row) => row !== undefined);
-  return { rows, total: entries.length };
+  return { rows, total: entries.length, all: all.length };
 }
 
 /** Uma vistoria da lista, com o que decide a ordem e o filtro, antes de virar linha. */
@@ -182,6 +196,8 @@ interface ListEntry {
   inspection: ListedInspection | undefined;
   draft: DraftRecord | undefined;
   propertyId: string;
+  kind: InspectionKind | null;
+  status: InspectionStatus | null;
   completed: boolean;
   startedAt: string;
 }
@@ -211,6 +227,8 @@ function listEntries(
       inspection,
       draft,
       propertyId: text(source.propertyId) ?? "",
+      kind: isKind(source.kind) ? source.kind : null,
+      status: isStatus(source.status) ? source.status : null,
       completed: source.status === "completed",
       startedAt: text(source.startedAt) ?? "",
     };
@@ -222,6 +240,72 @@ function listEntries(
   }
   return entries;
 }
+
+/** O começo do período: a meia-noite local do primeiro dia dele, contando hoje. */
+export function periodStart(period: InspectionPeriod, now: Date): Date {
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (period === "7d") start.setDate(start.getDate() - 6);
+  else if (period === "30d") start.setDate(start.getDate() - 29);
+  else start.setFullYear(start.getFullYear() - 1, start.getMonth(), start.getDate() + 1);
+  return start;
+}
+
+/**
+ * O teste de uma vistoria da lista contra a busca e os filtros (#175), montado uma vez por render. Tudo sai do que a
+ * lista já lê: tipo, status e início do resumo, da fila ou do rascunho que vence; o cliente e o texto da busca, do
+ * imóvel no aparelho. A busca casa com o endereço e o nome do cliente, sem acento e sem caixa, e é conferida uma vez
+ * por imóvel, não por vistoria: com 10 mil vistorias, os imóveis são poucos. A vistoria de um imóvel fora do aparelho
+ * não casa com busca nem com cliente.
+ */
+function matcherOf(
+  filters: InspectionFilters,
+  places: ReadonlyMap<string, PlaceView>,
+  now: Date,
+): (entry: ListEntry) => boolean {
+  const query = fold(filters.query.trim());
+  const since = filters.period ? periodStart(filters.period, now).getTime() : null;
+  const found = new Map<string, boolean>();
+  const searched = (propertyId: string) => {
+    let hit = found.get(propertyId);
+    if (hit === undefined) {
+      const place = places.get(propertyId);
+      hit =
+        place !== undefined &&
+        (fold(place.address).includes(query) || fold(place.clientName ?? "").includes(query));
+      found.set(propertyId, hit);
+    }
+    return hit;
+  };
+  return (entry) =>
+    (filters.kind === null || entry.kind === filters.kind) &&
+    (filters.status === null || entry.status === filters.status) &&
+    (filters.propertyId === null || entry.propertyId === filters.propertyId) &&
+    (filters.clientId === null || places.get(entry.propertyId)?.clientId === filters.clientId) &&
+    (since === null || Date.parse(entry.startedAt) >= since) &&
+    (query === "" || searched(entry.propertyId));
+}
+
+/** Uma opção de Select dos filtros. */
+export interface FilterOption {
+  value: string;
+  label: string;
+}
+
+/** Os imóveis do Select "Imóvel", pelo endereço; com um cliente escolhido, só os dele. */
+export function propertyOptionsOf(
+  places: ReadonlyMap<string, PlaceView>,
+  clientId: string | null,
+): FilterOption[] {
+  return [...places]
+    .filter(([, place]) => clientId === null || place.clientId === clientId)
+    .map(([id, place]) => ({ value: id, label: place.address }))
+    .toSorted((a, b) => byText(a.label, b.label));
+}
+
+/** As opções do Select "Período". */
+export const PERIOD_OPTIONS: { value: InspectionPeriod; label: string }[] = (
+  Object.entries(INSPECTION_PERIODS) as [InspectionPeriod, string][]
+).map(([value, label]) => ({ value, label }));
 
 // `startedAt` é ISO 8601 em UTC: a ordem das strings é a das datas, sem o custo do `localeCompare` em 10 mil linhas.
 const newest = (a: { startedAt: string }, b: { startedAt: string }) =>
@@ -268,7 +352,7 @@ export function historyEntryOf(row: InspectionRow): HistoryEntryView {
 
 /**
  * Quantas linhas a lista monta de cada vez. Montar todas trava a tela com milhares de vistorias no aparelho (spike 2,
- * ADR 0047); a busca e os filtros do M5 vêm por cima disto.
+ * ADR 0047); com busca ou filtro, vale sobre o resultado filtrado (#175).
  */
 export const LIST_PAGE_SIZE = 50;
 

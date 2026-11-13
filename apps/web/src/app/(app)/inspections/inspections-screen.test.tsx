@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ClientRecord } from "@/features/clients/models/client";
 import type { InspectionRecord } from "@/features/inspections/models/inspection";
 import type { PropertyRecord } from "@/features/properties/models/property";
+import { clock } from "@/shared/clock";
 import type { DraftRecord } from "@/shared/sync/drafts";
 import type { PendingRecord, RecordSyncState } from "@/shared/sync/sync-view";
 import { summaryOf } from "@/features/inspections/services/inspections.summary";
@@ -27,6 +28,13 @@ const EMPTY = {
 };
 
 const local = vi.hoisted(() => ({ value: {} as typeof EMPTY }));
+
+// A busca e os filtros vêm da URL (#175).
+const navigation = vi.hoisted(() => ({ search: "" }));
+
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(navigation.search),
+}));
 
 vi.mock("@/features/local-store/hooks/useLocalStore", () => ({
   useLocalStore: () => ({
@@ -102,6 +110,8 @@ function open(over: Partial<typeof EMPTY> = {}) {
 
 afterEach(() => {
   local.value = EMPTY;
+  navigation.search = "";
+  window.history.replaceState(null, "", "/");
   deleteInspection.mockClear();
 });
 
@@ -369,5 +379,219 @@ describe("InspectionsScreen", () => {
     expect(container.querySelectorAll("tbody a")).toHaveLength(50);
     expect(screen.getByText("50 vistorias")).toBeDefined();
     expect(screen.queryByRole("button", { name: "Mostrar mais" })).toBeNull();
+  });
+});
+
+describe("busca e filtros (#175)", () => {
+  const lar: ClientRecord = { ...horizonte, id: "c2", name: "Lar Imóveis" };
+  const brasil: PropertyRecord = {
+    ...flores,
+    id: "p2",
+    clientId: "c2",
+    street: "Av. Brasil",
+    number: "1500",
+    complement: "sala 4",
+  };
+  const augusta: PropertyRecord = { ...flores, id: "p3", street: "Rua Augusta", number: "88", complement: null };
+
+  /** Uma de cada: Flores (Horizonte) em andamento e concluída, Augusta (Horizonte) saída, Brasil (Lar) concluída. */
+  const SOME = [
+    inspection("flores-1"),
+    inspection("flores-2", { status: "completed", startedAt: new Date(2026, 9, 18).toISOString() }),
+    inspection("augusta-1", { propertyId: "p3", kind: "moveOut", startedAt: new Date(2026, 9, 17).toISOString() }),
+    inspection("brasil-1", { propertyId: "p2", status: "completed", startedAt: new Date(2026, 9, 16).toISOString() }),
+  ];
+
+  function openSome(over: Partial<typeof EMPTY> = {}) {
+    const view = open({ clients: [horizonte, lar], properties: [flores, brasil, augusta], inspections: SOME, ...over });
+    return { ...view, ids: () => [...view.container.querySelectorAll("tbody a[href^='/inspections/edit']")].map(idOf) };
+  }
+
+  const idOf = (link: Element) => new URL(link.getAttribute("href")!, "http://x").searchParams.get("id");
+
+  async function choose(user: ReturnType<typeof userEvent.setup>, trigger: HTMLElement, option: string) {
+    await user.click(trigger);
+    await user.click(await screen.findByRole("option", { name: option }));
+  }
+
+  const combo = (name: string) => screen.getByRole("combobox", { name });
+
+  it("busca pelo endereço e pelo nome do cliente, sem acento e sem caixa; a URL guarda a busca", async () => {
+    const user = userEvent.setup();
+    const { ids } = openSome();
+
+    await user.type(screen.getByRole("searchbox", { name: "Buscar vistorias" }), "AVENIDA");
+    expect(ids()).toEqual([]);
+
+    await user.clear(screen.getByRole("searchbox", { name: "Buscar vistorias" }));
+    await user.type(screen.getByRole("searchbox", { name: "Buscar vistorias" }), "lar imoveis");
+    expect(ids()).toEqual(["brasil-1"]);
+    expect(window.location.search).toBe("?q=lar+imoveis");
+
+    await user.clear(screen.getByRole("searchbox", { name: "Buscar vistorias" }));
+    await user.type(screen.getByRole("searchbox", { name: "Buscar vistorias" }), "flores");
+    expect(ids()).toEqual(["flores-1", "flores-2"]);
+    expect(screen.getByText("2 vistorias")).toBeDefined();
+  });
+
+  it("cada filtro da barra do desktop, e a combinação; a URL guarda os filtros", async () => {
+    const user = userEvent.setup();
+    const { ids } = openSome();
+    expect(combo("Filtrar por cliente").textContent).toBe("Cliente: todos");
+    expect(combo("Filtrar por período").textContent).toBe("Período: qualquer data");
+
+    await choose(user, combo("Filtrar por cliente"), "Imobiliária Horizonte");
+    expect(ids()).toEqual(["flores-1", "augusta-1", "flores-2"]);
+    expect(combo("Filtrar por cliente").textContent).toBe("Cliente: Imobiliária Horizonte");
+
+    await choose(user, combo("Filtrar por tipo"), "Saída");
+    expect(ids()).toEqual(["augusta-1"]);
+
+    await choose(user, combo("Filtrar por tipo"), "Todos");
+    await choose(user, combo("Filtrar por status"), "Concluída");
+    expect(ids()).toEqual(["flores-2"]);
+
+    await choose(user, combo("Filtrar por imóvel"), "Rua Augusta, 88");
+    expect(ids()).toEqual([]);
+    expect(window.location.search).toBe("?cliente=c1&imovel=p3&status=completed");
+  });
+
+  it("o Imóvel lista só os do cliente escolhido, e trocar para outro cliente tira o imóvel de lá", async () => {
+    const user = userEvent.setup();
+    openSome();
+
+    await choose(user, combo("Filtrar por imóvel"), "Av. Brasil, 1500 · sala 4");
+    await choose(user, combo("Filtrar por cliente"), "Imobiliária Horizonte");
+    expect(combo("Filtrar por imóvel").textContent).toBe("Imóvel: todos");
+
+    await user.click(combo("Filtrar por imóvel"));
+    expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual([
+      "Todos",
+      "Rua Augusta, 88",
+      "Rua das Flores, 120 · ap 32",
+    ]);
+  });
+
+  it("período pela data de início, contando hoje", async () => {
+    const user = userEvent.setup();
+    const now = vi.spyOn(clock, "now").mockReturnValue(new Date(2026, 9, 24, 12));
+    const { ids } = openSome();
+
+    await choose(user, combo("Filtrar por período"), "Últimos 7 dias");
+
+    // De 18/10 em diante: flores-1 (19/10) e flores-2 (18/10).
+    expect(ids()).toEqual(["flores-1", "flores-2"]);
+    expect(window.location.search).toBe("?periodo=7d");
+    now.mockRestore();
+  });
+
+  it("os filtros vêm da URL: a lista abre filtrada, com os Selects marcados", () => {
+    navigation.search = "q=rua&status=completed&tipo=moveIn";
+    const { ids } = openSome();
+
+    expect(ids()).toEqual(["flores-2"]);
+    expect((screen.getByRole("searchbox", { name: "Buscar vistorias" }) as HTMLInputElement).value).toBe("rua");
+    expect(combo("Filtrar por status").textContent).toBe("Status: Concluída");
+    expect(combo("Filtrar por tipo").textContent).toBe("Tipo: Entrada");
+  });
+
+  it("com filtro, a linha e o laudo levam o ?voltar= com a lista filtrada; sem filtro, não", async () => {
+    navigation.search = "cliente=c1&status=completed";
+    const { container } = openSome();
+    const back = encodeURIComponent("/inspections?cliente=c1&status=completed");
+
+    expect(container.querySelector("tbody a")!.getAttribute("href")).toBe(
+      `/inspections/edit?id=flores-2&voltar=${back}`,
+    );
+    expect(screen.getByRole("link", { name: "Laudo de Rua das Flores, 120 · ap 32" }).getAttribute("href")).toBe(
+      `/inspections/report?id=flores-2&voltar=${back}`,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Limpar filtros" }));
+    expect(container.querySelector("tbody a")!.getAttribute("href")).toBe("/inspections/edit?id=flores-1");
+  });
+
+  it("nada combina: 'Nenhuma vistoria encontrada', e 'Limpar filtros' limpa a busca e os filtros", async () => {
+    const user = userEvent.setup();
+    navigation.search = "q=Peixoto&status=completed";
+    const { ids } = openSome();
+
+    expect(screen.getByText("Nenhuma vistoria encontrada")).toBeDefined();
+    expect(screen.queryByText("Nenhuma vistoria ainda")).toBeNull();
+    expect(screen.queryByRole("table")).toBeNull();
+
+    const empty = screen.getByText("Nenhuma vistoria encontrada").parentElement!.parentElement!;
+    await user.click(within(empty).getByRole("button", { name: "Limpar filtros" }));
+
+    expect(ids()).toHaveLength(4);
+    expect((screen.getByRole("searchbox", { name: "Buscar vistorias" }) as HTMLInputElement).value).toBe("");
+    expect(combo("Filtrar por status").textContent).toBe("Status: todos");
+    expect(window.location.search).toBe("");
+    expect(screen.queryByRole("button", { name: "Limpar filtros" })).toBeNull();
+  });
+
+  it("'Mostrar mais' anda sobre o resultado filtrado, e trocar o filtro volta para a primeira página", async () => {
+    const user = userEvent.setup();
+    // 120 em andamento, metade de cada cliente, da mais recente (i0) para a mais antiga.
+    const many = Array.from({ length: 120 }, (_, n) =>
+      inspection(`i${n}`, {
+        propertyId: n % 2 === 0 ? "p1" : "p2",
+        startedAt: new Date(2026, 9, 20, 8, 0, -n).toISOString(),
+      }),
+    );
+    const { container } = open({ clients: [horizonte, lar], properties: [flores, brasil], inspections: many });
+    const tableLinks = () => container.querySelectorAll("tbody a");
+
+    await choose(user, combo("Filtrar por cliente"), "Lar Imóveis");
+    expect(tableLinks()).toHaveLength(50);
+    expect(screen.getByText("50 de 60 vistorias")).toBeDefined();
+
+    await user.click(screen.getByRole("button", { name: "Mostrar mais" }));
+    expect(tableLinks()).toHaveLength(60);
+    expect(screen.getByText("60 vistorias")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Mostrar mais" })).toBeNull();
+    expect([...tableLinks()].every((link) => Number(idOf(link)!.slice(1)) % 2 === 1)).toBe(true);
+
+    await choose(user, combo("Filtrar por cliente"), "Imobiliária Horizonte");
+    expect(tableLinks()).toHaveLength(50);
+    expect(screen.getByText("50 de 60 vistorias")).toBeDefined();
+  });
+
+  it("a criada no aparelho (só na fila) entra na lista filtrada quando casa", async () => {
+    const user = userEvent.setup();
+    const created = inspection("nova", { propertyId: "p2", version: null });
+    const { ids } = openSome({
+      pending: new Map([["nova", { mutationFnName: "upsertInspection", record: created, removed: false }]]),
+    });
+
+    await choose(user, combo("Filtrar por cliente"), "Lar Imóveis");
+    expect(ids()).toEqual(["nova", "brasil-1"]);
+
+    await choose(user, combo("Filtrar por status"), "Concluída");
+    expect(ids()).toEqual(["brasil-1"]);
+  });
+
+  it("celular: 'Filtros' abre o Sheet, conta os ligados, diz quantas casam, e 'Limpar' mantém a busca", async () => {
+    const user = userEvent.setup();
+    navigation.search = "q=rua";
+    openSome();
+
+    await user.click(screen.getByRole("button", { name: "Filtros" }));
+    const sheet = await screen.findByRole("dialog", { name: "Filtros" });
+    expect(within(sheet).getByText("3 vistorias com estes filtros.")).toBeDefined();
+    await choose(user, within(sheet).getByRole("combobox", { name: "Filtrar por tipo" }), "Saída");
+    expect(within(sheet).getByText("1 vistoria com estes filtros.")).toBeDefined();
+    expect(within(sheet).getByRole("combobox", { name: "Filtrar por tipo" }).textContent).toBe("Saída");
+
+    await user.click(within(sheet).getByRole("button", { name: "Ver 1 vistoria" }));
+    expect(screen.queryByRole("dialog", { name: "Filtros" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Filtros · 1" })).toBeDefined();
+
+    await user.click(screen.getByRole("button", { name: "Filtros · 1" }));
+    const again = await screen.findByRole("dialog", { name: "Filtros" });
+    await user.click(within(again).getByRole("button", { name: "Limpar" }));
+    expect(within(again).getByText("3 vistorias com estes filtros.")).toBeDefined();
+    expect(window.location.search).toBe("?q=rua");
   });
 });

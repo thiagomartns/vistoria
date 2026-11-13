@@ -75,19 +75,20 @@ export const listedTotal = (page) =>
   });
 
 /**
- * Em todo documento novo do contexto, marca em `window.__listReadyAt` o `performance.now()` do primeiro quadro com
- * `rows` linhas na lista: depois de um reload, o tempo desde o começo da navegação. Vale a partir do próximo documento.
+ * Em todo documento novo do contexto, marca em `window[key]` (`__listReadyAt` por padrão) o `performance.now()` do
+ * primeiro quadro com `rows` linhas na lista: depois de um reload, o tempo desde o começo da navegação. Vale a partir
+ * do próximo documento.
  */
-export const markListReady = (context, rows) =>
+export const markListReady = (context, rows, key = "__listReadyAt") =>
   context.addInitScript(
-    ([selector, expected]) => {
+    ([selector, expected, name]) => {
       const check = () => {
-        if (document.querySelectorAll(selector).length >= expected) window.__listReadyAt = performance.now();
+        if (document.querySelectorAll(selector).length >= expected) window[name] = performance.now();
         else requestAnimationFrame(check);
       };
       requestAnimationFrame(check);
     },
-    [TABLE_LINK, rows],
+    [TABLE_LINK, rows, key],
   );
 
 /** Espera um valor que a página grava em `window[name]` e o devolve. */
