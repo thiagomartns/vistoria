@@ -23,6 +23,10 @@ import { useIsDesktop } from "@/shared/useIsDesktop";
 
 const NEW_INSPECTION_HREF = "/inspections/new";
 
+/** O texto da opção escolhida, ou null com "todos". */
+const labelOf = (options: readonly { value: string; label: string }[], value: string | null) =>
+  options.find((option) => option.value === value)?.label ?? null;
+
 /** O valor do Select como o filtro o tipa: um dos valores das opções, ou "todos". */
 const pick = <T extends string>(options: readonly { value: T }[], value: string | null): T | null =>
   options.find((option) => option.value === value)?.value ?? null;
@@ -59,6 +63,7 @@ export function InspectionsScreen() {
       label: "Cliente",
       allLabel: "Todos",
       value: filters.clientId,
+      selectedLabel: inspections.clientLabel,
       options: inspections.clientOptions,
       onChange: (clientId) => setFilters({ clientId }),
     },
@@ -67,6 +72,7 @@ export function InspectionsScreen() {
       label: "Imóvel",
       allLabel: "Todos",
       value: filters.propertyId,
+      selectedLabel: inspections.propertyLabel,
       options: inspections.propertyOptions,
       onChange: (propertyId) => setFilters({ propertyId }),
     },
@@ -75,7 +81,8 @@ export function InspectionsScreen() {
       label: "Tipo",
       allLabel: "Todos",
       value: filters.kind,
-      options: inspections.kindOptions,
+      selectedLabel: labelOf(inspections.kindOptions, filters.kind),
+      options: () => inspections.kindOptions,
       onChange: (kind) => setFilters({ kind: pick(inspections.kindOptions, kind) }),
     },
     {
@@ -83,7 +90,8 @@ export function InspectionsScreen() {
       label: "Status",
       allLabel: "Todos",
       value: filters.status,
-      options: inspections.statusOptions,
+      selectedLabel: labelOf(inspections.statusOptions, filters.status),
+      options: () => inspections.statusOptions,
       onChange: (status) => setFilters({ status: pick(inspections.statusOptions, status) }),
     },
     {
@@ -91,7 +99,8 @@ export function InspectionsScreen() {
       label: "Período",
       allLabel: "Qualquer data",
       value: filters.period,
-      options: inspections.periodOptions,
+      selectedLabel: labelOf(inspections.periodOptions, filters.period),
+      options: () => inspections.periodOptions,
       onChange: (period) => setFilters({ period: pick(inspections.periodOptions, period) }),
     },
   ];

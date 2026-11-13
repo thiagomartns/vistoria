@@ -167,8 +167,14 @@ export function useInspections() {
     activeFilters: activeFilterCount(filters),
     /** Quantas vistorias casam com a busca e os filtros: "212 vistorias" ("Ver 212 vistorias" no Sheet). */
     matched: countLabel(total, total),
-    clientOptions: clientOptionsOf(clients),
-    propertyOptions: propertyOptionsOf(places, filters.clientId),
+    // As opções do Cliente e do Imóvel saem só quando o Select abre: ordenar os 2.500 imóveis do spike 2 a cada
+    // render (a lista renderiza a cada segundo) pesava no celular. O texto do escolhido sai direto do banco local.
+    clientOptions: () => clientOptionsOf(clients),
+    propertyOptions: () => propertyOptionsOf(places, filters.clientId),
+    clientLabel: filters.clientId
+      ? (clients.find((client) => client.id === filters.clientId)?.name ?? null)
+      : null,
+    propertyLabel: filters.propertyId ? (places.get(filters.propertyId)?.address ?? null) : null,
     kindOptions: KIND_OPTIONS,
     statusOptions: STATUS_OPTIONS,
     periodOptions: PERIOD_OPTIONS,

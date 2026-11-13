@@ -1,9 +1,11 @@
 import { Label } from "@sanjou/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@sanjou/ui/select";
+import { useState } from "react";
 
 // Os filtros de /inspections (Figma "Busca e filtros (#175)"): Cliente, Imóvel, Tipo, Status e Período. Na barra do
 // desktop (estado 1), lado a lado, com o filtro no texto ("Cliente: todos"); no Sheet "Filtros" do celular (estado 2),
-// um campo por filtro, com o Label em cima e o valor no Select.
+// um campo por filtro, com o Label em cima e o valor no Select. Os itens só existem com o Select aberto: o Radix monta
+// os itens fechado também, e o Imóvel do spike 2 tem 2.500 (a lista renderiza a cada segundo, na leitura da fila).
 
 /** Valor do item "todos": o Select do Radix não aceita item com valor vazio. */
 const ALL = "todos";
@@ -21,7 +23,10 @@ export interface InspectionFilterField {
   /** O item que desliga o filtro: "Todos", "Qualquer data". */
   allLabel: string;
   value: string | null;
-  options: InspectionFilterOption[];
+  /** O texto do valor escolhido ("Imobiliária Horizonte"), ou null com "todos". */
+  selectedLabel: string | null;
+  /** As opções, montadas só quando o Select abre. */
+  options: () => InspectionFilterOption[];
   onChange: (value: string | null) => void;
 }
 
@@ -31,13 +36,13 @@ type InspectionFiltersProps = {
   layout: "barra" | "painel";
 };
 
-/** As larguras da barra do desktop, do Figma, pela ordem dos campos. */
+/** As larguras da barra do desktop, do Figma, com 10 px a menos no Cliente e no Período: em 1440 px, "Limpar filtros" cabe na linha. */
 const BAR_WIDTH: Record<string, string> = {
-  cliente: "w-[250px]",
+  cliente: "w-[240px]",
   imovel: "w-[220px]",
   tipo: "w-[140px]",
   status: "w-[170px]",
-  periodo: "w-[210px]",
+  periodo: "w-[200px]",
 };
 
 function FilterSelect({
@@ -47,11 +52,14 @@ function FilterSelect({
   field: InspectionFilterField;
   layout: "barra" | "painel";
 }) {
-  const selected = field.options.find((option) => option.value === field.value)?.label;
+  const [open, setOpen] = useState(false);
+  const selected = field.selectedLabel;
   const shown = selected ?? field.allLabel;
   const id = `filtro-${field.name}`;
   const select = (
     <Select
+      open={open}
+      onOpenChange={setOpen}
       value={field.value ?? ALL}
       onValueChange={(value) => field.onChange(value === ALL ? null : value)}
     >
@@ -70,11 +78,13 @@ function FilterSelect({
       </SelectTrigger>
       <SelectContent>
         <SelectItem value={ALL}>{field.allLabel}</SelectItem>
-        {field.options.map((option) => (
-          <SelectItem key={option.value} value={option.value}>
-            {option.label}
-          </SelectItem>
-        ))}
+        {open
+          ? field.options().map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))
+          : null}
       </SelectContent>
     </Select>
   );
