@@ -49,8 +49,10 @@ type NewInspectionFormProps = {
   moveOut: boolean;
   /** As entradas concluídas do imóvel escolhido. */
   moveInOptions: Option[];
-  /** A entrada de onde a saída parte: a escolhida, ou a mais recente. */
+  /** A entrada de onde a saída parte: a escolhida, ou a mais recente sem saída. */
   moveInId: string;
+  /** A escolhida já tem saída no aparelho (#184): o rótulo corta no celular, a descrição diz. */
+  chosenHasMoveOut: boolean;
   /** Saída num imóvel sem entrada concluída. */
   noMoveIn: boolean;
   /** A saída ainda não pode começar (sem entrada, ou lendo a escolhida). */
@@ -71,6 +73,7 @@ export function NewInspectionForm({
   moveOut,
   moveInOptions,
   moveInId,
+  chosenHasMoveOut,
   noMoveIn,
   waitingMoveIn,
   newPropertyHref,
@@ -228,8 +231,9 @@ export function NewInspectionForm({
                   </SelectContent>
                 </Select>
                 <FormDescription>
-                  Ambientes e itens são copiados com o estado da entrada, que aparece ao lado de cada
-                  item na tela de campo.
+                  {chosenHasMoveOut
+                    ? "Esta entrada já tem uma saída neste aparelho; começar outra pede confirmação."
+                    : "Ambientes e itens são copiados com o estado da entrada, que aparece ao lado de cada item na tela de campo."}
                 </FormDescription>
                 <FormMessage />
               </FormItem>

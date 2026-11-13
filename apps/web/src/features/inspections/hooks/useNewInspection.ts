@@ -124,8 +124,10 @@ export function useNewInspection() {
     moveOut,
     /** As entradas concluídas do imóvel escolhido, da mais recente para a mais antiga. */
     moveInOptions: moveIns,
-    /** A entrada de onde a saída parte: a escolhida, ou a mais recente. */
+    /** A entrada de onde a saída parte: a escolhida, ou a mais recente sem saída. */
     moveInId: chosen,
+    /** A escolhida já tem saída no aparelho (#184). */
+    chosenHasMoveOut: chosenOption?.hasMoveOut ?? false,
     /** Saída num imóvel sem entrada concluída no aparelho (wireframe 68:1759). */
     noMoveIn: moveOut && propertyId !== "" && moveInsReady && moveIns.length === 0,
     /** A saída espera a entrada escolhida ser lida inteira do banco local. */

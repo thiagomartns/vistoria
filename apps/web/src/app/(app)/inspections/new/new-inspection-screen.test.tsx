@@ -401,6 +401,7 @@ describe("NewInspectionScreen", () => {
 
       const select = screen.getByLabelText("Vistoria de entrada");
       expect(select.textContent).toBe(LABEL.c);
+      expect(screen.queryByText(/Esta entrada já tem uma saída/)).toBeNull();
       await user.click(select);
       expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual([
         `${LABEL.a} · já tem saída`,
@@ -429,6 +430,9 @@ describe("NewInspectionScreen", () => {
       await chooseMoveOut(user, "Rua das Flores, 120 · Imobiliária Lar");
       await user.click(screen.getByLabelText("Vistoria de entrada"));
       await user.click(await screen.findByRole("option", { name: `${LABEL.a} · já tem saída` }));
+      expect(
+        screen.getByText("Esta entrada já tem uma saída neste aparelho; começar outra pede confirmação."),
+      ).toBeDefined();
       await user.click(screen.getByRole("button", { name: "Começar vistoria" }));
 
       const dialog = await screen.findByRole("dialog", { name: "Esta entrada já tem saída" });

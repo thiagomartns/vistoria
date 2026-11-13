@@ -23,6 +23,7 @@ export function NewInspectionScreen() {
     moveOut,
     moveInOptions,
     moveInId,
+    chosenHasMoveOut,
     noMoveIn,
     waitingMoveIn,
     confirmMoveOut,
@@ -43,6 +44,7 @@ export function NewInspectionScreen() {
           moveOut={moveOut}
           moveInOptions={moveInOptions}
           moveInId={moveInId}
+          chosenHasMoveOut={chosenHasMoveOut}
           noMoveIn={noMoveIn}
           waitingMoveIn={waitingMoveIn}
           newPropertyHref="/properties/edit"
