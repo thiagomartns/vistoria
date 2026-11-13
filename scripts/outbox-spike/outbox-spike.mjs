@@ -1369,7 +1369,7 @@ try {
   assert.equal((await serverInspection(user, travada)).body.version, remote.version, "o servidor fica como o outro deixou");
   ok("concluída em outro aparelho: o PUT daqui volta 409 locked, a tela adota o servidor, fica só leitura e avisa no toast");
   await page.getByRole("link", { name: "Voltar", exact: true }).click();
-  step("12i", "Saída (#170): offline, da entrada concluída mais recente do imóvel; recarregada, segue; com a rede, chega com a referência e as cópias");
+  step("12i", "Saída (#170): offline, da entrada concluída mais recente do imóvel; recarregada, segue; com a rede, chega com a referência e as cópias; depois, a entrada usada diz que já tem saída (#184)");
   // No imóvel do 12h há duas entradas concluídas: a `concluir` e a `travada`, a mais recente, que vem escolhida.
   const entrada = (await serverInspection(user, travada)).body;
   if (shotsDir) {
@@ -1445,6 +1445,38 @@ try {
   );
   ok(`a rede volta: a saída chega com a referência e as ${copies.length} cópias, e só as duas condições marcadas`);
   await page.getByRole("link", { name: "Voltar", exact: true }).click();
+  await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
+
+  // #184: de volta à Nova vistoria, a `travada` já tem a saída acima; a outra entrada vem escolhida, e começar outra
+  // saída da `travada` pede confirmação.
+  await page.getByRole("link", { name: "Nova vistoria" }).first().click();
+  await page.getByRole("heading", { level: 1, name: "Nova vistoria" }).waitFor();
+  await page.getByLabel("Imóvel").click();
+  await page.getByRole("option", { name: conclusaoOption }).click();
+  await page.getByRole("radio", { name: "Saída" }).click();
+  await moveInSelect.waitFor();
+  const [usedLabel, otherLabel] = [`${moveInOptions[0]} · já tem saída`, moveInOptions[1]];
+  await until(async () => (await moveInSelect.textContent()) === otherLabel, "a entrada sem saída vem escolhida", 10_000);
+  await moveInSelect.click();
+  assert.deepEqual(
+    await page.getByRole("option").allTextContents(),
+    [usedLabel, otherLabel],
+    "a entrada usada diz que já tem saída",
+  );
+  await page.getByRole("option", { name: usedLabel }).click();
+  // O rótulo corta no celular: a descrição diz que a escolhida já tem saída.
+  await page.getByText("Esta entrada já tem uma saída neste aparelho; começar outra pede confirmação.").waitFor();
+  await shoot(page, "saida-4-ja-tem-saida");
+  await page.getByRole("button", { name: "Começar vistoria" }).click();
+  const confirmDialog = page.getByRole("dialog", { name: "Esta entrada já tem saída" });
+  await confirmDialog.waitFor();
+  await shoot(page, "saida-5-confirmar");
+  await confirmDialog.getByRole("button", { name: "Cancelar" }).click();
+  await confirmDialog.waitFor({ state: "hidden" });
+  assert.match(page.url(), /\/inspections\/new/, "cancelar fica na Nova vistoria");
+  assert.equal(await outboxCount(page, user), 0, "cancelar não cria");
+  ok("a entrada usada diz \"· já tem saída\", a outra vem escolhida, e começar outra saída dela pede confirmação; cancelar não cria");
+  await page.getByRole("link", { name: "Cancelar" }).click();
   await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
 
   step("12j", "Roteiro (#173): criar e reordenar offline, no desktop e no celular; recarregado, segue; com a rede, chega na ordem");

@@ -107,6 +107,19 @@ function fieldsOf(
 /** Uma vistoria na lista: o resumo confirmado, ou a vistoria como a fila a deixa (ADR 0048). */
 type ListedInspection = (InspectionSummary | InspectionRecord) & { deleting?: true };
 
+/** Os resumos confirmados com a fila por cima, por id: sem a excluída, e a com a exclusão na fila marcada (ADR 0048). */
+function listedOf(
+  summaries: readonly InspectionSummary[],
+  pending: ReadonlyMap<string, PendingRecord>,
+): Map<string, ListedInspection> {
+  const listed = new Map<string, ListedInspection>(summaries.map((summary) => [summary.id, summary]));
+  for (const [id, entry] of pending) {
+    if (entry.removed) listed.delete(id);
+    else listed.set(id, entry.record as InspectionRecord);
+  }
+  return listed;
+}
+
 /**
  * Uma vistoria como a lista mostra. Com a exclusão na fila, ela fica "Excluindo" até o 204. Fora isso, o rascunho
  * recusado ou em conflito vence: ele tem o que a pessoa fez e o servidor não aceitou (e, numa criação recusada, é o
@@ -156,11 +169,7 @@ export function inspectionPage(
 ): { rows: InspectionRow[]; total: number } {
   const drafts = allDrafts.filter((draft) => draft.entity === INSPECTION_ENTITY);
   const draftById = new Map(drafts.map((draft) => [draft.id, draft]));
-  const listed = new Map<string, ListedInspection>(summaries.map((summary) => [summary.id, summary]));
-  for (const [id, entry] of pending) {
-    if (entry.removed) listed.delete(id);
-    else listed.set(id, entry.record as InspectionRecord);
-  }
+  const listed = listedOf(summaries, pending);
   type Entry = {
     id: string;
     inspection: ListedInspection | undefined;
@@ -647,44 +656,80 @@ export function deletedConflictView(
 /** Uma entrada de onde a saída pode partir, no Select da Nova vistoria. */
 export interface MoveInOption {
   value: string;
-  /** "Entrada de 26/10/2026 às 09:12 · 29 itens". */
+  /** "Entrada de 26/10/2026 às 09:12 · 29 itens", e " · já tem saída" quando tem. */
   label: string;
+  /** O aparelho tem uma saída feita a partir dela (#184). */
+  hasMoveOut: boolean;
 }
+
+export const HAS_MOVE_OUT = "já tem saída";
 
 /**
  * As entradas concluídas do imóvel, de onde a saída pode partir (wireframe 68:1878), da mais recente para a mais
  * antiga. Lê o resumo de cada vistoria com a fila por cima, como a lista (ADR 0048): a concluída offline, ainda na
  * fila, conta, porque a outbox é serial e a conclusão chega ao servidor antes da saída (ADR 0034). A excluída, ou com a
  * exclusão na fila, não entra. O rótulo fica no que o resumo tem: o início, com a hora (duas no mesmo dia se
- * distinguem), e o total de itens.
+ * distinguem), e o total de itens; a que está em `withMoveOut` diz que já tem saída (ADR 0059).
  */
 export function moveInsOf(
   summaries: readonly InspectionSummary[],
   pending: ReadonlyMap<string, PendingRecord>,
   propertyId: string,
+  withMoveOut: ReadonlySet<string> = new Set(),
 ): MoveInOption[] {
-  const listed = new Map<string, ListedInspection>(summaries.map((summary) => [summary.id, summary]));
-  for (const [id, entry] of pending) {
-    if (entry.removed) listed.delete(id);
-    else listed.set(id, entry.record as InspectionRecord);
-  }
-  return [...listed.values()]
-    .filter(
-      (inspection) =>
-        !inspection.deleting &&
-        inspection.propertyId === propertyId &&
-        inspection.kind === "moveIn" &&
-        inspection.status === "completed",
-    )
+  return livingOf(summaries, pending, propertyId, "moveIn")
+    .filter((inspection) => inspection.status === "completed")
     .toSorted((a, b) => (a.startedAt === b.startedAt ? 0 : a.startedAt < b.startedAt ? 1 : -1))
-    .map((inspection) => ({
-      value: inspection.id,
-      label: `Entrada de ${dateOf(inspection.startedAt)} às ${timeOf(inspection.startedAt)} · ${plural(
+    .map((inspection) => {
+      const hasMoveOut = withMoveOut.has(inspection.id);
+      const label = `Entrada de ${dateOf(inspection.startedAt)} às ${timeOf(inspection.startedAt)} · ${plural(
         itemCounts(inspection as Record<string, unknown>).items,
         "item",
         "itens",
-      )}`,
-    }));
+      )}`;
+      return {
+        value: inspection.id,
+        label: hasMoveOut ? `${label} · ${HAS_MOVE_OUT}` : label,
+        hasMoveOut,
+      };
+    });
+}
+
+/** As vistorias de um tipo no imóvel, pelo resumo com a fila por cima, sem a excluída nem a com exclusão na fila. */
+function livingOf(
+  summaries: readonly InspectionSummary[],
+  pending: ReadonlyMap<string, PendingRecord>,
+  propertyId: string,
+  kind: InspectionKind,
+): ListedInspection[] {
+  return [...listedOf(summaries, pending).values()].filter(
+    (inspection) =>
+      !inspection.deleting && inspection.propertyId === propertyId && inspection.kind === kind,
+  );
+}
+
+/**
+ * As saídas do imóvel que o aparelho tem, confirmadas ou na fila (ADR 0059). O resumo não guarda a entrada de onde
+ * cada uma partiu: a Nova vistoria lê só estas, inteiras, por id.
+ */
+export function moveOutIdsOf(
+  summaries: readonly InspectionSummary[],
+  pending: ReadonlyMap<string, PendingRecord>,
+  propertyId: string,
+): string[] {
+  return livingOf(summaries, pending, propertyId, "moveOut").map((inspection) => inspection.id);
+}
+
+/** As entradas de onde as saídas lidas partiram. */
+export function withMoveOutOf(moveOuts: readonly InspectionRecord[]): Set<string> {
+  return new Set(
+    moveOuts.flatMap((moveOut) => (moveOut.referenceInspectionId ? [moveOut.referenceInspectionId] : [])),
+  );
+}
+
+/** A entrada escolhida por padrão: a mais recente sem saída, ou a mais recente, se todas têm (#184). */
+export function defaultMoveInOf(options: readonly MoveInOption[]): MoveInOption | undefined {
+  return options.find((option) => !option.hasMoveOut) ?? options[0];
 }
 
 /** O que a entrada tinha num item da saída, ao lado dele na tela de campo (Figma 42:1632 e 42:1715). */

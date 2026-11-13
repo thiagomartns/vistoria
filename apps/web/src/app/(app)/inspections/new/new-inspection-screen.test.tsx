@@ -62,6 +62,13 @@ vi.mock("@/features/inspections/hooks/useInspectionRecord", () => ({
   }),
 }));
 
+vi.mock("@/features/inspections/hooks/useInspectionRecords", () => ({
+  useInspectionRecords: (_store: unknown, ids: readonly string[]) => ({
+    records: ids.flatMap((id) => inspections.records.get(id) ?? []),
+    ready: true,
+  }),
+}));
+
 vi.mock("@/features/inspections/services/inspections.sync", () => ({
   saveInspection: vi.fn<() => string>(() => "nova"),
   UPSERT_INSPECTION: "upsertInspection",
@@ -351,5 +358,126 @@ describe("NewInspectionScreen", () => {
         referenceNotes: "Pintura nova.",
       },
     ]);
+  });
+
+  // #184: uma saída por entrada; a outra é quase sempre engano.
+  describe("entrada que já tem saída", () => {
+    const at = (month: number, day: number) => new Date(2026, month, day, 9, 0).toISOString();
+    const moveOutOf = (id: string, { completedAt: _completed, ...entry }: InspectionRecord): InspectionRecord => ({
+      ...entry,
+      id,
+      kind: "moveOut",
+      status: "inProgress",
+      startedAt: at(10, 1),
+      referenceInspectionId: entry.id,
+    });
+    const LABEL = {
+      a: "Entrada de 05/10/2026 às 09:00 · 2 itens",
+      b: "Entrada de 05/09/2026 às 09:00 · 2 itens",
+      c: "Entrada de 05/08/2026 às 09:00 · 2 itens",
+    };
+
+    // `a` (a mais recente) tem saída confirmada, `b` tem saída só na fila, `c` não tem; a saída excluída na fila não conta.
+    function withMoveOuts() {
+      const [a, b, c] = [moveIn("a", "p1", at(9, 5)), moveIn("b", "p1", at(8, 5)), moveIn("c", "p1", at(7, 5))];
+      const [outA, outB, outC] = [moveOutOf("saida-a", a), moveOutOf("saida-b", b), moveOutOf("saida-c", c)];
+      inspections.summaries = [a, b, c, outA, outC].map(summaryOf);
+      inspections.records = new Map([a, b, c, outA, outB, outC].map((record) => [record.id, record]));
+      local.value = {
+        ...local.value,
+        pending: new Map([
+          [outB.id, { mutationFnName: "upsertInspection", record: outB, removed: false }],
+          [outC.id, { mutationFnName: "deleteInspection", record: outC, removed: true }],
+        ]),
+      };
+      open([property("p1", "Rua das Flores")]);
+    }
+
+    it("a entrada com saída, confirmada ou na fila, diz que já tem saída, e a escolhida é a mais recente sem saída", async () => {
+      const user = userEvent.setup();
+      withMoveOuts();
+
+      await chooseMoveOut(user, "Rua das Flores, 120 · Imobiliária Lar");
+
+      const select = screen.getByLabelText("Vistoria de entrada");
+      expect(select.textContent).toBe(LABEL.c);
+      expect(screen.queryByText(/Esta entrada já tem uma saída/)).toBeNull();
+      await user.click(select);
+      expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual([
+        `${LABEL.a} · já tem saída`,
+        `${LABEL.b} · já tem saída`,
+        LABEL.c,
+      ]);
+    });
+
+    it("todas com saída: a mais recente vem escolhida", async () => {
+      const user = userEvent.setup();
+      const a = moveIn("a", "p1", at(9, 5));
+      const out = moveOutOf("saida-a", a);
+      inspections.summaries = [a, out].map(summaryOf);
+      inspections.records = new Map([a, out].map((record) => [record.id, record]));
+      open([property("p1", "Rua das Flores")]);
+
+      await chooseMoveOut(user, "Rua das Flores, 120 · Imobiliária Lar");
+
+      expect(screen.getByLabelText("Vistoria de entrada").textContent).toBe(`${LABEL.a} · já tem saída`);
+    });
+
+    it("escolher uma entrada com saída pede confirmação: cancelar não cria", async () => {
+      const user = userEvent.setup();
+      withMoveOuts();
+
+      await chooseMoveOut(user, "Rua das Flores, 120 · Imobiliária Lar");
+      await user.click(screen.getByLabelText("Vistoria de entrada"));
+      await user.click(await screen.findByRole("option", { name: `${LABEL.a} · já tem saída` }));
+      expect(
+        screen.getByText("Esta entrada já tem uma saída neste aparelho; começar outra pede confirmação."),
+      ).toBeDefined();
+      await user.click(screen.getByRole("button", { name: "Começar vistoria" }));
+
+      const dialog = await screen.findByRole("dialog", { name: "Esta entrada já tem saída" });
+      expect(dialog.textContent).toContain(
+        "Entrada de 05/10/2026 às 09:00. Já existe uma saída feita a partir dela; outra saída da mesma entrada costuma ser engano.",
+      );
+      await user.click(within(dialog).getByRole("button", { name: "Cancelar" }));
+
+      await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(saveInspection).not.toHaveBeenCalled();
+      expect(navigation.push).not.toHaveBeenCalled();
+    });
+
+    it("escolher uma entrada com saída pede confirmação: confirmar cria a saída dela e abre a tela de campo", async () => {
+      const user = userEvent.setup();
+      withMoveOuts();
+
+      await chooseMoveOut(user, "Rua das Flores, 120 · Imobiliária Lar");
+      await user.click(screen.getByLabelText("Vistoria de entrada"));
+      await user.click(await screen.findByRole("option", { name: `${LABEL.b} · já tem saída` }));
+      await user.click(screen.getByRole("button", { name: "Começar vistoria" }));
+      const dialog = await screen.findByRole("dialog", { name: "Esta entrada já tem saída" });
+      await user.click(within(dialog).getByRole("button", { name: "Começar outra saída" }));
+
+      await vi.waitFor(() =>
+        expect(navigation.push).toHaveBeenCalledWith("/inspections/edit?id=nova"),
+      );
+      expect(vi.mocked(saveInspection).mock.calls[0]?.[1]).toMatchObject({
+        kind: "moveOut",
+        referenceInspectionId: "b",
+      });
+    });
+
+    it("a entrada sem saída cria direto, sem confirmação", async () => {
+      const user = userEvent.setup();
+      withMoveOuts();
+
+      await chooseMoveOut(user, "Rua das Flores, 120 · Imobiliária Lar");
+      await user.click(screen.getByRole("button", { name: "Começar vistoria" }));
+
+      await vi.waitFor(() =>
+        expect(navigation.push).toHaveBeenCalledWith("/inspections/edit?id=nova"),
+      );
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(vi.mocked(saveInspection).mock.calls[0]?.[1]).toMatchObject({ referenceInspectionId: "c" });
+    });
   });
 });
