@@ -89,7 +89,7 @@ describe("FilterSelect", () => {
 
   it("opções em função: só são montadas com o Select aberto, e o texto do escolhido vem do selectedLabel", async () => {
     const user = userEvent.setup();
-    const options = vi.fn(() => CLIENTS);
+    const options = vi.fn<() => typeof CLIENTS>(() => CLIENTS);
     render(
       <FilterSelect
         label="Cliente"
