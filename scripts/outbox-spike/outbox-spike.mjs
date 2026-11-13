@@ -59,6 +59,9 @@
 // arrastado para o topo, outro removido, um nome vazio que "Pronto" não aceita; no Sheet dos ambientes, um ambiente
 // novo, outro arrastado para o topo e um com itens removido pelo Dialog. Recarregada, segue; com a rede, o servidor tem
 // a lista nova, com as position na ordem da tela. Com SCREENS=1, os prints em `.screens/ambientes/`.
+// Desde o #175 o passo 12n busca a Rua da Conclusão na lista, sem acento, filtra as concluídas pelo Status (a URL guarda
+// os dois), abre o laudo de uma e volta para a lista filtrada; com Tipo "Saída", nada combina, e "Limpar filtros" volta
+// a lista inteira. Com SCREENS=1, os prints em `.screens/vistorias/`, com o Período aberto e o Sheet de filtros.
 // Desde o #133 o passo 13 passa pelo aviso de outro usuário (Cancelar faz o signOut da Bia e mantém a fila da Ana), e o
 // passo 15 prova a limpeza no IndexedDB de verdade: Sair com pendência pelo Dialog e "Apagar e entrar" de outro usuário.
 
@@ -142,6 +145,38 @@ const shootNew = shooter(newDir);
 // O histórico do imóvel (#176), com SCREENS=1.
 const historyDir = process.env.SCREENS ? resolve(process.env.INIT_CWD ?? root, ".screens/imovel") : null;
 const shootHistory = shooter(historyDir);
+
+// A busca e os filtros da lista de vistorias (#175), com SCREENS=1.
+const listDir = process.env.SCREENS ? resolve(process.env.INIT_CWD ?? root, ".screens/vistorias") : null;
+const shootList = shooter(listDir);
+
+/**
+ * Os prints dos filtros abertos (#175): o Select do Período na barra do desktop e o Sheet "Filtros" do celular. O Radix
+ * fecha o Select e o Dialog quando a janela muda, então cada um abre na largura dele.
+ */
+async function shootOpenFilters(page) {
+  if (!listDir) return;
+  mkdirSync(listDir, { recursive: true });
+  const original = page.viewportSize();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await wait(400);
+  await page.getByRole("combobox", { name: "Filtrar por período" }).click();
+  await page.getByRole("listbox").waitFor();
+  await wait(300);
+  await page.screenshot({ path: join(listDir, "periodo-aberto-desktop.png") });
+  await page.keyboard.press("Escape");
+  await page.getByRole("listbox").waitFor({ state: "hidden" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await wait(400);
+  await page.getByRole("button", { name: /^Filtros/ }).click();
+  await page.getByRole("dialog", { name: "Filtros" }).waitFor();
+  await wait(400);
+  await page.screenshot({ path: join(listDir, "filtros-sheet-celular.png") });
+  await page.keyboard.press("Escape");
+  await page.getByRole("dialog", { name: "Filtros" }).waitFor({ state: "hidden" });
+  await page.setViewportSize(original);
+  ok("print do Período aberto (desktop) e do Sheet de filtros (celular)");
+}
 
 // Ambientes e itens na tela de campo (#171), com SCREENS=1.
 const structureDir = process.env.SCREENS ? resolve(process.env.INIT_CWD ?? root, ".screens/ambientes") : null;
@@ -1770,6 +1805,53 @@ try {
   await page.getByRole("heading", { name: "Nenhuma vistoria deste imóvel" }).waitFor();
   await shootHistory(page, "historico-vazio");
   ok("imóvel sem vistoria: o EmptyState no lugar da linha do tempo");
+  await goTo(page, "Clientes");
+
+  step("12n", "Busca e filtros (#175): buscar a Rua da Conclusão, filtrar as concluídas, abrir uma e voltar para a lista filtrada; nada combina e Limpar filtros");
+  await goTo(page, "Vistorias");
+  const search = page.getByRole("searchbox", { name: "Buscar vistorias" });
+  /** Os endereços e os status das linhas da Table, na ordem da lista. */
+  const listed = () =>
+    page.locator("tbody tr").evaluateAll((rows) => rows.map((row) => `${row.cells[0].textContent} · ${row.cells[3].textContent}`));
+  /** Escolhe `option` no Select `name` da barra do desktop. */
+  const pick = async (name, option) => {
+    await page.getByRole("combobox", { name }).click();
+    await page.getByRole("option", { name: option, exact: true }).click();
+  };
+  await search.fill("rua da conclusao");
+  await until(async () => (await listed()).length === 4, "as quatro vistorias da Rua da Conclusão", 10_000);
+  assert.ok(
+    (await listed()).every((row) => row.startsWith("Rua da Conclusão, 10")),
+    "a busca sem acento acha só a Rua da Conclusão",
+  );
+  await pick("Filtrar por status", "Concluída");
+  await until(async () => (await listed()).length === 2, "as duas concluídas", 10_000);
+  assert.ok((await listed()).every((row) => row.endsWith("Concluída")), "só as concluídas");
+  assert.equal(new URL(page.url()).search, "?q=rua+da+conclusao&status=completed", "os filtros ficam na URL");
+  ok("a busca acha as quatro da Rua da Conclusão, e o Status deixa as duas concluídas; os filtros vão para a URL");
+  await shootList(page, "filtros-aplicados");
+  await shootOpenFilters(page);
+
+  // A linha leva o ?voltar= com a lista filtrada: o "Voltar" do laudo volta para ela, com a busca e o Status.
+  await page.locator("tbody tr").first().getByRole("link", { name: /^Laudo de / }).click();
+  await page.waitForURL(/\/inspections\/report\?id=.*&voltar=/);
+  await page.getByRole("heading", { level: 1, name: "Laudo" }).waitFor();
+  await page.getByRole("link", { name: "Voltar", exact: true }).click();
+  await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
+  assert.equal(new URL(page.url()).search, "?q=rua+da+conclusao&status=completed", "voltou para a lista filtrada");
+  assert.equal(await search.inputValue(), "rua da conclusao", "com a busca");
+  await until(async () => (await listed()).length === 2, "as duas concluídas de novo", 10_000);
+  ok("o laudo de uma delas volta para a lista filtrada, com a busca e o Status");
+
+  await pick("Filtrar por tipo", "Saída");
+  await page.getByText("Nenhuma vistoria encontrada").waitFor();
+  assert.equal(await page.locator("tbody tr").count(), 0, "sem tabela");
+  await shootList(page, "sem-resultado");
+  await page.getByRole("button", { name: "Limpar filtros" }).last().click();
+  await until(async () => (await listed()).length > 4, "a lista inteira de volta", 10_000);
+  assert.equal(await search.inputValue(), "", "a busca limpa");
+  assert.equal(new URL(page.url()).search, "", "a URL sem filtros");
+  ok("Saída não deixa nenhuma: \"Nenhuma vistoria encontrada\", e \"Limpar filtros\" volta a lista inteira");
   await goTo(page, "Clientes");
 
   step(13, "Outro usuário entra: a fila do anterior não sai com a conta dele");
