@@ -1,15 +1,7 @@
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@sanjou/ui/select";
+import { type FilterOption, FilterSelect } from "@/shared/components/filter-select";
 
-// Os filtros de /properties (Figma 71:2799 e 71:2803): "Cliente: todos" e "Tipo: todos". Na barra do desktop, lado a
-// lado com 180 px; no Sheet "Filtros" do celular, um embaixo do outro, em largura total.
-
-/** Valor do item "todos": o Select do Radix não aceita item com valor vazio. */
-const ALL = "todos";
-
-export interface FilterOption {
-  value: string;
-  label: string;
-}
+// Os filtros de /properties (Figma 71:2799 e 71:2803): Cliente e Tipo, um FilterSelect cada. Na barra do desktop, lado
+// a lado com 180 px; no Sheet "Filtros" do celular, um campo por filtro, com o Label em cima, em largura total.
 
 type PropertyFiltersProps<TType extends string> = {
   clientId: string | null;
@@ -29,43 +21,29 @@ export function PropertyFilters<TType extends string>({
   onChange,
   layout,
 }: PropertyFiltersProps<TType>) {
-  const width = layout === "barra" ? "w-[180px] shrink-0" : "w-full";
   return (
     <>
-      <Select
-        value={clientId ?? ALL}
-        onValueChange={(value) => onChange({ clientId: value === ALL ? null : value, type })}
-      >
-        <SelectTrigger aria-label="Filtrar por cliente" className={width}>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ALL}>Cliente: todos</SelectItem>
-          {clientOptions.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Select
-        value={type ?? ALL}
-        onValueChange={(value) =>
-          onChange({ clientId, type: value === ALL ? null : (value as TType) })
+      <FilterSelect
+        label="Cliente"
+        allLabel="Todos"
+        value={clientId}
+        options={clientOptions}
+        onChange={(value) => onChange({ clientId: value, type })}
+        layout={layout}
+      />
+      <FilterSelect
+        label="Tipo"
+        allLabel="Todos"
+        value={type}
+        options={typeOptions}
+        onChange={(value) =>
+          onChange({
+            clientId,
+            type: typeOptions.find((option) => option.value === value)?.value ?? null,
+          })
         }
-      >
-        <SelectTrigger aria-label="Filtrar por tipo" className={width}>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ALL}>Tipo: todos</SelectItem>
-          {typeOptions.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+        layout={layout}
+      />
     </>
   );
 }
