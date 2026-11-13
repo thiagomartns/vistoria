@@ -17,12 +17,12 @@ import { NewInspectionScreen } from "./new-inspection-screen";
 // /inspections/new (wireframes 68:1644 e 68:1878, e a seção "Nova vistoria · roteiro (#174)"), com o banco local simulado no hook, os resumos e a vistoria por id
 // simulados, e o saveInspection espionado.
 
-const navigation = vi.hoisted(() => ({ push: vi.fn<(href: string) => void>() }));
+const navigation = vi.hoisted(() => ({ search: "", push: vi.fn<(href: string) => void>() }));
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/inspections/new",
   useRouter: () => ({ push: navigation.push, replace: vi.fn<() => void>() }),
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => new URLSearchParams(navigation.search),
 }));
 
 vi.mock("@/features/local-store/hooks/useLocalOutbox", () => ({ useLocalOutbox: () => {} }));
@@ -167,6 +167,7 @@ afterEach(() => {
   inspections.records = new Map();
   local.value = { ...local.value, templates: [], pending: new Map() };
   navigation.push.mockReset();
+  navigation.search = "";
   vi.mocked(saveInspection).mockClear();
   resetSyncStatus();
   resetSession();
@@ -479,5 +480,30 @@ describe("NewInspectionScreen", () => {
       expect(screen.queryByRole("dialog")).toBeNull();
       expect(vi.mocked(saveInspection).mock.calls[0]?.[1]).toMatchObject({ referenceInspectionId: "c" });
     });
+  });
+
+  // #176: o "Nova vistoria" do histórico do imóvel.
+  it("com ?propertyId= de um imóvel do aparelho, o Imóvel já vem escolhido e começar cria nele", async () => {
+    const user = userEvent.setup();
+    navigation.search = "?propertyId=p2";
+    open([property("p1", "Rua das Flores"), property("p2", "Rua do Porto")]);
+
+    expect(screen.getByLabelText("Imóvel").textContent).toBe("Rua do Porto, 120 · Imobiliária Lar");
+    await user.click(screen.getByRole("button", { name: "Começar vistoria" }));
+
+    await vi.waitFor(() => expect(navigation.push).toHaveBeenCalledWith("/inspections/edit?id=nova"));
+    expect(vi.mocked(saveInspection).mock.calls[0]?.[1]).toMatchObject({ propertyId: "p2", kind: "moveIn" });
+  });
+
+  it("com ?propertyId= de um imóvel que o aparelho não tem, nada vem escolhido e começar pede o imóvel", async () => {
+    const user = userEvent.setup();
+    navigation.search = "?propertyId=nao-tenho";
+    open([property("p1", "Rua das Flores")]);
+
+    expect(screen.getByLabelText("Imóvel").textContent).toBe("Escolha o imóvel");
+    await user.click(screen.getByRole("button", { name: "Começar vistoria" }));
+
+    expect(await screen.findByText("Escolha o imóvel.")).toBeDefined();
+    expect(saveInspection).not.toHaveBeenCalled();
   });
 });

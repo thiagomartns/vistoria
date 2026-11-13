@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ClientRecord } from "@/features/clients/models/client";
+import type { InspectionSummary } from "@/features/inspections/models/inspection-summary";
 import type { PropertyRecord } from "@/features/properties/models/property";
 import { fetchProperty, saveProperty } from "@/features/properties/services/properties.sync";
 import { resetSession } from "@/shared/auth/session";
@@ -19,11 +20,12 @@ import { PropertyEditScreen } from "./property-edit-screen";
 const navigation = vi.hoisted(() => ({
   search: "",
   push: vi.fn<(href: string) => void>(),
+  replace: vi.fn<(href: string) => void>(),
 }));
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/properties/edit",
-  useRouter: () => ({ push: navigation.push, replace: vi.fn<() => void>() }),
+  useRouter: () => ({ push: navigation.push, replace: navigation.replace }),
   useSearchParams: () => new URLSearchParams(navigation.search),
 }));
 
@@ -37,7 +39,16 @@ const local = vi.hoisted(() => ({
     properties: [] as PropertyRecord[],
     drafts: [] as DraftRecord[],
     states: new Map<string, RecordSyncState>(),
+    pending: new Map<string, { mutationFnName: string; record: unknown; removed: boolean }>(),
+    outboxRead: true,
   },
+}));
+
+// Os resumos das vistorias que a lista lê (ADR 0048).
+const inspections = vi.hoisted(() => ({ summaries: [] as InspectionSummary[] }));
+
+vi.mock("@/features/inspections/hooks/useInspectionSummaries", () => ({
+  useInspectionSummaries: () => ({ data: inspections.summaries, isReady: true }),
 }));
 
 vi.mock("@/features/local-store/hooks/useLocalStore", () => ({
@@ -79,8 +90,8 @@ const flores: PropertyRecord = {
   notes: "Portaria 24h.",
 };
 
-function open(id: string | null, over: Partial<typeof local.value> = {}) {
-  navigation.search = id ? `?id=${id}` : "";
+function open(id: string | null, over: Partial<typeof local.value> = {}, tab?: string) {
+  navigation.search = id ? `?id=${id}${tab ? `&tab=${tab}` : ""}` : "";
   local.value = { ...local.value, clients: [lar, horizonte], ...over };
   return render(
     <AppShell>
@@ -118,8 +129,13 @@ afterEach(() => {
     properties: [],
     drafts: [],
     states: new Map(),
+    pending: new Map(),
+    outboxRead: true,
   };
+  inspections.summaries = [];
+  vi.unstubAllGlobals();
   navigation.push.mockReset();
+  navigation.replace.mockReset();
   vi.mocked(saveProperty).mockClear();
   vi.mocked(fetchProperty).mockReset().mockResolvedValue("not-found");
   resetSyncStatus();
@@ -418,6 +434,118 @@ describe("PropertyEditScreen", () => {
 
       expect(screen.getByText("Não foi possível buscar este imóvel agora.")).toBeDefined();
       await vi.waitFor(() => expect(vi.mocked(fetchProperty)).toHaveBeenCalledTimes(2));
+    });
+  });
+
+  // #176: o histórico do imóvel, numa linha do tempo; abas abaixo de 1280 px, Card ao lado do formulário a partir dele.
+  describe("histórico do imóvel", () => {
+    const summary = (id: string, over: Partial<InspectionSummary> = {}): InspectionSummary => ({
+      id,
+      version: "AAAAAAAAB9M=",
+      propertyId: "p1",
+      kind: "moveIn",
+      status: "completed",
+      startedAt: "2025-02-03T12:00:00.000Z",
+      evaluated: 29,
+      items: 29,
+      ...over,
+    });
+    const BACK = encodeURIComponent("/properties/edit?id=p1&tab=vistorias");
+
+    function wide(matches: boolean) {
+      vi.stubGlobal("matchMedia", (query: string) => ({
+        matches: matches && query === "(min-width: 1280px)",
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }));
+    }
+
+    function withHistory(tab?: string) {
+      inspections.summaries = [
+        summary("entrada"),
+        summary("saida", { kind: "moveOut", status: "inProgress", startedAt: "2026-10-19T12:00:00.000Z", evaluated: 12 }),
+        summary("em-conflito", { startedAt: "2024-05-01T12:00:00.000Z" }),
+        summary("de-outro", { propertyId: "p2", startedAt: "2026-11-01T12:00:00.000Z" }),
+      ];
+      const conflictDraft: DraftRecord = {
+        id: "em-conflito",
+        entity: "inspection",
+        data: { ...summary("em-conflito", { startedAt: "2024-05-01T12:00:00.000Z" }), rooms: [] },
+        status: "conflict",
+        errors: {},
+        updatedAt: "2026-10-26T13:10:00.000Z",
+      };
+      open("p1", { properties: [flores], drafts: [conflictDraft], states: new Map([["saida", "local" as const]]) }, tab);
+    }
+
+    it("abaixo de 1280 px: abas Dados | Vistorias · N, Dados aberta por padrão, e a troca grava a aba na URL", async () => {
+      const user = userEvent.setup();
+      withHistory();
+
+      expect(screen.getByRole("tab", { name: "Dados" }).getAttribute("aria-selected")).toBe("true");
+      expect(screen.getByRole("tab", { name: "Vistorias · 3" })).toBeDefined();
+      expect(field("Rua").value).toBe("Rua das Flores");
+      expect(screen.queryByRole("list", { name: "Histórico do imóvel" })).toBeNull();
+
+      await user.click(screen.getByRole("tab", { name: "Vistorias · 3" }));
+
+      expect(navigation.replace).toHaveBeenCalledWith("/properties/edit?id=p1&tab=vistorias", { scroll: false });
+    });
+
+    it("aba Vistorias: só as do imóvel, da mais nova para a mais antiga, com o clique certo em cada estado", () => {
+      withHistory("vistorias");
+
+      const list = screen.getByRole("list", { name: "Histórico do imóvel" });
+      const links = within(list).getAllByRole("link");
+      expect(links.map((link) => link.textContent)).toEqual([
+        "Saída · Em andamentoIniciada em 19/10/2026 · 12 de 29 itensSalvo no aparelho",
+        "Entrada · ConcluídaIniciada em 03/02/2025",
+        "Entrada · ConcluídaIniciada em 01/05/2024Conflito",
+      ]);
+      expect(links.map((link) => link.getAttribute("href"))).toEqual([
+        // Em andamento: a tela de campo, que volta para cá.
+        `/inspections/edit?id=saida&voltar=${BACK}`,
+        // Concluída e confirmada: o laudo, que volta para cá.
+        `/inspections/report?id=entrada&voltar=${BACK}`,
+        // Em conflito: o ConflictResolver.
+        "/inspections/conflict?id=em-conflito",
+      ]);
+      expect(screen.getByText("3 vistorias")).toBeDefined();
+      expect(screen.getByRole("link", { name: "Nova vistoria" }).getAttribute("href")).toBe(
+        "/inspections/new?propertyId=p1",
+      );
+    });
+
+    it("aba Vistorias sem vistoria: o EmptyState com Nova vistoria", () => {
+      open("p1", { properties: [flores] }, "vistorias");
+
+      expect(screen.getByRole("tab", { name: "Vistorias · 0" })).toBeDefined();
+      expect(screen.getByText("Nenhuma vistoria deste imóvel")).toBeDefined();
+      expect(screen.getByRole("link", { name: "Nova vistoria" }).getAttribute("href")).toBe(
+        "/inspections/new?propertyId=p1",
+      );
+    });
+
+    it("a partir de 1280 px: sem abas, o formulário e o Card \"Histórico do imóvel\" lado a lado", () => {
+      wide(true);
+      withHistory();
+
+      expect(screen.queryByRole("tab")).toBeNull();
+      expect(field("Rua").value).toBe("Rua das Flores");
+      expect(screen.getByRole("heading", { name: "Histórico do imóvel" })).toBeDefined();
+      expect(screen.getByText("3 vistorias")).toBeDefined();
+      expect(within(screen.getByRole("list", { name: "Histórico do imóvel" })).getAllByRole("listitem")).toHaveLength(3);
+      expect(screen.getByRole("link", { name: "Nova vistoria" }).getAttribute("href")).toBe(
+        "/inspections/new?propertyId=p1",
+      );
+    });
+
+    it("imóvel novo: sem abas nem histórico, também a partir de 1280 px", () => {
+      wide(true);
+      open(null);
+
+      expect(screen.queryByRole("tab")).toBeNull();
+      expect(screen.queryByText("Histórico do imóvel")).toBeNull();
     });
   });
 });

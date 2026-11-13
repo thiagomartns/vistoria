@@ -167,46 +167,103 @@ export function inspectionPage(
   places: ReadonlyMap<string, PlaceView>,
   limit: number,
 ): { rows: InspectionRow[]; total: number } {
-  const drafts = allDrafts.filter((draft) => draft.entity === INSPECTION_ENTITY);
-  const draftById = new Map(drafts.map((draft) => [draft.id, draft]));
-  const listed = listedOf(summaries, pending);
-  type Entry = {
-    id: string;
-    inspection: ListedInspection | undefined;
-    draft: DraftRecord | undefined;
-    completed: boolean;
-    startedAt: string;
-  };
-  // A mesma escolha do `inspectionRowOf`: saindo, a vistoria; com rascunho recusado ou em conflito, ele; senão, ela.
-  const entryOf = (
-    id: string,
-    inspection: ListedInspection | undefined,
-    draft: DraftRecord | undefined,
-  ): Entry => {
-    const source: Record<string, unknown> =
-      !inspection?.deleting && needsAction(draft) ? draft.data : (inspection ?? {});
-    return {
-      id,
-      inspection,
-      draft,
-      completed: source.status === "completed",
-      startedAt: text(source.startedAt) ?? "",
-    };
-  };
-  const entries: Entry[] = [];
-  for (const [id, inspection] of listed) entries.push(entryOf(id, inspection, draftById.get(id)));
-  for (const draft of drafts) {
-    if (!listed.has(draft.id) && needsAction(draft)) entries.push(entryOf(draft.id, undefined, draft));
-  }
-  // `startedAt` é ISO 8601 em UTC: a ordem das strings é a das datas, sem o custo do `localeCompare` em 10 mil linhas.
-  const newest = (a: Entry, b: Entry) =>
-    a.startedAt === b.startedAt ? 0 : a.startedAt < b.startedAt ? 1 : -1;
+  const entries = listEntries(summaries, pending, allDrafts);
   entries.sort((a, b) => Number(a.completed) - Number(b.completed) || newest(a, b));
   const rows = entries
     .slice(0, limit)
     .map((entry) => inspectionRowOf(entry.inspection, entry.draft, states.get(entry.id), places))
     .filter((row) => row !== undefined);
   return { rows, total: entries.length };
+}
+
+/** Uma vistoria da lista, com o que decide a ordem e o filtro, antes de virar linha. */
+interface ListEntry {
+  id: string;
+  inspection: ListedInspection | undefined;
+  draft: DraftRecord | undefined;
+  propertyId: string;
+  completed: boolean;
+  startedAt: string;
+}
+
+/**
+ * As vistorias da lista, sem montar as linhas: os resumos com a fila por cima e os rascunhos de vistoria (recusados ou
+ * em conflito) que só existem neles. Os campos vêm da mesma fonte do `inspectionRowOf`: saindo, a vistoria; com
+ * rascunho recusado ou em conflito, ele; senão, ela.
+ */
+function listEntries(
+  summaries: readonly InspectionSummary[],
+  pending: ReadonlyMap<string, PendingRecord>,
+  allDrafts: readonly DraftRecord[],
+): ListEntry[] {
+  const drafts = allDrafts.filter((draft) => draft.entity === INSPECTION_ENTITY);
+  const draftById = new Map(drafts.map((draft) => [draft.id, draft]));
+  const listed = listedOf(summaries, pending);
+  const entryOf = (
+    id: string,
+    inspection: ListedInspection | undefined,
+    draft: DraftRecord | undefined,
+  ): ListEntry => {
+    const source: Record<string, unknown> =
+      !inspection?.deleting && needsAction(draft) ? draft.data : (inspection ?? {});
+    return {
+      id,
+      inspection,
+      draft,
+      propertyId: text(source.propertyId) ?? "",
+      completed: source.status === "completed",
+      startedAt: text(source.startedAt) ?? "",
+    };
+  };
+  const entries: ListEntry[] = [];
+  for (const [id, inspection] of listed) entries.push(entryOf(id, inspection, draftById.get(id)));
+  for (const draft of drafts) {
+    if (!listed.has(draft.id) && needsAction(draft)) entries.push(entryOf(draft.id, undefined, draft));
+  }
+  return entries;
+}
+
+// `startedAt` é ISO 8601 em UTC: a ordem das strings é a das datas, sem o custo do `localeCompare` em 10 mil linhas.
+const newest = (a: { startedAt: string }, b: { startedAt: string }) =>
+  a.startedAt === b.startedAt ? 0 : a.startedAt < b.startedAt ? 1 : -1;
+
+/**
+ * O histórico de um imóvel (#176): as vistorias dele, como a lista as lê (o resumo com a fila por cima e os rascunhos),
+ * só pela data de início, da mais nova para a mais antiga. Numa linha do tempo, a em andamento se destaca pelo
+ * marcador, não pela posição.
+ */
+export function propertyHistory(
+  summaries: readonly InspectionSummary[],
+  pending: ReadonlyMap<string, PendingRecord>,
+  allDrafts: readonly DraftRecord[],
+  states: ReadonlyMap<string, RecordSyncState>,
+  propertyId: string,
+): InspectionRow[] {
+  return listEntries(summaries, pending, allDrafts)
+    .filter((entry) => entry.propertyId === propertyId)
+    .sort(newest)
+    .map((entry) => inspectionRowOf(entry.inspection, entry.draft, states.get(entry.id)))
+    .filter((row) => row !== undefined);
+}
+
+/** Um item da linha do tempo do imóvel (Figma TimelineItem 231:1825). */
+export interface HistoryEntryView {
+  /** "Saída · Em andamento". */
+  title: string;
+  /** "Iniciada em 19/10/2026 · 12 de 29 itens"; os itens só na em andamento. */
+  meta: string;
+  /** Em andamento vazado, concluída cheio, com a exclusão na fila apagado. */
+  marker: "hollow" | "filled" | "muted";
+}
+
+export function historyEntryOf(row: InspectionRow): HistoryEntryView {
+  const started = `Iniciada em ${dateOf(row.startedAt)}`;
+  const ongoing = row.status !== "completed";
+  return {
+    title: [row.kindLabel, row.statusLabel].filter(Boolean).join(" · "),
+    meta: ongoing && row.items > 0 ? `${started} · ${row.evaluated} de ${plural(row.items, "item", "itens")}` : started,
+    marker: row.sync === "excluindo" ? "muted" : ongoing ? "hollow" : "filled",
+  };
 }
 
 /**

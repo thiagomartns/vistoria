@@ -103,7 +103,8 @@ export function NewInspectionForm({
               <FormLabel>Imóvel</FormLabel>
               <Select
                 name={field.name}
-                value={field.value}
+                // Um `?propertyId=` que o aparelho não tem não escolhe nada (#176).
+                value={propertyOptions.some((option) => option.value === field.value) ? field.value : ""}
                 onValueChange={field.onChange}
                 disabled={noProperties}
               >

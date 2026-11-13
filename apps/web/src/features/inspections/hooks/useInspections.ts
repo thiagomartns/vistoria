@@ -29,6 +29,23 @@ export const inspectionHref = (id: string) => `/inspections/edit?id=${encodeURIC
 /** O laudo de uma vistoria concluída. */
 export const reportHref = (id: string) => `/inspections/report?id=${encodeURIComponent(id)}`;
 
+/** O parâmetro da tela de campo e do laudo com o caminho do "Voltar" (#176). */
+export const BACK_PARAM = "voltar";
+
+/** `href` com o caminho do "Voltar" no `?voltar=`. */
+export const withBack = (href: string, back: string) =>
+  `${href}${href.includes("?") ? "&" : "?"}${BACK_PARAM}=${encodeURIComponent(back)}`;
+
+/**
+ * Para onde o "Voltar" leva: o `?voltar=` se for um caminho deste app ("/…", nunca "//…" nem "/\…", que o navegador
+ * leria como outro host), senão a lista de vistorias.
+ */
+export function backHrefOf(value: string | null): string {
+  return value && value.startsWith("/") && !value.startsWith("//") && !value.startsWith("/\\")
+    ? value
+    : INSPECTIONS_HREF;
+}
+
 /** O imóvel de cada vistoria no aparelho: o endereço e o nome do cliente. */
 export function placesOf(
   properties: readonly PropertyRecord[],
