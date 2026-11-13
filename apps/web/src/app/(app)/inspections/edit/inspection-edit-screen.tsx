@@ -9,7 +9,7 @@ import { CompleteInspection } from "@/features/inspections/components/complete-i
 import { DeleteInspection } from "@/features/inspections/components/delete-inspection";
 import { RoomStep } from "@/features/inspections/components/room-step";
 import { RoomsSheet } from "@/features/inspections/components/rooms-sheet";
-import { INSPECTIONS_HREF } from "@/features/inspections/hooks/useInspections";
+import { BACK_PARAM, backHrefOf, withBack } from "@/features/inspections/hooks/useInspections";
 import { useInspectionDraft } from "@/features/inspections/hooks/useInspectionDraft";
 import { RecordUnavailable } from "@/shared/components/record-unavailable";
 import { StepperForm } from "@/shared/components/stepper-form";
@@ -24,24 +24,29 @@ import { PageHeader } from "../../shell-header";
 // andamento, o "···" do header exclui a vistoria (#107): confirmada, a exclusão vai para a fila e a tela volta para a
 // lista; aberta com a exclusão na fila, fica só leitura. Concluída e confirmada, "Ver laudo" no header (#168).
 // Uma vistoria que o aparelho não tem é buscada no servidor, com o imóvel e o cliente (#101). Ambientes e itens (#171):
-// "Adicionar item" e "Editar itens" no ambiente, e "Editar ambientes" no "···", que abre o Sheet dos ambientes.
+// "Adicionar item" e "Editar itens" no ambiente, e "Editar ambientes" no "···", que abre o Sheet dos ambientes. O
+// "Voltar" (e a saída depois de excluir) vai para o `?voltar=`, se ele for um caminho do app, como o histórico do imóvel
+// (#176); senão, para a lista. O "Ver laudo" leva o mesmo `?voltar=`.
 
 export function InspectionEditScreen() {
-  const id = useSearchParams().get("id");
+  const params = useSearchParams();
+  const id = params.get("id");
+  const backParam = params.get(BACK_PARAM);
+  const back = backHrefOf(backParam);
   const router = useRouter();
   const field = useInspectionDraft(id);
 
   if (field.unavailable) {
     return (
       <>
-        <PageHeader title="Vistoria" backHref={INSPECTIONS_HREF} />
-        <RecordUnavailable {...field.unavailable} backHref={INSPECTIONS_HREF} />
+        <PageHeader title="Vistoria" backHref={back} />
+        <RecordUnavailable {...field.unavailable} backHref={back} />
       </>
     );
   }
 
   if (field.status === "loading" || !field.header || !field.room) {
-    return <PageHeader title="Vistoria" backHref={INSPECTIONS_HREF} focus />;
+    return <PageHeader title="Vistoria" backHref={back} focus />;
   }
 
   const { header, room } = field;
@@ -52,7 +57,7 @@ export function InspectionEditScreen() {
         subtitle={header.subtitle}
         compactSubtitle={header.compactSubtitle}
         sync={header.sync}
-        backHref={INSPECTIONS_HREF}
+        backHref={back}
         focus
         actions={
           field.deletable ? (
@@ -61,7 +66,7 @@ export function InspectionEditScreen() {
               pending={field.unsent}
               onConfirm={async () => {
                 await field.remove();
-                router.push(INSPECTIONS_HREF);
+                router.push(back);
               }}
               onEditRooms={field.roomsEditor.openSheet}
               editRoomsDisabled={field.readOnly}
@@ -74,7 +79,10 @@ export function InspectionEditScreen() {
               size="sm"
               className="max-md:size-8 max-md:border-transparent max-md:px-0"
             >
-              <Link href={field.reportHref} aria-label="Ver laudo">
+              <Link
+                href={backParam ? withBack(field.reportHref, back) : field.reportHref}
+                aria-label="Ver laudo"
+              >
                 <Printer aria-hidden="true" />
                 <span className="hidden md:inline">Ver laudo</span>
               </Link>

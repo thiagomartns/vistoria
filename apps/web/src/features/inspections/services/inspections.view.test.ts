@@ -23,9 +23,11 @@ import {
   inspectionRows,
   isDeletable,
   defaultMoveInOf,
+  historyEntryOf,
   moveInsOf,
   moveOutIdsOf,
   pendingItemIds,
+  propertyHistory,
   referenceOf,
   roomViews,
   withMoveOutOf,
@@ -655,5 +657,65 @@ describe("templateOptionsOf", () => {
 
     expect(templateOptionsOf([])).toEqual(only);
     expect(templateOptionsOf([{ id: "t-vazio", name: "Vazio", rooms: [] }])).toEqual(only);
+  });
+});
+
+describe("propertyHistory (#176)", () => {
+  const at = (day: number) => new Date(Date.UTC(2026, 9, day, 12)).toISOString();
+
+  it("só as vistorias do imóvel, com a fila por cima, da mais nova para a mais antiga pelo início", () => {
+    const summaries = [
+      // Uma entrada antiga ainda em andamento fica abaixo da concluída mais nova: a ordem é só a do início.
+      summaryOf(inspection("antiga-aberta", { startedAt: at(1) })),
+      summaryOf(inspection("concluida", { status: "completed", startedAt: at(10) })),
+      summaryOf(inspection("alterada", { startedAt: at(5) })),
+      summaryOf(inspection("excluida", { startedAt: at(6) })),
+      summaryOf(inspection("excluindo", { startedAt: at(7) })),
+      summaryOf(inspection("outro-imovel", { propertyId: "p2", startedAt: at(20) })),
+    ];
+    const pending = new Map([
+      queued(inspection("criada-offline", { kind: "moveOut", startedAt: at(15) })),
+      queued(inspection("alterada", { status: "completed", startedAt: at(5) })),
+      queued(inspection("excluida", { startedAt: at(6) }), { removed: true }),
+      queued({ ...inspection("excluindo", { startedAt: at(7) }), deleting: true }),
+    ]);
+    const drafts = [rejected(inspection("recusada", { startedAt: at(12) }))];
+
+    const rows = propertyHistory(summaries, pending, drafts, new Map(), "p1");
+
+    expect(rows.map((row) => [row.id, row.status, row.sync])).toEqual([
+      ["criada-offline", "inProgress", "sincronizado"],
+      ["recusada", "inProgress", "rejeitado"],
+      ["concluida", "completed", "sincronizado"],
+      ["excluindo", "inProgress", "excluindo"],
+      ["alterada", "completed", "sincronizado"],
+      ["antiga-aberta", "inProgress", "sincronizado"],
+    ]);
+  });
+
+  it("imóvel sem vistoria: nenhuma linha", () => {
+    expect(propertyHistory([summaryOf(inspection("i1"))], NONE, [], new Map(), "p9")).toEqual([]);
+  });
+});
+
+describe("historyEntryOf (#176)", () => {
+  const rowOf = (record: InspectionRecord, sync?: "local") => inspectionRowOf(record, undefined, sync)!;
+
+  it("em andamento: tipo e status no título, o início e os itens avaliados na meta, marcador vazado", () => {
+    expect(historyEntryOf(rowOf(inspection("i1", { kind: "moveOut", startedAt: "2026-10-19T12:00:00.000Z" })))).toEqual({
+      title: "Saída · Em andamento",
+      meta: "Iniciada em 19/10/2026 · 1 de 2 itens",
+      marker: "hollow",
+    });
+  });
+
+  it("concluída: só o início na meta, marcador cheio; com a exclusão na fila, apagado", () => {
+    const done = inspection("i1", { status: "completed", startedAt: "2026-02-03T12:00:00.000Z" });
+    expect(historyEntryOf(rowOf(done))).toEqual({
+      title: "Entrada · Concluída",
+      meta: "Iniciada em 03/02/2026",
+      marker: "filled",
+    });
+    expect(historyEntryOf({ ...rowOf(inspection("i2")), sync: "excluindo" }).marker).toBe("muted");
   });
 });

@@ -8,21 +8,28 @@ import { useSearchParams } from "next/navigation";
 
 import { InspectionReportSheet } from "@/features/inspections/components/inspection-report";
 import { useInspectionReport } from "@/features/inspections/hooks/useInspectionReport";
-import { INSPECTIONS_HREF, inspectionHref } from "@/features/inspections/hooks/useInspections";
+import {
+  BACK_PARAM,
+  INSPECTIONS_HREF,
+  backHrefOf,
+  inspectionHref,
+} from "@/features/inspections/hooks/useInspections";
 
 import { PageHeader } from "../../shell-header";
 
 // /inspections/report?id= (Figma 177:16524): o laudo da vistoria concluída, lido do banco local (abre offline). Na
 // tela, a folha sobre o fundo, com "Imprimir ou salvar PDF" (window.print); na impressão, só a folha (estado 3). Em
 // andamento, com a conclusão na fila ou desconhecida, o aviso no lugar do laudo (estados 4 a 6), com o caminho de
-// volta.
+// volta. O "Voltar" vai para o `?voltar=`, se ele for um caminho do app, como o histórico do imóvel (#176).
 export function ReportScreen() {
-  const id = useSearchParams().get("id");
+  const params = useSearchParams();
+  const id = params.get("id");
+  const back = backHrefOf(params.get(BACK_PARAM));
   const { ready, view } = useInspectionReport(id);
 
   return (
     <>
-      <PageHeader title="Laudo" backHref={INSPECTIONS_HREF} />
+      <PageHeader title="Laudo" backHref={back} />
       {!ready ? null : (
         <div className="flex flex-col gap-4 md:-m-6 md:flex-1 md:bg-muted md:p-6 print:m-0 print:bg-transparent print:p-0">
           {view.state === "report" ? (

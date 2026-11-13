@@ -1,4 +1,4 @@
-import { act, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -216,6 +216,31 @@ describe("InspectionEditScreen", () => {
   });
 
   // Figma 52:2538: na saída, ao lado de cada item, o que ele tinha na entrada; o item sem cópia não mostra nada.
+  it("o \"Voltar\" vai para o `?voltar=` do histórico do imóvel (#176); um que não é do app, para a lista", () => {
+    open();
+    expect(screen.getByRole("link", { name: "Voltar" }).getAttribute("href")).toBe("/inspections");
+    cleanup();
+
+    navigation.search = `?id=i1&voltar=${encodeURIComponent("/properties/edit?id=p1&tab=vistorias")}`;
+    render(
+      <AppShell>
+        <InspectionEditScreen />
+      </AppShell>,
+    );
+    expect(screen.getByRole("link", { name: "Voltar" }).getAttribute("href")).toBe(
+      "/properties/edit?id=p1&tab=vistorias",
+    );
+    cleanup();
+
+    navigation.search = `?id=i1&voltar=${encodeURIComponent("//evil.example")}`;
+    render(
+      <AppShell>
+        <InspectionEditScreen />
+      </AppShell>,
+    );
+    expect(screen.getByRole("link", { name: "Voltar" }).getAttribute("href")).toBe("/inspections");
+  });
+
   it("saída: a condição e a observação da entrada ao lado de cada item copiado, e o subtítulo diz saída", () => {
     const saida: InspectionRecord = {
       ...vistoria,
