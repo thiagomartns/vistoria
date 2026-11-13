@@ -22,10 +22,13 @@ import {
   inspectionPage,
   inspectionRows,
   isDeletable,
+  defaultMoveInOf,
   moveInsOf,
+  moveOutIdsOf,
   pendingItemIds,
   referenceOf,
   roomViews,
+  withMoveOutOf,
   roomsSummary,
   startedLabel,
   templateOptionsOf,
@@ -532,8 +535,8 @@ describe("moveInsOf", () => {
     ];
 
     expect(moveInsOf(summaries, NONE, "p1")).toEqual([
-      { value: "recente", label: "Entrada de 20/10/2026 às 14:30 · 2 itens" },
-      { value: "antiga", label: "Entrada de 01/03/2026 às 09:00 · 2 itens" },
+      { value: "recente", label: "Entrada de 20/10/2026 às 14:30 · 2 itens", hasMoveOut: false },
+      { value: "antiga", label: "Entrada de 01/03/2026 às 09:00 · 2 itens", hasMoveOut: false },
     ]);
   });
 
@@ -546,6 +549,60 @@ describe("moveInsOf", () => {
     ]);
 
     expect(moveInsOf(summaries, pending, "p1").map((option) => option.value)).toEqual(["concluida-offline"]);
+  });
+
+  it("a entrada de onde uma saída partiu diz que já tem saída (#184)", () => {
+    const summaries = [
+      summaryOf(completed("antiga", { startedAt: new Date(2026, 2, 1, 9, 0).toISOString() })),
+      summaryOf(completed("recente", { startedAt: new Date(2026, 9, 20, 14, 30).toISOString() })),
+    ];
+
+    expect(moveInsOf(summaries, NONE, "p1", new Set(["recente"]))).toEqual([
+      { value: "recente", label: "Entrada de 20/10/2026 às 14:30 · 2 itens · já tem saída", hasMoveOut: true },
+      { value: "antiga", label: "Entrada de 01/03/2026 às 09:00 · 2 itens", hasMoveOut: false },
+    ]);
+  });
+});
+
+describe("moveOutIdsOf e withMoveOutOf", () => {
+  const moveOut = (id: string, over: Partial<InspectionRecord> = {}) =>
+    inspection(id, { kind: "moveOut", referenceInspectionId: "entrada", ...over });
+
+  it("as saídas do imóvel pelo resumo e pela fila, sem a excluída, a com exclusão na fila, a entrada e a de outro imóvel", () => {
+    const summaries = [
+      summaryOf(moveOut("confirmada")),
+      summaryOf(moveOut("excluida")),
+      summaryOf(moveOut("outro-imovel", { propertyId: "p2" })),
+      summaryOf(inspection("entrada")),
+    ];
+    const pending = new Map([
+      queued(moveOut("na-fila")),
+      queued(moveOut("excluida"), { removed: true }),
+      queued({ ...moveOut("excluindo"), deleting: true }),
+    ]);
+
+    expect(moveOutIdsOf(summaries, pending, "p1").toSorted()).toEqual(["confirmada", "na-fila"]);
+  });
+
+  it("as entradas de onde as saídas partiram; a saída sem referência não conta", () => {
+    expect(
+      withMoveOutOf([
+        moveOut("s1", { referenceInspectionId: "e1" }),
+        moveOut("s2", { referenceInspectionId: "e1" }),
+        moveOut("s3", { referenceInspectionId: "e2" }),
+        inspection("sem-referencia", { kind: "moveOut" }),
+      ]),
+    ).toEqual(new Set(["e1", "e2"]));
+  });
+});
+
+describe("defaultMoveInOf", () => {
+  const option = (value: string, hasMoveOut: boolean) => ({ value, label: value, hasMoveOut });
+
+  it("a mais recente sem saída; com todas com saída, a mais recente; sem nenhuma, nada", () => {
+    expect(defaultMoveInOf([option("a", true), option("b", false), option("c", false)])?.value).toBe("b");
+    expect(defaultMoveInOf([option("a", true), option("b", true)])?.value).toBe("a");
+    expect(defaultMoveInOf([])).toBeUndefined();
   });
 });
 

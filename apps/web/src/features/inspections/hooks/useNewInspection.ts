@@ -1,5 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 
@@ -8,8 +9,16 @@ import { templateRows } from "@/features/templates/services/templates.view";
 
 import { newMoveInInspection, newMoveOutInspection } from "../services/inspections.factory";
 import { DELETE_INSPECTION, UPSERT_INSPECTION, saveInspection } from "../services/inspections.sync";
-import { DEFAULT_TEMPLATE_ID, moveInsOf, templateOptionsOf } from "../services/inspections.view";
+import {
+  DEFAULT_TEMPLATE_ID,
+  defaultMoveInOf,
+  moveInsOf,
+  moveOutIdsOf,
+  templateOptionsOf,
+  withMoveOutOf,
+} from "../services/inspections.view";
 import { useInspectionRecord } from "./useInspectionRecord";
+import { useInspectionRecords } from "./useInspectionRecords";
 import { useInspectionSummaries } from "./useInspectionSummaries";
 import { inspectionHref, placesOf } from "./useInspections";
 
@@ -28,7 +37,9 @@ export type NewInspectionValues = z.infer<typeof newInspectionSchema>;
  * O formulário de /inspections/new (wireframes 68:1644 e 68:1878, e a seção "Nova vistoria · roteiro (#174)"): escolhe
  * um imóvel do aparelho e o tipo. A entrada parte de um roteiro do aparelho (os da lista de roteiros, com os da fila e
  * os rascunhos, o primeiro por nome já escolhido), ou do roteiro padrão num aparelho sem nenhum; a saída, de uma entrada concluída do imóvel que o aparelho tem (a mais recente vem
- * escolhida), lida inteira do banco local para a cópia. As duas nascem no banco local e na fila, mesmo offline, e
+ * escolhida), lida inteira do banco local para a cópia. A entrada que já tem saída no aparelho diz isso no Select, a
+ * escolhida por padrão é a mais recente sem saída, e começar outra saída dela pede confirmação (#184, ADR 0059). As
+ * duas nascem no banco local e na fila, mesmo offline, e
  * abrem a tela de campo no primeiro ambiente.
  */
 export function useNewInspection() {
@@ -58,15 +69,24 @@ export function useNewInspection() {
         entry.mutationFnName === UPSERT_INSPECTION || entry.mutationFnName === DELETE_INSPECTION,
     ),
   );
-  const moveInsReady = summaries.isReady && outboxRead;
-  const moveIns = propertyId && moveInsReady ? moveInsOf(summaries.data, queued, propertyId) : [];
-  const chosen = moveIns.some((option) => option.value === moveInId)
-    ? moveInId
-    : (moveIns[0]?.value ?? "");
+  const summariesReady = summaries.isReady && outboxRead;
   const moveOut = kind === "moveOut";
+  // As saídas do imóvel, lidas inteiras por id: o resumo não guarda de que entrada cada uma partiu (ADR 0059).
+  const moveOutIds =
+    moveOut && propertyId && summariesReady ? moveOutIdsOf(summaries.data, queued, propertyId) : [];
+  const moveOuts = useInspectionRecords(store, moveOutIds);
+  const moveInsReady = summariesReady && moveOuts.ready;
+  const moveIns =
+    propertyId && moveInsReady
+      ? moveInsOf(summaries.data, queued, propertyId, withMoveOutOf(moveOuts.records))
+      : [];
+  const chosenOption =
+    moveIns.find((option) => option.value === moveInId) ?? defaultMoveInOf(moveIns);
+  const chosen = chosenOption?.value ?? "";
   const { record: moveIn } = useInspectionRecord(store, moveOut && chosen ? chosen : null);
+  const [confirming, setConfirming] = useState(false);
 
-  const onSubmit = form.handleSubmit((values) => {
+  const create = (values: NewInspectionValues) => {
     if (!store) return;
     if (values.kind === "moveOut" && !moveIn) return;
     const inspection =
@@ -75,6 +95,12 @@ export function useNewInspection() {
         : newMoveInInspection(values.propertyId, template.rooms);
     const id = saveInspection(store, inspection);
     router.push(inspectionHref(id));
+  };
+
+  const onSubmit = form.handleSubmit((values) => {
+    // Outra saída da mesma entrada é quase sempre engano: pergunta antes (#184).
+    if (values.kind === "moveOut" && chosenOption?.hasMoveOut) setConfirming(true);
+    else create(values);
   });
 
   return {
@@ -104,5 +130,13 @@ export function useNewInspection() {
     noMoveIn: moveOut && propertyId !== "" && moveInsReady && moveIns.length === 0,
     /** A saída espera a entrada escolhida ser lida inteira do banco local. */
     waitingMoveIn: moveOut && (chosen === "" || moveIn === undefined),
+    /** A confirmação de começar outra saída de uma entrada que já tem saída. */
+    confirmMoveOut: {
+      open: confirming,
+      onOpenChange: setConfirming,
+      /** "Entrada de 20/10/2026 às 14:30", sem o total de itens nem a marca. */
+      subject: chosenOption?.label.split(" · ")[0] ?? "",
+      onConfirm: () => create(form.getValues()),
+    },
   };
 }
