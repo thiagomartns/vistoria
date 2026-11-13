@@ -13,7 +13,8 @@ import { DeleteInspection } from "./delete-inspection";
 // campo. O SyncBadge só aparece fora do sincronizado (silêncio no caminho feliz). No desktop, a linha em andamento tem
 // o "···" com "Excluir vistoria" (#107, estado 4); no celular, exclui-se pela tela de campo. A linha com a exclusão na
 // fila fica apagada, com "Excluindo", até o 204 (estado 5). A concluída e confirmada tem o botão "Laudo" no lugar do
-// "···" (Figma 177:16524, estado 8); no celular, o laudo abre pela tela de campo. A busca e os filtros chegam no M5.
+// "···" (Figma 177:16524, estado 8); no celular, o laudo abre pela tela de campo. A busca e os filtros (#175) ficam na
+// tela: a lista recebe as linhas já filtradas.
 
 export interface InspectionListItem {
   id: string;
