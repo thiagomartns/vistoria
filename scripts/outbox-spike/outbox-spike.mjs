@@ -139,6 +139,10 @@ const shootTemplates = shooter(templatesDir);
 const newDir = process.env.SCREENS ? resolve(process.env.INIT_CWD ?? root, ".screens/nova-vistoria") : null;
 const shootNew = shooter(newDir);
 
+// O histórico do imóvel (#176), com SCREENS=1.
+const historyDir = process.env.SCREENS ? resolve(process.env.INIT_CWD ?? root, ".screens/imovel") : null;
+const shootHistory = shooter(historyDir);
+
 // Ambientes e itens na tela de campo (#171), com SCREENS=1.
 const structureDir = process.env.SCREENS ? resolve(process.env.INIT_CWD ?? root, ".screens/ambientes") : null;
 const shootStructure = shooter(structureDir);
@@ -1711,6 +1715,61 @@ try {
   );
   assert.equal(reshaped.rooms[1].items[0].condition, "good", "o Espelho chega avaliado");
   ok("a rede volta: o servidor tem a Cozinha, o Banheiro (Espelho, Box) e a Varanda (Piso), sem a Sala e o Ralo");
+
+  step("12m", "Histórico do imóvel (#176): a linha do tempo da Rua da Conclusão, o laudo que volta para ela e a Nova vistoria com o imóvel escolhido");
+  await goTo(page, "Imóveis");
+  await page.getByRole("link", { name: "Rua da Conclusão, 10", exact: true }).first().click();
+  await page.getByRole("heading", { level: 1, name: "Rua da Conclusão, 10" }).waitFor();
+  const conclusaoId = new URL(page.url()).searchParams.get("id");
+  // A 1440 px, o Card ao lado do formulário, sem abas.
+  await page.getByRole("heading", { name: "Histórico do imóvel" }).waitFor();
+  assert.equal(await page.getByRole("tab").count(), 0, "a partir de 1280 px, sem abas");
+  const history = page.getByRole("list", { name: "Histórico do imóvel" });
+  const historyItems = history.getByRole("listitem");
+  await until(async () => (await historyItems.count()) === 4, "as quatro vistorias do imóvel", 10_000);
+  const titles = await historyItems.evaluateAll((items) =>
+    items.map((item) => item.querySelector("a > span:nth-child(2) > span")?.textContent),
+  );
+  assert.deepEqual(
+    titles,
+    ["Entrada · Em andamento", "Saída · Em andamento", "Entrada · Concluída", "Entrada · Concluída"],
+    "a entrada do 12k, a saída do 12i e as duas entradas do 12h, da mais nova para a mais antiga",
+  );
+  assert.deepEqual(
+    await historyItems.evaluateAll((items) => items.map((item) => item.getAttribute("data-marker"))),
+    ["hollow", "hollow", "filled", "filled"],
+    "a em andamento vazada, as concluídas cheias",
+  );
+  ok("a 1440 px, o Card \"Histórico do imóvel\" ao lado do formulário, com a entrada do 12k, a saída do 12i e as duas entradas do 12h");
+  // Os prints: no celular, a aba Vistorias pelo ?tab=.
+  await page.goto(`${page.url().split("&tab=")[0]}&tab=vistorias`);
+  await history.waitFor();
+  await shootHistory(page, "historico");
+
+  // A concluída mais nova (a `travada`), confirmada, abre o laudo, que volta para o histórico.
+  await historyItems.nth(2).getByRole("link").click();
+  await page.waitForURL(/\/inspections\/report\?id=/);
+  assert.equal(new URL(page.url()).searchParams.get("id"), travada, "o laudo da entrada mais nova");
+  await page.getByRole("heading", { level: 1, name: "Laudo" }).waitFor();
+  await page.getByRole("link", { name: "Voltar", exact: true }).click();
+  await page.waitForURL(/\/properties\/edit\?id=.*&tab=vistorias/);
+  await history.waitFor();
+  ok("a concluída abre o laudo, e o \"Voltar\" dele cai no histórico do imóvel");
+
+  await page.getByRole("link", { name: "Nova vistoria" }).click();
+  await page.waitForURL(/\/inspections\/new\?propertyId=/);
+  assert.equal(new URL(page.url()).searchParams.get("propertyId"), conclusaoId);
+  await until(async () => (await page.getByLabel("Imóvel").textContent()) === conclusaoOption, "o imóvel vem escolhido", 10_000);
+  ok("\"Nova vistoria\" abre a Nova vistoria com a Rua da Conclusão escolhida");
+  await page.getByRole("link", { name: "Cancelar" }).click();
+  await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
+
+  // Sem vistorias: um imóvel novo, só para o EmptyState no Card e na aba.
+  const vazio = await createProperty(page, "Imobiliária Beta", "Rua Sem Vistoria", { pending: false });
+  await page.goto(new URL(`/properties/edit?id=${vazio}&tab=vistorias`, page.url()).href);
+  await page.getByRole("heading", { name: "Nenhuma vistoria deste imóvel" }).waitFor();
+  await shootHistory(page, "historico-vazio");
+  ok("imóvel sem vistoria: o EmptyState no lugar da linha do tempo");
   await goTo(page, "Clientes");
 
   step(13, "Outro usuário entra: a fila do anterior não sai com a conta dele");
