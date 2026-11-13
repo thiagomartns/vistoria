@@ -1,5 +1,7 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
+
 import { ExistingMoveOut } from "@/features/inspections/components/existing-move-out";
 import { NewInspectionForm } from "@/features/inspections/components/new-inspection-form";
 import { INSPECTIONS_HREF } from "@/features/inspections/hooks/useInspections";
@@ -9,7 +11,8 @@ import { PageHeader } from "../../shell-header";
 
 // /inspections/new (wireframes 68:1644 e 68:1878, e a seção "Nova vistoria · roteiro (#174)"): escolhe o imóvel e o
 // tipo e começa a vistoria, mesmo offline: a entrada pelo roteiro escolhido (ou pelo padrão, sem roteiro no aparelho), a saída a partir de uma entrada concluída do imóvel (a que já tem saída pede confirmação, #184). "Começar vistoria"
-// abre a tela de campo no primeiro ambiente.
+// abre a tela de campo no primeiro ambiente. Com `?propertyId=` (o "Nova vistoria" do histórico do imóvel, #176), o
+// imóvel já vem escolhido.
 
 export function NewInspectionScreen() {
   const {
@@ -27,7 +30,7 @@ export function NewInspectionScreen() {
     noMoveIn,
     waitingMoveIn,
     confirmMoveOut,
-  } = useNewInspection();
+  } = useNewInspection(useSearchParams().get("propertyId"));
 
   return (
     <>

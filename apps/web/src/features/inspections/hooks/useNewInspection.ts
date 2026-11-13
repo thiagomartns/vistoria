@@ -42,7 +42,7 @@ export type NewInspectionValues = z.infer<typeof newInspectionSchema>;
  * duas nascem no banco local e na fila, mesmo offline, e
  * abrem a tela de campo no primeiro ambiente.
  */
-export function useNewInspection() {
+export function useNewInspection(initialPropertyId: string | null = null) {
   const router = useRouter();
   const { store, ready, properties, clients, templates, drafts, states, pending, outboxRead } =
     useLocalStore();
@@ -51,7 +51,7 @@ export function useNewInspection() {
 
   const form = useForm<NewInspectionValues>({
     resolver: zodResolver(newInspectionSchema),
-    defaultValues: { propertyId: "", kind: "moveIn", moveInId: "", templateId: "" },
+    defaultValues: { propertyId: initialPropertyId ?? "", kind: "moveIn", moveInId: "", templateId: "" },
   });
   const [propertyId, kind, moveInId, templateId] = useWatch({
     control: form.control,
@@ -98,6 +98,11 @@ export function useNewInspection() {
   };
 
   const onSubmit = form.handleSubmit((values) => {
+    // O `?propertyId=` de um imóvel que o aparelho não tem não escolhe nada: o Select fica vazio, e começar pede um.
+    if (!places.has(values.propertyId)) {
+      form.setError("propertyId", { message: "Escolha o imóvel." });
+      return;
+    }
     // Outra saída da mesma entrada é quase sempre engano: pergunta antes (#184).
     if (values.kind === "moveOut" && chosenOption?.hasMoveOut) setConfirming(true);
     else create(values);
