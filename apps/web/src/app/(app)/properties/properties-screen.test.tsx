@@ -216,7 +216,7 @@ describe("PropertiesScreen", () => {
     await choose(user, byType, "Casa");
     expect(addresses()).toEqual(["Rua do Porto, 12"]);
 
-    await choose(user, byClient, "Cliente: todos");
+    await choose(user, byClient, "Todos");
     await choose(user, byType, "Comercial");
     expect(addresses()).toEqual(["Av. Brasil, 1500 · sala 4"]);
   });
