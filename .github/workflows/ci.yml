@@ -152,6 +152,10 @@ jobs:
           pnpm seed --inspections 200
           pnpm seed --inspections 200
 
+      # Com os dados do seed: as quatro tabelas não se sobrepõem a 768, 1024, 1279 e 1440 px (#208).
+      - name: Roteiro das tabelas
+        run: pnpm layout:tables
+
       # Com as 200 vistorias do seed: prova que o roteiro do spike 2 segue de pé. Os números de 10 mil ficam no frontend.md.
       - name: Roteiro do volume
         run: pnpm spike:volume --inspections 200
