@@ -9,7 +9,7 @@ import { SyncBadge, type SyncBadgeState } from "@/shared/components/sync-badge";
 
 import { DeleteInspection } from "./delete-inspection";
 
-// A lista de /inspections (wireframe 67:1490): Table no desktop, ListRow abaixo de `md`. A linha inteira abre a tela de
+// A lista de /inspections (wireframe 67:1490): Table no desktop, ListRow abaixo de `lg`. A linha inteira abre a tela de
 // campo. O SyncBadge só aparece fora do sincronizado (silêncio no caminho feliz). No desktop, a linha em andamento tem
 // o "···" com "Excluir vistoria" (#107, estado 4); no celular, exclui-se pela tela de campo. A linha com a exclusão na
 // fila fica apagada, com "Excluindo", até o 204 (estado 5). A concluída e confirmada tem o botão "Laudo" no lugar do
@@ -74,7 +74,7 @@ export function InspectionsList({
 }) {
   return (
     <>
-      <div className="@container hidden overflow-hidden rounded-lg border border-border md:block">
+      <div className="@container hidden overflow-hidden rounded-lg border border-border lg:block">
         <Table className="min-w-[556px] table-fixed">
           <TableHeader>
             <TableRow>
@@ -131,7 +131,7 @@ export function InspectionsList({
           </TableBody>
         </Table>
       </div>
-      <ul className="flex flex-col md:hidden">
+      <ul className="flex flex-col lg:hidden">
         {items.map((item) => (
           <li key={item.id}>
             <ListRow

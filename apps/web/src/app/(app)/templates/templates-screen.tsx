@@ -23,16 +23,16 @@ export function TemplatesScreen() {
 
   return (
     <>
-      <div className="flex flex-col gap-3 md:flex-row md:gap-2">
+      <div className="flex flex-col gap-3 lg:flex-row lg:gap-2">
         <Input
           type="search"
           aria-label="Buscar roteiros"
           placeholder={desktop ? "Buscar roteiro" : "Buscar"}
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          className="md:min-w-0 md:flex-1"
+          className="lg:min-w-0 lg:flex-1"
         />
-        <Button asChild size="lg" className="w-full md:h-8 md:w-auto md:px-3">
+        <Button asChild size="lg" className="w-full lg:h-8 lg:w-auto lg:px-3">
           <Link href={NEW_TEMPLATE_HREF}>
             <Plus aria-hidden="true" />
             Novo roteiro

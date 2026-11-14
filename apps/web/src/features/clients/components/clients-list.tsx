@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ListRow } from "@/shared/components/list-row";
 import { SyncBadge, type SyncBadgeState } from "@/shared/components/sync-badge";
 
-// A lista de /clients (Figma 70:2405 e 70:2564): Table no desktop, ListRow abaixo de `md`. A linha inteira abre
+// A lista de /clients (Figma 70:2405 e 70:2564): Table no desktop, ListRow abaixo de `lg`. A linha inteira abre
 // /clients/edit?id=. O SyncBadge só aparece fora do sincronizado (silêncio no caminho feliz). "Imóveis" conta os
 // imóveis do cliente no aparelho.
 
@@ -41,7 +41,7 @@ const badgeOf = (item: ClientListItem) =>
 export function ClientsList({ items }: { items: ClientListItem[] }) {
   return (
     <>
-      <div className="@container hidden overflow-hidden rounded-lg border border-border md:block">
+      <div className="@container hidden overflow-hidden rounded-lg border border-border lg:block">
         <Table className="min-w-[460px] table-fixed">
           <TableHeader>
             <TableRow>
@@ -75,7 +75,7 @@ export function ClientsList({ items }: { items: ClientListItem[] }) {
           </TableBody>
         </Table>
       </div>
-      <ul className="flex flex-col md:hidden">
+      <ul className="flex flex-col lg:hidden">
         {items.map((item) => (
           <li key={item.id}>
             <ListRow

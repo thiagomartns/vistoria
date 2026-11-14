@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ListRow } from "@/shared/components/list-row";
 import { SyncBadge, type SyncBadgeState } from "@/shared/components/sync-badge";
 
-// A lista de /properties (Figma 71:2726 e 71:2900): Table no desktop, ListRow abaixo de `md`. A linha inteira abre
+// A lista de /properties (Figma 71:2726 e 71:2900): Table no desktop, ListRow abaixo de `lg`. A linha inteira abre
 // /properties/edit?id=. O SyncBadge só aparece fora do sincronizado (silêncio no caminho feliz). A coluna e a meta
 // "Vistorias" chegam com a vistoria.
 
@@ -37,7 +37,7 @@ const badgeOf = (item: PropertyListItem) =>
 export function PropertiesList({ items }: { items: PropertyListItem[] }) {
   return (
     <>
-      <div className="@container hidden overflow-hidden rounded-lg border border-border md:block">
+      <div className="@container hidden overflow-hidden rounded-lg border border-border lg:block">
         <Table className="min-w-[360px] table-fixed">
           <TableHeader>
             <TableRow>
@@ -69,7 +69,7 @@ export function PropertiesList({ items }: { items: PropertyListItem[] }) {
           </TableBody>
         </Table>
       </div>
-      <ul className="flex flex-col md:hidden">
+      <ul className="flex flex-col lg:hidden">
         {items.map((item) => (
           <li key={item.id}>
             <ListRow
