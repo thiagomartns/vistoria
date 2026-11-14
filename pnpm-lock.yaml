@@ -142,7 +142,7 @@ importers:
         specifier: 6.0.3
         version: 6.0.3
 
-  scripts/layout-tables: {}
+  scripts/layout-screens: {}
 
   scripts/outbox-spike:
     devDependencies:
