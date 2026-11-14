@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  blobUrl,
   candidateFiles,
   markdownTable,
   parseArgs,
   publishPath,
+  readyDocuments,
   readyScreens,
   rawUrl,
   routeSlug,
@@ -130,5 +132,23 @@ describe("readyScreens", () => {
       { route: "clients-depois", viewport: "notebook", name: "clients-depois-notebook.png" },
       { route: "clients-depois", viewport: "tablet", name: "clients-depois-tablet.png" },
     ]);
+  });
+});
+
+describe("readyDocuments", () => {
+  it("os PDFs da pasta, por nome; ignora o resto", () => {
+    assert.deepEqual(
+      readyDocuments(["laudo-saida.pdf", "v1-lista-celular.png", "laudo-entrada.pdf", "Laudo.PDF", "notas.txt"]),
+      ["laudo-entrada.pdf", "laudo-saida.pdf"],
+    );
+  });
+});
+
+describe("blobUrl", () => {
+  it("o arquivo na branch screens, no visualizador do GitHub", () => {
+    assert.equal(
+      blobUrl("dono/repo", "spike/178-v1/laudo de saída.pdf"),
+      "https://github.com/dono/repo/blob/screens/spike/178-v1/laudo%20de%20sa%C3%ADda.pdf",
+    );
   });
 });

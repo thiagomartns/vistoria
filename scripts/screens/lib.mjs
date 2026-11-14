@@ -116,3 +116,14 @@ export function readyScreens(names) {
     .map(([name, route, viewport]) => ({ route, viewport, name }))
     .toSorted((a, b) => a.route.localeCompare(b.route) || a.viewport.localeCompare(b.viewport));
 }
+
+/** Os PDFs prontos de uma pasta (os laudos do `pnpm spike:v1`, #178), por nome: vão para o PR como links. */
+export function readyDocuments(names) {
+  return names.filter((name) => /^[a-z0-9-]+\.pdf$/.test(name)).toSorted();
+}
+
+/** O link do arquivo na branch `screens`, que o GitHub abre no visualizador (o de um PDF mostra as páginas). */
+export function blobUrl(nameWithOwner, path) {
+  const encoded = path.split("/").map(encodeURIComponent).join("/");
+  return `https://github.com/${nameWithOwner}/blob/${SCREENS_BRANCH}/${encoded}`;
+}

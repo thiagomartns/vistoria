@@ -3,7 +3,8 @@
 // Com --session, entra pelo /login (signin respondido aqui, sem API) e tira o print da rota do shell já logado:
 // o banco local do usuário de mentira começa vazio. Com --publish, grava os PNGs na branch órfã `screens` e imprime
 // a tabela para o corpo do PR. Com --files, publica os PNGs prontos de uma pasta (`<nome>-celular.png` e
-// `<nome>-desktop.png`), como os que o `pnpm spike:outbox` tira dos estados da tela de campo.
+// `<nome>-desktop.png`), como os que o `pnpm spike:outbox` tira dos estados da tela de campo, e os PDFs dela
+// (`<nome>.pdf`, os laudos do `pnpm spike:v1`), como links.
 
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -15,11 +16,13 @@ import { chromium } from "playwright-core";
 import {
   SCREENS_BRANCH,
   VIEWPORTS,
+  blobUrl,
   candidateFiles,
   markdownTable,
   parseArgs,
   publishPath,
   rawUrl,
+  readyDocuments,
   readyScreens,
   screenshotName,
 } from "./lib.mjs";
@@ -155,7 +158,7 @@ function ensureScreensBranch(repo) {
   console.log(`✓ branch ${SCREENS_BRANCH} criada`);
 }
 
-function publish(files) {
+function publish(files, documents = []) {
   const repo = execFileSync("gh", ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"], {
     encoding: "utf8",
   }).trim();
@@ -165,9 +168,7 @@ function publish(files) {
   }
   ensureScreensBranch(repo);
 
-  const rows = new Map();
-  for (const { route, viewport, path } of files) {
-    const target = publishPath(branch, screenshotName(route, viewport));
+  const put = (target, path) => {
     const api = `repos/${repo}/contents/${target.split("/").map(encodeURIComponent).join("/")}`;
     const existing = tryGh([`${api}?ref=${SCREENS_BRANCH}`]);
     gh(["-X", "PUT", api], {
@@ -176,19 +177,34 @@ function publish(files) {
       branch: SCREENS_BRANCH,
       ...(existing?.sha ? { sha: existing.sha } : {}),
     });
+  };
+
+  const rows = new Map();
+  for (const { route, viewport, path } of files) {
+    const target = publishPath(branch, screenshotName(route, viewport));
+    put(target, path);
     const row = rows.get(route) ?? { route, urls: {} };
     row.urls[viewport] = rawUrl(repo, target);
     rows.set(route, row);
   }
-  console.log(`\n${markdownTable([...rows.values()])}`);
+  if (rows.size > 0) console.log(`\n${markdownTable([...rows.values()])}`);
+  const links = documents.map(({ name, path }) => {
+    const target = publishPath(branch, name);
+    put(target, path);
+    return `- [${name}](${blobUrl(repo, target)})`;
+  });
+  if (links.length > 0) console.log(`\n${links.join("\n")}`);
 }
 
 const { routes, publish: shouldPublish, session, out, files: ready } = parseArgs(process.argv.slice(2));
-const files = ready
-  ? readyScreens(readdirSync(resolve(process.env.INIT_CWD ?? root, ready))).map((file) => ({
-      ...file,
-      path: join(resolve(process.env.INIT_CWD ?? root, ready), file.name),
-    }))
+const readyDir = ready ? resolve(process.env.INIT_CWD ?? root, ready) : null;
+const files = readyDir
+  ? readyScreens(readdirSync(readyDir)).map((file) => ({ ...file, path: join(readyDir, file.name) }))
   : await capture(routes, resolve(process.env.INIT_CWD ?? root, out), { session });
-if (ready && files.length === 0) throw new Error(`Nenhum <nome>-celular.png ou <nome>-desktop.png em ${ready}.`);
-if (shouldPublish) publish(files);
+const documents = readyDir
+  ? readyDocuments(readdirSync(readyDir)).map((name) => ({ name, path: join(readyDir, name) }))
+  : [];
+if (readyDir && files.length === 0 && documents.length === 0) {
+  throw new Error(`Nenhum <nome>-celular.png, <nome>-desktop.png ou <nome>.pdf em ${ready}.`);
+}
+if (shouldPublish) publish(files, documents);

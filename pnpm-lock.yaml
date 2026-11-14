@@ -170,6 +170,12 @@ importers:
         specifier: 1.65.0
         version: 1.65.0
 
+  scripts/v1-spike:
+    devDependencies:
+      playwright-core:
+        specifier: 1.65.0
+        version: 1.65.0
+
   scripts/volume-spike:
     devDependencies:
       playwright-core:
