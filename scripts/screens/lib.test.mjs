@@ -63,6 +63,20 @@ describe("publicação", () => {
       ].join("\n"),
     );
   });
+
+  it("põe tablet e notebook entre celular e desktop só quando alguma linha os tem", () => {
+    const table = markdownTable([
+      { route: "clients-antes", urls: { tablet: "t.png", notebook: "n.png", desktop: "d.png" } },
+    ]);
+    assert.equal(
+      table,
+      [
+        "| Rota | Celular | Tablet | Notebook | Desktop |",
+        "| --- | --- | --- | --- | --- |",
+        '| `clients-antes` |  | <img src="t.png" width="320"> | <img src="n.png" width="400"> | <img src="d.png" width="480"> |',
+      ].join("\n"),
+    );
+  });
 });
 
 describe("parseArgs", () => {
@@ -103,11 +117,18 @@ describe("parseArgs", () => {
 describe("readyScreens", () => {
   it("os PNGs de celular e desktop, por nome; ignora o resto", () => {
     assert.deepEqual(
-      readyScreens(["campo-0-desktop.png", "campo-0-celular.png", "notas.txt", "campo-0-tablet.png"]),
+      readyScreens(["campo-0-desktop.png", "campo-0-celular.png", "notas.txt", "campo-0-relogio.png"]),
       [
         { route: "campo-0", viewport: "celular", name: "campo-0-celular.png" },
         { route: "campo-0", viewport: "desktop", name: "campo-0-desktop.png" },
       ],
     );
+  });
+
+  it("aceita também tablet e notebook", () => {
+    assert.deepEqual(readyScreens(["clients-depois-notebook.png", "clients-depois-tablet.png"]), [
+      { route: "clients-depois", viewport: "notebook", name: "clients-depois-notebook.png" },
+      { route: "clients-depois", viewport: "tablet", name: "clients-depois-tablet.png" },
+    ]);
   });
 });

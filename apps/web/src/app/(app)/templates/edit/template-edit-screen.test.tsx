@@ -75,12 +75,14 @@ function open(id: string | null, over: Partial<typeof local.value> = {}) {
   );
 }
 
-const desktop = () =>
+/** A janela a `width` px: o `matchMedia` responde aos `min-width` que ela cumpre. */
+const viewport = (width: number) => () =>
   vi.stubGlobal("matchMedia", (query: string) => ({
-    matches: query === "(min-width: 768px)",
+    matches: Number(/min-width: (\d+)px/.exec(query)?.[1] ?? Infinity) <= width,
     addEventListener: () => {},
     removeEventListener: () => {},
   }));
+const desktop = viewport(1440);
 
 const heading = () => screen.getByRole("heading", { level: 1 });
 const header = () => heading().closest("header")!;
@@ -334,6 +336,21 @@ describe("TemplateEditScreen · edição", () => {
     expect(
       (screen.getByRole("button", { name: "Adicionar item" }) as HTMLButtonElement).disabled,
     ).toBe(true);
+  });
+});
+
+describe("TemplateEditScreen · tablet (768 px)", () => {
+  beforeEach(viewport(768));
+
+  it("os dois níveis do celular: os dois painéis só cabem a partir de 1024 px (#208)", async () => {
+    const user = userEvent.setup();
+    open("t1", { templates: [apartamento] });
+
+    expect(screen.queryByLabelText("Nome do ambiente")).toBeNull();
+    await user.click(roomButton("Sala"));
+    expect(screen.queryByLabelText("Nome do roteiro")).toBeNull();
+    expect(field("Nome do ambiente").value).toBe("Sala");
+    expect(heading().textContent).toBe("Sala");
   });
 });
 

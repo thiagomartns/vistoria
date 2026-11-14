@@ -152,6 +152,11 @@ jobs:
           pnpm seed --inspections 200
           pnpm seed --inspections 200
 
+      # Com os dados do seed: as telas não quebram de 768 a 1440 px, nem as listas, a tela de campo e o editor de
+      # roteiro nos layouts de cada largura (#208).
+      - name: Roteiro das telas
+        run: pnpm layout:screens
+
       # Com as 200 vistorias do seed: prova que o roteiro do spike 2 segue de pé. Os números de 10 mil ficam no frontend.md.
       - name: Roteiro do volume
         run: pnpm spike:volume --inspections 200

@@ -5,11 +5,11 @@ import { type KeyboardEvent, type ReactNode, createContext, useContext, useRef }
 // o tipo da vistoria em /inspections/new. Semântica de radiogroup: um Tab entra no grupo (no marcado, ou no primeiro),
 // as setas, Home e End movem o foco, e Espaço ou Enter marcam. Marcado ganha fundo primary e o Check (no `lg`, só o
 // fundo: falta largura). `md` tem itens de 96 px fixos, para o layout não pular ao marcar; `lg` divide a largura;
-// `auto` é `lg` no celular e `md` a partir de `md`.
+// `auto` é `lg` no celular e `md` a partir de `md`; `stepper` é o mesmo pela largura da StepperForm (`stepper-wide`).
 // Inválido é borda destructive; somente leitura (envio em voo, concluída) é muted, e o marcado, secondary com borda
 // foreground. Candidato ao Sanjou.
 
-type Size = "md" | "lg" | "auto";
+type Size = "md" | "lg" | "auto" | "stepper";
 
 interface GroupState {
   value: string | null;
@@ -102,19 +102,30 @@ export function ToggleGroup({
   );
 }
 
+// O `md` tem 96 px de mínimo, e não de largura: com o ✓, o "Ausente" passava dos 96 e saía "Ausen…" (#208). O `auto`
+// é o `lg` no celular e o `md` a partir de 768 px de janela; o `stepper` é o mesmo, mas pela largura da StepperForm em
+// volta (a variante `stepper-wide`, ADR 0061), para a tela de campo.
 const GROUP_SIZE: Record<Size, string> = {
   md: "gap-1.5",
   lg: "w-full gap-1",
   auto: "w-full gap-1 md:w-auto md:gap-1.5",
+  stepper: "w-full gap-1 stepper-wide:w-auto stepper-wide:gap-1.5",
 };
 
 const ITEM_SIZE: Record<Size, string> = {
-  md: "h-8 w-24 shrink-0 px-3",
+  md: "h-8 min-w-24 shrink-0 px-3",
   lg: "h-10 min-w-0 flex-1 px-1",
-  auto: "h-10 min-w-0 flex-1 px-1 md:h-8 md:w-24 md:flex-none md:shrink-0 md:px-3",
+  auto: "h-10 min-w-0 flex-1 px-1 md:h-8 md:min-w-24 md:flex-none md:shrink-0 md:px-3",
+  stepper:
+    "h-10 min-w-0 flex-1 px-1 stepper-wide:h-8 stepper-wide:min-w-24 stepper-wide:flex-none stepper-wide:shrink-0 stepper-wide:px-3",
 };
 
-const CHECK_SIZE: Record<Size, string> = { md: "", lg: "hidden", auto: "hidden md:block" };
+const CHECK_SIZE: Record<Size, string> = {
+  md: "",
+  lg: "hidden",
+  auto: "hidden md:block",
+  stepper: "hidden stepper-wide:block",
+};
 
 function lookOf(checked: boolean, invalid: boolean, readOnly: boolean): string {
   if (readOnly) {

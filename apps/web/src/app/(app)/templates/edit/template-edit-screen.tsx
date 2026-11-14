@@ -7,19 +7,19 @@ import { TemplateForm } from "@/features/templates/components/template-form";
 import { TEMPLATES_HREF, useTemplateForm } from "@/features/templates/hooks/useTemplateForm";
 import { ConflictNotice } from "@/shared/components/conflict-notice";
 import { RecordUnavailable } from "@/shared/components/record-unavailable";
-import { useIsDesktop } from "@/shared/useIsDesktop";
+import { useIsLarge } from "@/shared/useIsDesktop";
 
 import { PageHeader } from "../../shell-header";
 
 // /templates/edit (Figma "Roteiros (#173)", estados 3 a 8): a mesma tela para novo (sem `id`, "Novo roteiro") e
-// edição. No desktop, dois painéis; no celular, dois níveis na mesma rota: no segundo, o cabeçalho mostra o ambiente e
-// o "Voltar" volta aos ambientes sem navegar. Em conflito, o aviso com "Resolver conflito" acima do formulário. Um id
+// edição. A partir de 1024 px, dois painéis; abaixo, dois níveis na mesma rota (no tablet, os dois painéis não cabem,
+// #208): no segundo, o cabeçalho mostra o ambiente e o "Voltar" volta aos ambientes sem navegar. Em conflito, o aviso com "Resolver conflito" acima do formulário. Um id
 // que o aparelho não tem é buscado no servidor; sem rede, não encontrado ou com falha, o aviso toma o lugar do editor.
 
 export function TemplateEditScreen() {
   const id = useSearchParams().get("id");
   const editor = useTemplateForm(id);
-  const desktop = useIsDesktop();
+  const desktop = useIsLarge();
   const inRoom = !desktop && editor.open && editor.rooms[editor.selected] !== undefined;
 
   return (

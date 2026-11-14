@@ -9,7 +9,7 @@ import { SyncBadge, type SyncBadgeState } from "@/shared/components/sync-badge";
 
 import { DeleteInspection } from "./delete-inspection";
 
-// A lista de /inspections (wireframe 67:1490): Table no desktop, ListRow abaixo de `md`. A linha inteira abre a tela de
+// A lista de /inspections (wireframe 67:1490): Table no desktop, ListRow abaixo de `lg`. A linha inteira abre a tela de
 // campo. O SyncBadge só aparece fora do sincronizado (silêncio no caminho feliz). No desktop, a linha em andamento tem
 // o "···" com "Excluir vistoria" (#107, estado 4); no celular, exclui-se pela tela de campo. A linha com a exclusão na
 // fila fica apagada, com "Excluindo", até o 204 (estado 5). A concluída e confirmada tem o botão "Laudo" no lugar do
@@ -52,6 +52,19 @@ const statusOf = (item: InspectionListItem) =>
 const badgeOf = (item: InspectionListItem) =>
   item.sync === "sincronizado" ? null : <SyncBadge state={item.sync} />;
 
+// Numa tabela mais estreita que a do frame de 1440 px, as colunas secundárias saem pela largura dela (container
+// query), da primeira à última: Início, Tipo e Cliente. Cada limite é a soma das colunas que ficam mais 180 px para o
+// Imóvel, que nunca sai, como Status, Sincronização e Ações; o `min-w` da tabela é o piso com só essas, e abaixo dele
+// a tabela rola dentro da borda (ADR 0061).
+const COLUMN = {
+  client: "w-[200px] hidden @min-[756px]:table-cell",
+  kind: "w-[100px] hidden @min-[856px]:table-cell",
+  status: "w-[140px]",
+  started: "w-[120px] hidden @min-[976px]:table-cell",
+  sync: "w-[180px]",
+  actions: "w-[56px]",
+};
+
 export function InspectionsList({
   items,
   onDelete,
@@ -61,17 +74,17 @@ export function InspectionsList({
 }) {
   return (
     <>
-      <div className="hidden overflow-hidden rounded-lg border border-border md:block">
-        <Table className="table-fixed">
+      <div className="@container hidden overflow-hidden rounded-lg border border-border lg:block">
+        <Table className="min-w-[556px] table-fixed">
           <TableHeader>
             <TableRow>
               <TableHead>Imóvel</TableHead>
-              <TableHead className="w-[200px]">Cliente</TableHead>
-              <TableHead className="w-[100px]">Tipo</TableHead>
-              <TableHead className="w-[140px]">Status</TableHead>
-              <TableHead className="w-[120px]">Início</TableHead>
-              <TableHead className="w-[180px]">Sincronização</TableHead>
-              <TableHead className="w-[56px]">
+              <TableHead className={COLUMN.client}>Cliente</TableHead>
+              <TableHead className={COLUMN.kind}>Tipo</TableHead>
+              <TableHead className={COLUMN.status}>Status</TableHead>
+              <TableHead className={COLUMN.started}>Início</TableHead>
+              <TableHead className={COLUMN.sync}>Sincronização</TableHead>
+              <TableHead className={COLUMN.actions}>
                 <span className="sr-only">Ações</span>
               </TableHead>
             </TableRow>
@@ -91,10 +104,10 @@ export function InspectionsList({
                     {item.address}
                   </Link>
                 </TableCell>
-                <TableCell className="truncate">{item.clientName}</TableCell>
-                <TableCell className="truncate">{item.kindLabel}</TableCell>
+                <TableCell className={`truncate ${COLUMN.client}`}>{item.clientName}</TableCell>
+                <TableCell className={`truncate ${COLUMN.kind}`}>{item.kindLabel}</TableCell>
                 <TableCell>{statusOf(item)}</TableCell>
-                <TableCell className="tabular-nums">{item.startedOn}</TableCell>
+                <TableCell className={`tabular-nums ${COLUMN.started}`}>{item.startedOn}</TableCell>
                 <TableCell>{badgeOf(item)}</TableCell>
                 <TableCell className="py-0 text-right">
                   {/* Acima do link que cobre a linha, para o "···" receber o clique. */}
@@ -118,7 +131,7 @@ export function InspectionsList({
           </TableBody>
         </Table>
       </div>
-      <ul className="flex flex-col md:hidden">
+      <ul className="flex flex-col lg:hidden">
         {items.map((item) => (
           <li key={item.id}>
             <ListRow

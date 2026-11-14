@@ -294,6 +294,7 @@ A ousadia visual é tornar o sync legível sem torná-lo barulhento. O estado ap
 - Animação só em transição de estado, curta e desligada por `prefers-reduced-motion`.
 - Movimento desenhado no Figma antes do código; carregamento do banco local com o `Skeleton` do Sanjou; avisos passageiros num toast (`Toaster` do Sanjou, no shell). Sem TanStack Query e sem push na V1 ([ADR 0033](../decisions/0033-movimento-carregamento-e-avisos-na-ui.md)).
 - Keyboard-first: command palette e atalhos para salvar etapa, abrir pendências e alternar registros.
+- Entre o celular e o desktop, cada tela usa o layout que cabe ([ADR 0061](../decisions/0061-entre-o-celular-e-o-desktop-cada-tela-usa-o-layout-que-cabe-listas-tela-de-campo-e-editor-de-roteiro-208.md)). As listas são `ListRow` abaixo de 1024 px e `Table` a partir dele, e a tabela tira as colunas secundárias pela largura dela, por container query, deixando 180 px para a primeira coluna. A tela de campo troca pela largura da própria `StepperForm` (a variante `stepper-wide`, 1072 px), e abaixo disso fica no layout do celular, dentro do card a partir de `md`. O editor de roteiro tem dois painéis a partir de 1024 px. O `pnpm layout:screens` confere as telas de 768 a 1440 px.
 
 Os componentes ficam no app, em `shared/components/` ([ADR 0020](../decisions/0020-componentes-que-faltam-no-sanjou-ficam-no-app.md)). Recebem um `SyncState` genérico e não conhecem TanStack DB, então podem ir para o Sanjou UI se outro projeto precisar deles.
 

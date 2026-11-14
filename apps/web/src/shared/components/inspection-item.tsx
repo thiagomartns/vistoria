@@ -51,14 +51,14 @@ export function InspectionItem({
   }, [opened]);
 
   return (
-    <div className="flex flex-col gap-2 border-b border-border py-4 md:flex-row md:gap-4">
-      <div className="flex items-center gap-2 md:w-55 md:shrink-0 md:flex-col md:items-start md:gap-1 md:pt-1">
-        <span className="min-w-0 flex-1 text-base font-semibold text-foreground md:flex-none md:font-medium">
+    <div className="flex flex-col gap-2 border-b border-border py-4 stepper-wide:flex-row stepper-wide:gap-4">
+      <div className="flex items-center gap-2 stepper-wide:w-55 stepper-wide:shrink-0 stepper-wide:flex-col stepper-wide:items-start stepper-wide:gap-1 stepper-wide:pt-1">
+        <span className="min-w-0 flex-1 text-base font-semibold text-foreground stepper-wide:flex-none stepper-wide:font-medium">
           {name}
         </span>
         {sync ? <FieldSyncIndicator state={sync} /> : null}
         {reference ? (
-          <div className="hidden flex-col items-start gap-1 text-xs text-muted-foreground md:flex">
+          <div className="hidden flex-col items-start gap-1 text-xs text-muted-foreground stepper-wide:flex">
             <span>Na entrada</span>
             <Badge variant="neutral">{reference.condition}</Badge>
             <span className="text-sm">{reference.notes ?? NO_NOTES}</span>
@@ -67,7 +67,7 @@ export function InspectionItem({
       </div>
       <div className="flex min-w-0 flex-1 flex-col items-start gap-2">
         {reference ? (
-          <p className="flex w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-md bg-muted px-2 py-1.5 text-sm text-muted-foreground md:hidden">
+          <p className="flex w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-md bg-muted px-2 py-1.5 text-sm text-muted-foreground stepper-wide:hidden">
             <span>Na entrada</span>
             <Badge variant="neutral">{reference.condition}</Badge>
             <span>{reference.notes ?? NO_NOTES}</span>
@@ -84,7 +84,7 @@ export function InspectionItem({
             type="button"
             variant="ghost"
             size="lg"
-            className="md:h-7 md:px-2.5 md:text-sm"
+            className="stepper-wide:h-7 stepper-wide:px-2.5 stepper-wide:text-sm"
             aria-label={`Adicionar observação: ${name}`}
             onClick={() => setOpened(true)}
           >

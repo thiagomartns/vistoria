@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ListRow } from "@/shared/components/list-row";
 import { SyncBadge, type SyncBadgeState } from "@/shared/components/sync-badge";
 
-// A lista de /templates (Figma "Roteiros (#173)", estado 1): Table no desktop, ListRow abaixo de `md`. A linha inteira
+// A lista de /templates (Figma "Roteiros (#173)", estado 1): Table no desktop, ListRow abaixo de `lg`. A linha inteira
 // abre /templates/edit?id=. O SyncBadge só aparece fora do sincronizado (silêncio no caminho feliz).
 
 export interface TemplateListItem {
@@ -17,6 +17,15 @@ export interface TemplateListItem {
 
 export const templateHref = (id: string) => `/templates/edit?id=${encodeURIComponent(id)}`;
 
+// Numa tabela mais estreita que a do frame de 1440 px, as colunas secundárias saem pela largura dela (container
+// query), da primeira à última: Itens e Ambientes. Cada limite é a soma das colunas que ficam mais 180 px para o Nome,
+// que nunca sai, e o `min-w` da tabela é o mesmo piso com só as colunas que nunca saem (ADR 0061).
+const COLUMN = {
+  rooms: "w-[120px] text-right hidden @min-[600px]:table-cell",
+  items: "w-[120px] text-right hidden @min-[720px]:table-cell",
+  sync: "w-[180px]",
+};
+
 const badgeOf = (item: TemplateListItem) =>
   item.sync === "sincronizado" ? null : <SyncBadge state={item.sync} />;
 
@@ -25,14 +34,14 @@ const plural = (count: number, one: string, many: string) => `${count} ${count =
 export function TemplatesList({ items }: { items: TemplateListItem[] }) {
   return (
     <>
-      <div className="hidden overflow-hidden rounded-lg border border-border md:block">
-        <Table className="table-fixed">
+      <div className="@container hidden overflow-hidden rounded-lg border border-border lg:block">
+        <Table className="min-w-[360px] table-fixed">
           <TableHeader>
             <TableRow>
               <TableHead>Nome</TableHead>
-              <TableHead className="w-[120px] text-right">Ambientes</TableHead>
-              <TableHead className="w-[120px] text-right">Itens</TableHead>
-              <TableHead className="w-[180px]">Sincronização</TableHead>
+              <TableHead className={COLUMN.rooms}>Ambientes</TableHead>
+              <TableHead className={COLUMN.items}>Itens</TableHead>
+              <TableHead className={COLUMN.sync}>Sincronização</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -47,15 +56,15 @@ export function TemplatesList({ items }: { items: TemplateListItem[] }) {
                     {item.name}
                   </Link>
                 </TableCell>
-                <TableCell className="text-right tabular-nums">{item.roomCount}</TableCell>
-                <TableCell className="text-right tabular-nums">{item.itemCount}</TableCell>
+                <TableCell className={`tabular-nums ${COLUMN.rooms}`}>{item.roomCount}</TableCell>
+                <TableCell className={`tabular-nums ${COLUMN.items}`}>{item.itemCount}</TableCell>
                 <TableCell>{badgeOf(item)}</TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </div>
-      <ul className="flex flex-col md:hidden">
+      <ul className="flex flex-col lg:hidden">
         {items.map((item) => (
           <li key={item.id}>
             <ListRow

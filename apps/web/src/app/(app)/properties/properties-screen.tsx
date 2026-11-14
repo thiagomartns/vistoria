@@ -57,8 +57,8 @@ export function PropertiesScreen() {
 
   return (
     <>
-      <div className="flex flex-col gap-3 md:flex-row md:gap-2">
-        <div className="flex gap-2 md:min-w-0 md:flex-1">
+      <div className="flex flex-col gap-3 lg:flex-row lg:gap-2">
+        <div className="flex gap-2 lg:min-w-0 lg:flex-1">
           <Input
             type="search"
             aria-label="Buscar imóveis"
@@ -69,15 +69,15 @@ export function PropertiesScreen() {
           />
           <Button
             variant="outline"
-            className="shrink-0 md:hidden"
+            className="shrink-0 lg:hidden"
             onClick={() => setFiltersOpen(true)}
           >
             <SlidersHorizontal aria-hidden="true" />
             {properties.activeFilters > 0 ? `Filtros · ${properties.activeFilters}` : "Filtros"}
           </Button>
         </div>
-        <div className="hidden md:contents">{filters("barra")}</div>
-        <Button asChild size="lg" className="w-full md:h-8 md:w-auto md:px-3">
+        <div className="hidden lg:contents">{filters("barra")}</div>
+        <Button asChild size="lg" className="w-full lg:h-8 lg:w-auto lg:px-3">
           <Link href={NEW_PROPERTY_HREF}>
             <Plus aria-hidden="true" />
             Novo imóvel

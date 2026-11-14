@@ -5,6 +5,13 @@
 @source "../../node_modules/@sanjou/ui";
 
 /*
+ * O layout de desktop da tela de campo (a coluna de ambientes e o item com o nome ao lado dos chips) só quando a
+ * StepperForm tem largura para ele: trilho 272 + padding 48 + nome 220 + gap 16 + 5 chips (com o ✓) 508 + bordas.
+ * Abaixo disso, o layout do celular, inclusive no tablet e no notebook (ADR 0061).
+ */
+@custom-variant stepper-wide (@container stepper (width >= 1072px));
+
+/*
  * O laudo impresso (Figma 177:16524, estado 3; ADR 0054): folha A4 com a margem do documento e a paginação no rodapé.
  * O conteúdo de cada página (sem o shell, um ambiente por página) fica nas classes `print:` da tela e da folha.
  */

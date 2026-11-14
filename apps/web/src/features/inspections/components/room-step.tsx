@@ -120,7 +120,7 @@ export function RoomStep({
     <Form {...form}>
       <section
         aria-labelledby="ambiente"
-        className="flex flex-1 flex-col gap-2 px-4 pt-4 pb-4 md:px-6 md:pt-5"
+        className="flex flex-1 flex-col gap-2 px-4 pt-4 pb-4 stepper-wide:px-6 stepper-wide:pt-5"
       >
         {rejection ? (
           <Alert variant="danger" className="mb-2">
@@ -159,14 +159,14 @@ export function RoomStep({
           </div>
           {canEdit && editing ? (
             <div className="flex shrink-0 items-center gap-2">
-              {addButton("sm", "hidden md:inline-flex")}
+              {addButton("sm", "hidden stepper-wide:inline-flex")}
               <Button type="button" size="sm" onClick={onFinishEditing}>
                 <Check aria-hidden="true" />
                 Pronto
               </Button>
             </div>
           ) : canEdit && items.length > 0 ? (
-            <div className="hidden shrink-0 items-center gap-2 md:flex">
+            <div className="hidden shrink-0 items-center gap-2 stepper-wide:flex">
               {editButton("sm")}
               {addButton("sm")}
             </div>
@@ -219,7 +219,7 @@ export function RoomStep({
                 </SortableRow>
               ))}
             </SortableList>
-            {addButton("lg", "w-full md:hidden")}
+            {addButton("lg", "w-full stepper-wide:hidden")}
           </div>
         ) : items.length === 0 ? (
           <EmptyState
@@ -266,7 +266,7 @@ export function RoomStep({
                                 field.onChange(value as Condition);
                                 form.clearErrors(`${base}.condition`);
                               }}
-                              size="auto"
+                              size="stepper"
                               invalid={fieldState.invalid}
                               readOnly={readOnly}
                             >
@@ -310,7 +310,7 @@ export function RoomStep({
               );
             })}
             {canEdit ? (
-              <div className="flex gap-2 pt-4 md:hidden">
+              <div className="flex gap-2 pt-4 stepper-wide:hidden">
                 {addButton("lg", "flex-1")}
                 {editButton("lg", "flex-1")}
               </div>

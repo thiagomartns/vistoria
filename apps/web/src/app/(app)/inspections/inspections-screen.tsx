@@ -108,8 +108,8 @@ export function InspectionsScreen() {
 
   return (
     <>
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between md:gap-2">
-        <div className="flex gap-2 md:w-[400px]">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-2">
+        <div className="flex gap-2 lg:w-[400px]">
           <Input
             type="search"
             aria-label="Buscar vistorias"
@@ -120,21 +120,21 @@ export function InspectionsScreen() {
           />
           <Button
             variant={active > 0 ? "secondary" : "outline"}
-            className="shrink-0 md:hidden"
+            className="shrink-0 lg:hidden"
             onClick={() => setFiltersOpen(true)}
           >
             <SlidersHorizontal aria-hidden="true" />
             {active > 0 ? `Filtros · ${active}` : "Filtros"}
           </Button>
         </div>
-        <Button asChild size="lg" className="w-full md:h-8 md:w-auto md:px-3">
+        <Button asChild size="lg" className="w-full lg:h-8 lg:w-auto lg:px-3">
           <Link href={NEW_INSPECTION_HREF}>
             <Plus aria-hidden="true" />
             Nova vistoria
           </Link>
         </Button>
       </div>
-      <div className="hidden md:flex md:flex-wrap md:items-center md:gap-2">
+      <div className="hidden lg:flex lg:flex-wrap lg:items-center lg:gap-2">
         <InspectionFilters fields={fields} layout="barra" />
         {inspections.filtered ? (
           <Button variant="ghost" onClick={inspections.clearFilters}>
@@ -161,13 +161,13 @@ export function InspectionsScreen() {
             <Button
               variant="outline"
               size="lg"
-              className="w-full md:h-8 md:w-auto md:self-center md:px-3"
+              className="w-full lg:h-8 lg:w-auto lg:self-center lg:px-3"
               onClick={showMore}
             >
               Mostrar mais
             </Button>
           ) : null}
-          <p className="hidden text-sm text-muted-foreground md:block">{count}</p>
+          <p className="hidden text-sm text-muted-foreground lg:block">{count}</p>
         </>
       )}
       <Sheet

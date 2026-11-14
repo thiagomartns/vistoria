@@ -16,7 +16,7 @@
     "dev:web": "pnpm --filter web dev",
     "seed": "pnpm --filter seed start",
     "gen:api": "pnpm --filter gen-api generate",
-    "check": "pnpm --filter web check && pnpm --filter screens test && pnpm --filter db-init test && pnpm --filter dev-api test && pnpm --filter seed test && pnpm --filter outbox-spike test",
+    "check": "pnpm --filter web check && pnpm --filter screens test && pnpm --filter db-init test && pnpm --filter dev-api test && pnpm --filter seed test && pnpm --filter outbox-spike test && pnpm --filter layout-screens test",
     "test:api": "cd apps/api && dotnet test --solution Vistoria.sln",
     "screens": "pnpm --filter screens start",
     "spike:outbox": "pnpm --filter outbox-spike start",
@@ -25,6 +25,7 @@
     "spike:device": "pnpm --filter device-spike start",
     "spike:volume": "pnpm --filter volume-spike start",
     "spike:migration": "pnpm --filter volume-spike migration",
+    "layout:screens": "pnpm --filter layout-screens start",
     "smoke:prod": "pnpm --filter prod-smoke start"
   }
 }
