@@ -24,22 +24,33 @@ export const clientHref = (id: string) => `/clients/edit?id=${encodeURIComponent
 
 const propertiesLabel = (n: number) => (n === 0 ? undefined : `${n} ${n === 1 ? "imóvel" : "imóveis"}`);
 
+// Numa tabela mais estreita que a do frame de 1440 px, as colunas secundárias saem pela largura dela (container
+// query), da primeira à última: E-mail, CPF ou CNPJ e Telefone. Cada limite é a soma das colunas que ficam mais
+// 180 px para o Nome, que nunca sai; o `min-w` da tabela é o mesmo piso, com só as colunas que nunca saem (ADR 0061).
+const COLUMN = {
+  document: "w-[180px] hidden @min-[800px]:table-cell",
+  email: "w-[260px] hidden @min-[1060px]:table-cell",
+  phone: "w-[160px] hidden @min-[620px]:table-cell",
+  properties: "w-[100px] text-right",
+  sync: "w-[180px]",
+};
+
 const badgeOf = (item: ClientListItem) =>
   item.sync === "sincronizado" ? null : <SyncBadge state={item.sync} />;
 
 export function ClientsList({ items }: { items: ClientListItem[] }) {
   return (
     <>
-      <div className="hidden overflow-hidden rounded-lg border border-border md:block">
-        <Table className="table-fixed">
+      <div className="@container hidden overflow-hidden rounded-lg border border-border md:block">
+        <Table className="min-w-[460px] table-fixed">
           <TableHeader>
             <TableRow>
               <TableHead>Nome</TableHead>
-              <TableHead className="w-[180px]">CPF ou CNPJ</TableHead>
-              <TableHead className="w-[260px]">E-mail</TableHead>
-              <TableHead className="w-[160px]">Telefone</TableHead>
-              <TableHead className="w-[100px] text-right">Imóveis</TableHead>
-              <TableHead className="w-[180px]">Sincronização</TableHead>
+              <TableHead className={COLUMN.document}>CPF ou CNPJ</TableHead>
+              <TableHead className={COLUMN.email}>E-mail</TableHead>
+              <TableHead className={COLUMN.phone}>Telefone</TableHead>
+              <TableHead className={COLUMN.properties}>Imóveis</TableHead>
+              <TableHead className={COLUMN.sync}>Sincronização</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -54,10 +65,10 @@ export function ClientsList({ items }: { items: ClientListItem[] }) {
                     {item.name}
                   </Link>
                 </TableCell>
-                <TableCell className="truncate">{item.document}</TableCell>
-                <TableCell className="truncate">{item.email}</TableCell>
-                <TableCell className="truncate">{item.phone}</TableCell>
-                <TableCell className="text-right tabular-nums">{item.properties}</TableCell>
+                <TableCell className={`truncate ${COLUMN.document}`}>{item.document}</TableCell>
+                <TableCell className={`truncate ${COLUMN.email}`}>{item.email}</TableCell>
+                <TableCell className={`truncate ${COLUMN.phone}`}>{item.phone}</TableCell>
+                <TableCell className={`tabular-nums ${COLUMN.properties}`}>{item.properties}</TableCell>
                 <TableCell>{badgeOf(item)}</TableCell>
               </TableRow>
             ))}
