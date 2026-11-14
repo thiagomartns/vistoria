@@ -6,6 +6,19 @@ export const VIEWPORTS = [
   { name: "desktop", width: 1440, height: 900 },
 ];
 
+/**
+ * Larguras a mais que só os PNGs prontos (`--files`) usam: o tablet e o notebook, entre o celular e o desktop (#208).
+ * A ordem é a das colunas da tabela do PR.
+ */
+export const FILE_VIEWPORTS = [
+  VIEWPORTS[0],
+  { name: "tablet", width: 768, height: 1024 },
+  { name: "notebook", width: 1024, height: 768 },
+  VIEWPORTS[1],
+];
+
+const THUMB_WIDTH = { celular: 240, tablet: 320, notebook: 400, desktop: 480 };
+
 /** Branch órfã que guarda os prints dos PRs; nunca entra na `main`. */
 export const SCREENS_BRANCH = "screens";
 
@@ -45,13 +58,19 @@ export function rawUrl(nameWithOwner, path) {
   return `https://raw.githubusercontent.com/${nameWithOwner}/${SCREENS_BRANCH}/${encoded}`;
 }
 
-/** Tabela para o corpo do PR: uma linha por rota, uma coluna por viewport. */
+/**
+ * Tabela para o corpo do PR: uma linha por rota, uma coluna por viewport. Celular e desktop sempre; tablet e notebook
+ * só quando alguma linha os tem, e a linha sem o print fica com a célula vazia.
+ */
 export function markdownTable(rows) {
-  const header = `| Rota | ${VIEWPORTS.map((v) => v.name[0].toUpperCase() + v.name.slice(1)).join(" | ")} |`;
-  const divider = `| --- | ${VIEWPORTS.map(() => "---").join(" | ")} |`;
+  const viewports = FILE_VIEWPORTS.filter(
+    (v) => VIEWPORTS.includes(v) || rows.some(({ urls }) => urls[v.name] !== undefined),
+  );
+  const header = `| Rota | ${viewports.map((v) => v.name[0].toUpperCase() + v.name.slice(1)).join(" | ")} |`;
+  const divider = `| --- | ${viewports.map(() => "---").join(" | ")} |`;
+  const cell = (url, v) => (url === undefined ? "" : `<img src="${url}" width="${THUMB_WIDTH[v.name]}">`);
   const lines = rows.map(
-    ({ route, urls }) =>
-      `| \`${route}\` | ${VIEWPORTS.map((v) => `<img src="${urls[v.name]}" width="${v.name === "celular" ? 240 : 480}">`).join(" | ")} |`,
+    ({ route, urls }) => `| \`${route}\` | ${viewports.map((v) => cell(urls[v.name], v)).join(" | ")} |`,
   );
   return [header, divider, ...lines].join("\n");
 }
@@ -84,11 +103,12 @@ export function parseArgs(argv) {
 }
 
 /**
- * Os PNGs prontos de uma pasta (`<nome>-celular.png`, `<nome>-desktop.png`), gerados fora do `pnpm screens` (o roteiro
- * da tela de campo tira os prints dos estados que dependem do servidor). O nome vira a linha da tabela do PR.
+ * Os PNGs prontos de uma pasta (`<nome>-celular.png`, `<nome>-desktop.png`, e também `-tablet` e `-notebook`), gerados
+ * fora do `pnpm screens` (o roteiro da tela de campo tira os prints dos estados que dependem do servidor). O nome vira
+ * a linha da tabela do PR.
  */
 export function readyScreens(names) {
-  const viewports = VIEWPORTS.map((viewport) => viewport.name).join("|");
+  const viewports = FILE_VIEWPORTS.map((viewport) => viewport.name).join("|");
   const pattern = new RegExp(`^([a-z0-9-]+)-(${viewports})\\.png$`);
   return names
     .map((name) => pattern.exec(name))
