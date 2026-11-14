@@ -17,7 +17,10 @@ import { type ReactNode, useEffect, useRef } from "react";
 // presas à tela enquanto o conteúdo rola. Etapa: ícone + texto em todo estado; a atual leva aria-current="step".
 // Alt+← e Alt+→ trocam de etapa. Quem usa decide se Próximo valida; o sync da entidade inteira fica no cabeçalho da
 // tela, não aqui. Na última etapa, `finish` troca Próximo pela ação de terminar ("Concluir vistoria", com Check). Candidato
-// ao Sanjou.
+// ao Sanjou. A coluna de etapas e o rodapé em linha não seguem a janela, e sim a largura do próprio formulário, pela
+// variante `stepper-wide` (container query no container `stepper` que envolve tudo, no globals.css); quem está dentro
+// dele usa a mesma variante (ADR 0061). Abaixo dela, a partir de 768 px de janela, o layout do celular fica dentro do
+// card: a faixa em cima, o conteúdo rolando e a barra embaixo, sem nada preso sobre o padding do shell.
 
 export type StepState = "pendente" | "completa" | "erro" | "conflito";
 
@@ -55,14 +58,14 @@ export function StepperFormStep({
       data-state={step.state}
       data-step={index}
       onClick={onSelect}
-      className={`flex h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-3 text-sm whitespace-nowrap outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring md:h-10 md:w-full md:gap-2 md:rounded-md md:border-0 ${
+      className={`flex h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-3 text-sm whitespace-nowrap outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring stepper-wide:h-10 stepper-wide:w-full stepper-wide:gap-2 stepper-wide:rounded-md stepper-wide:border-0 ${
         current
           ? "border-2 border-primary bg-accent font-semibold"
-          : "border border-border bg-background font-medium hover:bg-accent md:bg-transparent"
+          : "border border-border bg-background font-medium hover:bg-accent stepper-wide:bg-transparent"
       }`}
     >
       <Icon className={`size-4 shrink-0 ${iconColor}`} aria-hidden="true" />
-      <span className="text-foreground md:min-w-0 md:flex-1 md:truncate md:text-left">
+      <span className="text-foreground stepper-wide:min-w-0 stepper-wide:flex-1 stepper-wide:truncate stepper-wide:text-left">
         {step.label}
       </span>
       <span className={`shrink-0 text-xs font-medium ${meta}`}>{step.meta}</span>
@@ -140,63 +143,70 @@ export function StepperForm({
   }, [current, steps.length, nextDisabled, onStepChange]);
 
   return (
-    <div className="flex flex-1 flex-col bg-background md:min-h-0 md:flex-row md:overflow-hidden md:rounded-lg md:border md:border-border">
-      <nav
-        ref={strip}
-        aria-label={title}
-        className="sticky top-0 z-10 flex shrink-0 gap-2 overflow-x-auto border-b border-border bg-background px-4 py-3 md:static md:w-68 md:flex-col md:gap-1 md:overflow-y-auto md:border-r md:border-b-0 md:p-4"
-      >
-        <div className="hidden flex-col gap-0.5 pb-2 pl-3 md:flex">
-          <span className="text-sm font-semibold text-foreground">{title}</span>
-          <span className="text-xs text-muted-foreground">{summary}</span>
-        </div>
-        {steps.map((step, index) => (
-          <StepperFormStep
-            key={step.id}
-            index={index}
-            step={step}
-            current={index === current}
-            onSelect={() => onStepChange(index)}
-          />
-        ))}
-      </nav>
-      <div className="flex flex-1 flex-col md:min-h-0 md:min-w-0">
-        <div ref={content} className="flex flex-1 flex-col md:min-h-0 md:overflow-y-auto">
-          {children}
-        </div>
-        <div className="sticky bottom-0 flex shrink-0 flex-col items-center gap-2 border-t border-border bg-background px-4 pt-3 pb-[max(12px,env(safe-area-inset-bottom))] md:static md:flex-row md:justify-between md:px-6 md:py-3">
-          <span className="text-sm font-medium text-muted-foreground md:order-2">{position}</span>
-          <div className="flex w-full gap-3 md:contents">
-            <Button
-              variant="outline"
-              size="lg"
-              className="flex-1 md:order-1 md:h-8 md:flex-none md:px-3"
-              disabled={!hasPrevious}
-              onClick={() => onStepChange(current - 1)}
-            >
-              <ChevronLeft aria-hidden="true" />
-              Anterior
-            </Button>
-            {finishing ? (
+    <div className="@container/stepper flex flex-1 flex-col md:min-h-0">
+      <div className="flex flex-1 flex-col bg-background md:min-h-0 md:overflow-hidden md:rounded-lg md:border md:border-border stepper-wide:flex-row">
+        <nav
+          ref={strip}
+          aria-label={title}
+          className="sticky top-0 z-10 flex shrink-0 gap-2 overflow-x-auto border-b border-border bg-background px-4 py-3 md:static stepper-wide:w-68 stepper-wide:flex-col stepper-wide:gap-1 stepper-wide:overflow-y-auto stepper-wide:border-r stepper-wide:border-b-0 stepper-wide:p-4"
+        >
+          <div className="hidden flex-col gap-0.5 pb-2 pl-3 stepper-wide:flex">
+            <span className="text-sm font-semibold text-foreground">{title}</span>
+            <span className="text-xs text-muted-foreground">{summary}</span>
+          </div>
+          {steps.map((step, index) => (
+            <StepperFormStep
+              key={step.id}
+              index={index}
+              step={step}
+              current={index === current}
+              onSelect={() => onStepChange(index)}
+            />
+          ))}
+        </nav>
+        <div className="flex flex-1 flex-col md:min-h-0 md:min-w-0">
+          <div
+            ref={content}
+            className="flex flex-1 flex-col md:min-h-0 md:overflow-y-auto"
+          >
+            {children}
+          </div>
+          <div className="sticky bottom-0 flex shrink-0 flex-col items-center gap-2 border-t border-border bg-background px-4 pt-3 pb-[max(12px,env(safe-area-inset-bottom))] md:static stepper-wide:flex-row stepper-wide:justify-between stepper-wide:px-6 stepper-wide:py-3">
+            <span className="text-sm font-medium text-muted-foreground stepper-wide:order-2">
+              {position}
+            </span>
+            <div className="flex w-full gap-3 stepper-wide:contents">
               <Button
+                variant="outline"
                 size="lg"
-                className="flex-1 md:order-3 md:h-8 md:flex-none md:px-3"
-                onClick={finish.onClick}
+                className="flex-1 stepper-wide:order-1 stepper-wide:h-8 stepper-wide:flex-none stepper-wide:px-3"
+                disabled={!hasPrevious}
+                onClick={() => onStepChange(current - 1)}
               >
-                {finish.label}
-                <Check aria-hidden="true" />
+                <ChevronLeft aria-hidden="true" />
+                Anterior
               </Button>
-            ) : (
-              <Button
-                size="lg"
-                className="flex-1 md:order-3 md:h-8 md:flex-none md:px-3"
-                disabled={!hasNext}
-                onClick={() => onStepChange(current + 1)}
-              >
-                Próximo
-                <ChevronRight aria-hidden="true" />
-              </Button>
-            )}
+              {finishing ? (
+                <Button
+                  size="lg"
+                  className="flex-1 stepper-wide:order-3 stepper-wide:h-8 stepper-wide:flex-none stepper-wide:px-3"
+                  onClick={finish.onClick}
+                >
+                  {finish.label}
+                  <Check aria-hidden="true" />
+                </Button>
+              ) : (
+                <Button
+                  size="lg"
+                  className="flex-1 stepper-wide:order-3 stepper-wide:h-8 stepper-wide:flex-none stepper-wide:px-3"
+                  disabled={!hasNext}
+                  onClick={() => onStepChange(current + 1)}
+                >
+                  Próximo
+                  <ChevronRight aria-hidden="true" />
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </div>
