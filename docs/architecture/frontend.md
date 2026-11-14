@@ -294,6 +294,7 @@ A ousadia visual é tornar o sync legível sem torná-lo barulhento. O estado ap
 - Animação só em transição de estado, curta e desligada por `prefers-reduced-motion`.
 - Movimento desenhado no Figma antes do código; carregamento do banco local com o `Skeleton` do Sanjou; avisos passageiros num toast (`Toaster` do Sanjou, no shell). Sem TanStack Query e sem push na V1 ([ADR 0033](../decisions/0033-movimento-carregamento-e-avisos-na-ui.md)).
 - Keyboard-first: command palette e atalhos para salvar etapa, abrir pendências e alternar registros.
+- Listas: `Table` a partir de `md`, `ListRow` abaixo. Numa tabela mais estreita que a do frame de 1440 px, as colunas secundárias saem pela largura da tabela, por container query, deixando 180 px para a primeira coluna; abaixo do piso, a tabela rola dentro da borda, e o `pnpm layout:tables` confere isso de 768 a 1440 px ([ADR 0061](../decisions/0061-as-colunas-secundarias-das-listas-saem-pela-largura-da-tabela-por-container-query-com-180-px-de-minimo-para-a-primeira-coluna-e-rolagem-dentro-da-borda-como-piso-208.md)).
 
 Os componentes ficam no app, em `shared/components/` ([ADR 0020](../decisions/0020-componentes-que-faltam-no-sanjou-ficam-no-app.md)). Recebem um `SyncState` genérico e não conhecem TanStack DB, então podem ir para o Sanjou UI se outro projeto precisar deles.
 
