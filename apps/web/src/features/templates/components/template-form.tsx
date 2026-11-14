@@ -48,7 +48,7 @@ type TemplateFormProps<TOutput> = {
   cancelHref: string;
 };
 
-const fill = "w-full md:h-8 md:w-auto md:px-3";
+const fill = "w-full lg:h-8 lg:w-auto lg:px-3";
 
 export function TemplateForm<TOutput>({
   form,
@@ -105,7 +105,7 @@ export function TemplateForm<TOutput>({
               control={control}
               name="name"
               render={({ field }) => (
-                <FormItem className="md:max-w-[560px]">
+                <FormItem className="lg:max-w-[560px]">
                   <FormLabel>Nome do roteiro</FormLabel>
                   <FormControl>
                     <Input autoComplete="off" {...field} />
@@ -138,7 +138,7 @@ export function TemplateForm<TOutput>({
                 onMove={onMoveRoom}
               />
             )}
-            <div className="flex flex-col gap-2 md:flex-row">
+            <div className="flex flex-col gap-2 lg:flex-row">
               <Button type="submit" size="lg" className={fill}>
                 Salvar roteiro
               </Button>
@@ -222,7 +222,7 @@ function RoomsPanel({
         type="button"
         variant="outline"
         size="lg"
-        className="w-full md:h-8"
+        className="w-full lg:h-8"
         onClick={onAdd}
         disabled={rooms.length >= roomsMax}
       >
@@ -322,7 +322,7 @@ function RoomPanel({ control, index, itemsMax, newItem, onRemove, desktop }: Roo
           type="button"
           variant="outline"
           size="lg"
-          className="w-full md:h-8 md:w-auto md:self-start md:px-3"
+          className="w-full lg:h-8 lg:w-auto lg:self-start lg:px-3"
           disabled={items.fields.length >= itemsMax}
           onClick={() =>
             items.append(newItem(), { focusName: `${name}.${items.fields.length}.name` })
