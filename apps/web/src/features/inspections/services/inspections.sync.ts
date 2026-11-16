@@ -6,6 +6,7 @@ import {
   upsertInspection,
 } from "@/shared/api/generated";
 import type { Client } from "@/shared/api/generated/client";
+import { withoutVirtualProps } from "@/shared/db/virtual-props";
 import { type DraftsCollection, clearDraft, dropDraft, saveDraftValues } from "@/shared/sync/drafts";
 import { type FetchOutcome, fetchMissing } from "@/shared/sync/fetch";
 import { type Outbox, type OutboxMutationFn, enqueue } from "@/shared/sync/outbox";
@@ -164,7 +165,11 @@ export function saveInspection(
 ): string {
   const { id } = values;
   if (leaving(inspections, id)) return id;
-  const record: InspectionRecord = { ...values, version: inspections.get(id)?.version ?? null };
+  // A tela de campo monta os valores por cima da linha da live query, com as props virtuais: elas não vão para a fila.
+  const record: InspectionRecord = {
+    ...withoutVirtualProps(values),
+    version: inspections.get(id)?.version ?? null,
+  };
   enqueue(outbox, UPSERT_INSPECTION, () => {
     if (inspections.has(id)) {
       inspections.update(id, (draft) => {
@@ -204,7 +209,7 @@ export function saveInspectionDraft(
   step: number,
 ): void {
   if (leaving(inspections, values.id)) return;
-  saveDraftValues(drafts, INSPECTION_ENTITY, values.id, values, step);
+  saveDraftValues(drafts, INSPECTION_ENTITY, values.id, withoutVirtualProps(values), step);
 }
 
 /**

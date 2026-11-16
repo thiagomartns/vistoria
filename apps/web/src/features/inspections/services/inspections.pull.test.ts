@@ -2,12 +2,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { expireSession } from "@/shared/auth/session";
 import { type DraftRecord, saveDraftValues } from "@/shared/sync/drafts";
-import { DELETED_AT, V, closeDevices, device, fakeApi } from "@/shared/sync/pull.harness";
+import {
+  DELETED_AT,
+  V,
+  closeDevices,
+  device,
+  fakeApi,
+  indexedDbInspections,
+} from "@/shared/sync/pull.harness";
 
 import { INSPECTION_ENTITY, type InspectionRecord, type ItemCondition } from "../models/inspection";
 import type { InspectionsCollection } from "./inspections.collection";
 import { DEFAULT_TEMPLATE, newMoveInInspection } from "./inspections.factory";
-import { deleteInspection } from "./inspections.sync";
+import { deleteInspection, saveInspectionDraft } from "./inspections.sync";
 
 // O pull da vistoria (frontend.md, "Leitura (pull)"; ADR 0041 e 0043), com o harness de `shared/sync/pull.harness.ts`:
 // o agregado inteiro entra por cima da store, menos a vistoria com pendência, e o rascunho limpo da tela de campo passa
@@ -239,5 +246,90 @@ describe("pull da vistoria: sem pendência (ADR 0043)", () => {
       "GET /api/v1/sync/templates",
       "GET /api/v1/sync/inspections?cursor=1",
     ]);
+  });
+});
+
+// #211: a tela de campo monta o que salva espalhando a linha da live query (`recordWith`), e a linha vem com as props
+// virtuais do TanStack DB. Criada offline, a vistoria ainda é otimista, então a cópia levava `$hasPendingWrites: true`
+// ao rascunho, à fila e, no aceite, à store confirmada. Como o TanStack DB prefere a prop que a linha já tem, ela ficava
+// "com pendência" para sempre, e o pull nunca mais a tocava.
+describe("pull da vistoria criada no aparelho (#211)", () => {
+  const hasVirtualProps = (row: object | undefined) =>
+    Object.keys(row ?? {}).some((key) => key.startsWith("$"));
+
+  /** O celular com a collection por id de verdade, sobre IndexedDB, e o cursor no fim do servidor. */
+  async function phoneOn(api: ReturnType<typeof fakeApi>, initial: InspectionRecord[] = []) {
+    const local = await indexedDbInspections(initial);
+    const phone = await device(api, { indexedDb: local });
+    const store = {
+      inspections: local.collection as unknown as InspectionsCollection,
+      drafts: phone.drafts,
+      outbox: phone.outbox,
+    };
+    return { local, phone, store };
+  }
+
+  it("salva da linha otimista: a fila esvazia, o rascunho fica limpo e o pull aplica a versão do outro aparelho", async () => {
+    const api = fakeApi();
+    const { local, phone, store } = await phoneOn(api);
+    const created = { ...inspectionV1, version: null };
+
+    // A tela de campo cria a vistoria e, com ela ainda na fila, grava o rascunho e salva de novo a partir da linha
+    // da live query, como o `recordWith` faz: a linha otimista leva `$hasPendingWrites: true`.
+    phone.saveInspection(created);
+    const live = store.inspections.get(ID)!;
+    expect(live.$hasPendingWrites).toBe(true);
+    const fromScreen = withoutVersion({ ...live, ...marked(created, 0, 0, "good") });
+    saveInspectionDraft(store, fromScreen, 2);
+    phone.saveInspection({ ...fromScreen, version: null });
+    // As duas escritas chegam ao servidor (a primeira, se não foi compactada, cria a V1; a segunda, a V2), e o aceite
+    // da última grava a versão dela.
+    await vi.waitFor(
+      () => {
+        expect(api.current("inspections", ID)?.rooms).toEqual(fromScreen.rooms);
+        expect(store.inspections.get(ID)?.version).toBe(api.current("inspections", ID)?.version);
+      },
+      { timeout: 5_000 },
+    );
+    await phone.drained();
+    const sent = api.current("inspections", ID) as InspectionRecord;
+    expect(phone.drafts.get(ID)?.status).toBe("draft");
+
+    expect(hasVirtualProps(sent), "o PUT não leva as props virtuais").toBe(false);
+    expect(hasVirtualProps((await local.stores()).records[0])).toBe(false);
+    expect(hasVirtualProps(phone.drafts.get(ID)?.data)).toBe(false);
+    expect(store.inspections.get(ID)?.$hasPendingWrites).toBe(false);
+
+    // O notebook escreve uma observação; o pull do celular a aplica e não deixa marca.
+    await phone.pull();
+    const remote = marked(sent, 1, 1, "poor");
+    const version = api.write("inspections", remote);
+    expect(await phone.pull()).toBe("done");
+
+    expect(store.inspections.get(ID)?.version).toBe(version);
+    expect(conditionOf(store.inspections.get(ID), 1, 1)).toBe("poor");
+    expect(phone.drafts.get(ID)).toMatchObject({ status: "draft", step: 2, rebasedAt: expect.any(String) });
+    expect(conditionOf(phone.drafts.get(ID)?.data as InspectionRecord, 1, 1)).toBe("poor");
+    expect(phone.marks.list("inspections")).toEqual([]);
+  });
+
+  it("a linha que um aparelho de antes gravou com as props virtuais entra limpa, e o pull a aplica", async () => {
+    const api = fakeApi();
+    api.seed("inspections", inspectionV1);
+    const { local, phone, store } = await phoneOn(api);
+    await local.putRaw({ ...inspectionV1, $hasPendingWrites: true, $origin: "local" });
+    await phone.state.cursors.set("inspections", "1");
+    // A tela de campo aberta: a vistoria está na memória.
+    await local.collection.utils.load([ID]);
+    expect(store.inspections.get(ID)?.$hasPendingWrites).toBe(false);
+
+    const remote = marked(inspectionV1, 0, 1, "poor");
+    const version = api.write("inspections", remote);
+    expect(await phone.pull()).toBe("done");
+
+    expect(conditionOf(store.inspections.get(ID), 0, 1)).toBe("poor");
+    const [stored] = (await local.stores()).records;
+    expect(stored).toEqual({ ...remote, version });
+    expect(phone.marks.list("inspections")).toEqual([]);
   });
 });

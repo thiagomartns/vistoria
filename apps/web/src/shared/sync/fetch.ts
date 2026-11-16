@@ -46,7 +46,8 @@ const isLocal = (
 /**
  * O registro tem pendência (ADR 0041): uma transação na fila, inclusive a que está em voo e a exclusão (`deleting`), ou
  * um rascunho. A fila se lê da camada otimista (`$hasPendingWrites`), que vale na hora: uma escrita de agora já conta,
- * antes de a outbox a gravar. O rascunho `draft` do formulário profundo sem nada a enviar (os valores dele são os do
+ * antes de a outbox a gravar. Ela vale porque a linha guardada nunca traz a prop (`withoutVirtualProps`, #211): se
+ * trouxesse, o TanStack DB a preferiria à calculada. O rascunho `draft` do formulário profundo sem nada a enviar (os valores dele são os do
  * registro) não conta: a tela de campo o grava ao abrir, e ele seguraria o pull até concluir (ADR 0043). Para saber se o
  * rascunho é só o registro, vale o da memória ou, se a collection não o carregou (vistorias, ADR 0048), o `confirmed`
  * lido da store por chave.
