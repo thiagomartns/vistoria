@@ -11,6 +11,7 @@ import { expect, vi } from "vitest";
 
 import { configureClient } from "@/shared/api/client";
 import { createClient, createConfig } from "@/shared/api/generated/client";
+import { withoutVirtualProps } from "@/shared/db/virtual-props";
 
 import type { ClientRecord } from "@/features/clients/models/client";
 import type { ClientsCollection } from "@/features/clients/services/clients.collection";
@@ -315,9 +316,6 @@ let open: Outbox[] = [];
 const stops: (() => void)[] = [];
 const databases: IndexedDBInstance[] = [];
 
-/** Sem as props virtuais do TanStack DB (`$synced` e afins). */
-const plain = <T extends object>(row: T) =>
-  Object.fromEntries(Object.entries(row).filter(([key]) => !key.startsWith("$")));
 
 /**
  * As vistorias como no aparelho (ADR 0048): a collection por id e a do resumo, sobre um IndexedDB em memória
@@ -348,6 +346,15 @@ export async function indexedDbInspections(initial: InspectionRecord[]) {
   return {
     collection: inspections,
     summaries: inspectionSummaries,
+    /**
+     * Grava `record` direto nas duas stores, por fora da collection, como um aparelho de antes da #211 deixou: a linha
+     * pode levar as props virtuais que a collection hoje não grava.
+     */
+    putRaw: (record: Record<string, unknown> & { id: string }) =>
+      executeTransaction(db.db, ["inspections", "inspectionSummaries"], "readwrite", (_, stores) => {
+        stores.inspections!.put(record, record.id);
+        stores.inspectionSummaries!.put(summaryOf(record as unknown as InspectionRecord), record.id);
+      }),
     /** As duas stores no IndexedDB: as vistorias completas e os resumos, por id. */
     async stores() {
       const [records, summaries] = await Promise.all([
@@ -367,7 +374,7 @@ export async function indexedDbInspections(initial: InspectionRecord[]) {
       expect(summaries).toEqual(records.map(summaryOf));
       await vi.waitFor(() =>
         expect(
-          inspectionSummaries.toArray.map(plain).toSorted((a, b) => (a.id! < b.id! ? -1 : 1)),
+          inspectionSummaries.toArray.map(withoutVirtualProps).toSorted((a, b) => (a.id! < b.id! ? -1 : 1)),
         ).toEqual(summaries),
       );
     },

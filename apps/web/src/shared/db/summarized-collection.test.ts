@@ -13,6 +13,7 @@ import { IDBFactory, IDBKeyRange } from "fake-indexeddb";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createSummarizedCollections } from "./summarized-collection";
+import { withoutVirtualProps } from "./virtual-props";
 
 // A entidade grande demais para abrir inteira (ADR 0048), contra um IndexedDB em memória: a collection do registro só
 // carrega por id, e o resumo é gravado na mesma transação, então os dois nunca divergem.
@@ -55,11 +56,8 @@ const open = (db: IndexedDBInstance) =>
     summarize,
   });
 
-/** Sem as props virtuais do TanStack DB (`$synced` e afins). */
-const plain = <T extends object>(rows: readonly T[]) =>
-  rows.map((row) =>
-    Object.fromEntries(Object.entries(row).filter(([key]) => !key.startsWith("$"))),
-  );
+/** Sem as props virtuais do TanStack DB (`$hasPendingWrites` e afins). */
+const plain = <T extends object>(rows: readonly T[]) => rows.map(withoutVirtualProps);
 
 const storeOf = <T>(db: IndexedDBInstance, name: string) =>
   executeTransaction(db.db, name, "readonly", (_, stores) => getAll<T>(stores[name]!));
@@ -225,5 +223,35 @@ describe("collection com resumo (ADR 0048)", () => {
     await vi.waitFor(() => expect(plain(query.toArray)).toEqual([renamed]));
     expect(second.records.has(bia.id)).toBe(false);
     await query.cleanup();
+  });
+});
+
+// #211: uma prop virtual gravada na store valeria para sempre, porque o TanStack DB prefere a da linha à que ele calcula.
+describe("collection com resumo: as props virtuais nunca vão para a store (#211)", () => {
+  const virtual = { $hasPendingWrites: true, $origin: "local", $key: ana.id, $collectionId: "x" };
+
+  it("a gravação com as props virtuais grava o registro sem elas, na store e na memória", async () => {
+    const db = await openDb();
+    const { records } = open(db);
+    await records.utils.load([ana.id]);
+
+    await accept(records, [{ type: "insert", modified: { ...ana, ...virtual } as Row }]);
+
+    expect(await storeOf<Row>(db, "records")).toEqual([ana]);
+    expect(records.get(ana.id)?.$hasPendingWrites).toBe(false);
+  });
+
+  it("a linha que um aparelho de antes gravou com elas entra limpa pelo load, pelo readConfirmed e pelo exportData", async () => {
+    const db = await openDb();
+    await executeTransaction(db.db, ["records", "summaries"], "readwrite", (_, stores) => {
+      stores.records!.put({ ...ana, ...virtual }, ana.id);
+      stores.summaries!.put(summarize(ana), ana.id);
+    });
+    const { records } = open(db);
+
+    expect(await records.utils.readConfirmed([ana.id])).toEqual([ana]);
+    expect(await records.utils.exportData()).toEqual([ana]);
+    await records.utils.load([ana.id]);
+    expect(records.get(ana.id)?.$hasPendingWrites).toBe(false);
   });
 });

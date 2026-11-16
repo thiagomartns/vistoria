@@ -11,6 +11,7 @@ import {
 } from "@tanstack/db";
 
 import { readConfirmed } from "./local-db";
+import { withoutVirtualProps } from "./virtual-props";
 
 // Uma entidade grande demais para abrir inteira (spike 2, ADR 0048): a store `name` guarda o registro completo e a
 // `summaryName`, um resumo de cada um, gravados na mesma transação IndexedDB, então os dois nunca divergem. A collection
@@ -20,6 +21,10 @@ import { readConfirmed } from "./local-db";
 // A gravação é a mesma da collection IndexedDB do TanStack DB: a store só aceita o que vem por `acceptMutations`, que
 // grava e então confirma na memória. Leituras, gravações e mudanças vindas de outra aba passam por uma fila só, para a
 // memória ver as gravações na ordem do IndexedDB.
+// As props virtuais do TanStack DB nunca entram na store, e uma linha que um aparelho de antes da #211 gravou com elas
+// entra limpa na memória: o TanStack DB preferiria a `$hasPendingWrites` dela à calculada, e a vistoria ficaria com
+// pendência para sempre. Toda gravação e toda leitura passam pelo `withoutVirtualProps`; a próxima gravação a regrava
+// limpa.
 
 /** O store de metadados da collection IndexedDB do TanStack DB, que esta collection não usa. */
 const VERSIONS_STORE = "_versions";
@@ -172,12 +177,16 @@ export function createSummarizedCollections<T extends { id: string }, S extends 
 
   let records: Collection<T, string, SummarizedUtils<T>> | undefined;
 
+  /** Os registros de `keys` que a store tem, sem as props virtuais. */
+  const readClean = async (keys: readonly string[]) =>
+    (await readConfirmed<T>(db, name, keys)).map(withoutVirtualProps);
+
   const acceptMutations = (transaction: { mutations: PendingMutation[] }) =>
     serial(async () => {
       const changes = transaction.mutations
         .filter((mutation) => mutation.collection === records)
         .map((mutation) => {
-          const modified = mutation.modified as T;
+          const modified = withoutVirtualProps(mutation.modified as T);
           return { type: mutation.type, key: modified.id, modified };
         });
       if (changes.length === 0) return;
@@ -196,7 +205,7 @@ export function createSummarizedCollections<T extends { id: string }, S extends 
   /** Lê da store as chaves pedidas e põe na memória; a que a store não tem fica de fora. */
   async function loadInto(keys: readonly string[]) {
     if (keys.length === 0) return;
-    writeRecords(await readConfirmed<T>(db, name, keys));
+    writeRecords(await readClean(keys));
   }
 
   const load = (keys: readonly string[]) => {
@@ -215,7 +224,7 @@ export function createSummarizedCollections<T extends { id: string }, S extends 
         const stop = listen(async (keys) => {
           const loaded = keys.filter((key) => inMemory.has(key));
           if (loaded.length === 0 || recordSync !== params) return;
-          const rows = await readConfirmed<T>(db, name, loaded);
+          const rows = await readClean(loaded);
           const found = new Set(rows.map((row) => row.id));
           writeRecords(
             rows,
@@ -241,9 +250,11 @@ export function createSummarizedCollections<T extends { id: string }, S extends 
     onDelete: ({ transaction }: Direct) => acceptMutations(transaction),
     utils: {
       acceptMutations,
-      exportData: () =>
-        executeTransaction(db.db, name, "readonly", (_, stores) => getAll<T>(stores[name]!)),
-      readConfirmed: (keys: readonly string[]) => readConfirmed<T>(db, name, keys),
+      exportData: async () =>
+        (
+          await executeTransaction(db.db, name, "readonly", (_, stores) => getAll<T>(stores[name]!))
+        ).map(withoutVirtualProps),
+      readConfirmed: readClean,
       load,
     },
   } as never) as unknown as Collection<T, string, SummarizedUtils<T>>;
