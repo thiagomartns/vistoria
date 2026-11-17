@@ -196,6 +196,10 @@ jobs:
       - name: Compose de produção
         run: pnpm prod:up
 
+      # A entrega do M5 (#178). Antes do smoke: o passo 6 dele esgota o limite do signin do IP, e o 7, o do refresh.
+      - name: Roteiro da V1
+        run: pnpm spike:v1
+
       - name: Roteiro de produção
         run: pnpm smoke:prod
 

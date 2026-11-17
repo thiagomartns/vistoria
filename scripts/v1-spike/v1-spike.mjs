@@ -330,7 +330,10 @@ try {
   await inspectionLink(notebook, entrada).click();
   await notebook.getByText(`Vistoria concluída por ${user.name} em`, { exact: false }).waitFor();
   const moveIn = await printReport(notebook, "Laudo de vistoria de entrada", "laudo-entrada.pdf");
-  for (const text of [notes.phone, notes.notebook]) await moveIn.sheet.getByText(text).waitFor();
+  // A observação fica na coluna da tabela (notebook e impressão); a lista abaixo dela é a do celular (md:hidden).
+  for (const text of [notes.phone, notes.notebook]) {
+    await moveIn.sheet.getByRole("cell", { name: text, exact: true }).waitFor();
+  }
   await shot(notebook, "6-laudo-entrada");
   ok(`o laudo tem as observações dos dois aparelhos; impresso, ${moveIn.pages} páginas A4 em laudo-entrada.pdf`);
   await notebook.goBack();
@@ -349,7 +352,8 @@ try {
   await phone.getByRole("button", { name: "Começar vistoria" }).click();
   await phone.waitForURL(/\/inspections\/edit\?id=/);
   const saida = new URL(phone.url()).searchParams.get("id");
-  await phone.getByText("Na entrada").first().waitFor();
+  // O item tem os dois layouts da #208 (a coluna da StepperForm larga e a faixa acima dos chips): vale o visível.
+  await phone.getByText("Na entrada").locator("visible=true").first().waitFor();
   await walkRooms(phone, async (room) => {
     if (room !== "Sala") return;
     await mark(phone, "Paredes", "Ruim");
