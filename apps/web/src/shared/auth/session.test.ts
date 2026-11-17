@@ -48,6 +48,19 @@ const problem = (type: string, status: number) =>
     response: new Response(null, { status }),
   }) as never;
 
+/** O 429 do refresh, com o `Retry-After` em segundos. */
+const rateLimited = (seconds: number) =>
+  ({
+    error: {
+      type: "urn:vistoria:problem:rate-limited",
+      title: "rate-limited",
+      status: 429,
+      detail: "rate-limited",
+      traceId: "00-trace",
+    },
+    response: new Response(null, { status: 429, headers: { "Retry-After": String(seconds) } }),
+  }) as never;
+
 /** Como depois de um reload: o dono no localStorage, sem token. */
 function reloaded(who = user) {
   localStorage.setItem("vistoria.owner", JSON.stringify(who));
@@ -372,5 +385,134 @@ describe("renovação", () => {
     window.dispatchEvent(new Event("online"));
 
     await vi.waitFor(() => expect(sessionStore.getSnapshot().status).toBe("active"));
+  });
+});
+
+describe("abertura com o refresh sem resposta (#210, ADR 0062)", () => {
+  /** Recarrega com rede e guarda cada estado que a sessão passou. */
+  function open() {
+    reloaded();
+    const seen: string[] = [];
+    sessionStore.subscribe(() => seen.push(sessionStore.getSnapshot().status));
+    return seen;
+  }
+
+  const reconnect = () => {
+    window.dispatchEvent(new Event("offline"));
+    window.dispatchEvent(new Event("online"));
+  };
+
+  it("429: fica renewing, nada renova antes do Retry-After (nem a rede voltando), e o 200 seguinte fica active", async () => {
+    vi.useFakeTimers();
+    vi.mocked(refreshToken).mockResolvedValue(rateLimited(30));
+    const seen = open();
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(refreshToken).toHaveBeenCalledOnce();
+    expect(sessionStore.getSnapshot()).toMatchObject({ status: "renewing", user });
+    expect(canSendAs(user.id)).toBe(false);
+
+    reconnect();
+    await vi.advanceTimersByTimeAsync(29_000);
+    expect(refreshToken).toHaveBeenCalledOnce();
+    expect(sessionStore.getSnapshot().status).toBe("renewing");
+
+    vi.mocked(refreshToken).mockResolvedValue(refreshed());
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(refreshToken).toHaveBeenCalledTimes(2);
+    expect(sessionStore.getSnapshot().status).toBe("active");
+    expect(canSendAs(user.id)).toBe(true);
+    expect(seen).not.toContain("expired");
+  });
+
+  it.each([
+    ["5xx", problem("internal", 500)],
+    ["sem resposta", { error: new TypeError("Failed to fetch") } as never],
+  ])(
+    "%s sem Retry-After: backoff de 1 s e 2 s, e a volta da rede antecipa",
+    async (_label, answer) => {
+      vi.useFakeTimers();
+      vi.mocked(refreshToken).mockResolvedValue(answer);
+      const seen = open();
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(refreshToken).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(999);
+      expect(refreshToken).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(refreshToken).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(refreshToken).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(refreshToken).toHaveBeenCalledTimes(3);
+      expect(sessionStore.getSnapshot().status).toBe("renewing");
+
+      // O próximo seria aos 4 s; a rede voltar renova já.
+      vi.mocked(refreshToken).mockResolvedValue(refreshed());
+      reconnect();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(refreshToken).toHaveBeenCalledTimes(4);
+      expect(sessionStore.getSnapshot().status).toBe("active");
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(refreshToken).toHaveBeenCalledTimes(4);
+      expect(seen).not.toContain("expired");
+    },
+  );
+
+  it("o backoff para em 60 s", async () => {
+    vi.useFakeTimers();
+    vi.mocked(refreshToken).mockResolvedValue(problem("internal", 500));
+    open();
+
+    // 1 + 2 + 4 + 8 + 16 + 32 s: sete refreshes; o próximo atraso seria 64 s, e fica em 60.
+    await vi.advanceTimersByTimeAsync(63_000);
+    expect(refreshToken).toHaveBeenCalledTimes(7);
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(refreshToken).toHaveBeenCalledTimes(7);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(refreshToken).toHaveBeenCalledTimes(8);
+  });
+
+  it("o refresh recusado depois do 429 expira e para de agendar", async () => {
+    vi.useFakeTimers();
+    vi.mocked(refreshToken).mockResolvedValue(rateLimited(5));
+    open();
+    await vi.advanceTimersByTimeAsync(0);
+
+    vi.mocked(refreshToken).mockResolvedValue(problem("unauthorized", 401));
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(sessionStore.getSnapshot().status).toBe("expired");
+
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(refreshToken).toHaveBeenCalledTimes(2);
+  });
+
+  it("o token anunciado por outra aba na espera vale, e o refresh agendado não sai", async () => {
+    vi.useFakeTimers();
+    vi.mocked(refreshToken).mockResolvedValue(rateLimited(30));
+    open();
+    await vi.advanceTimersByTimeAsync(0);
+
+    const otherTab = new BroadcastChannel("auth-refresh");
+    otherTab.postMessage({ userId: user.id, accessToken: tokenOf(user.id, 2) });
+    await vi.waitFor(() => expect(sessionStore.getSnapshot().status).toBe("active"));
+    otherTab.close();
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(refreshToken).toHaveBeenCalledOnce();
+    expect(accessToken.get()).toBe(tokenOf(user.id, 2));
+  });
+
+  it("sair na espera: signed-out, e o refresh agendado não sai", async () => {
+    vi.useFakeTimers();
+    vi.mocked(refreshToken).mockResolvedValue(rateLimited(30));
+    open();
+    await vi.advanceTimersByTimeAsync(0);
+
+    signOutSession();
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(refreshToken).toHaveBeenCalledOnce();
+    expect(sessionStore.getSnapshot()).toMatchObject({ status: "signed-out", user: null });
   });
 });

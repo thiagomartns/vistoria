@@ -9,20 +9,23 @@ import {
 } from "../api/generated";
 import { zAuthUserDto } from "../api/generated/zod.gen";
 import { type ApiFailure, handleProblem } from "../api/problems";
+import { MAX_RETRY_AFTER_MS, readRetryAfter } from "../api/retry-after";
 import { type Announcement, type RefreshLock, createRefreshLock } from "./refreshLock";
 
 // Sessão (frontend.md, "Sessão"): o access token só em memória e o dono do aparelho (o `user.id` e o nome, que não são
 // segredo) no localStorage. O refresh token é um cookie HttpOnly que o JavaScript nunca lê. Recarregar perde o token mas
 // não o dono: com rede, o app renova antes de tudo (`renewing`) e volta ativo; sem rede, abre o banco local do dono e a
 // outbox espera. A renovação sai numa aba só (refreshLock.ts) e também depois de um `unauthorized` (client.ts, ADR 0045)
-// e quando a rede volta, antes da outbox e do pull.
+// e quando a rede volta, antes da outbox e do pull. Sem token, o refresh sem resposta (rede, 429, 5xx) não expira: a
+// sessão segue `renewing` e tenta de novo depois do `Retry-After` ou do backoff (ADR 0062).
 
 export type SessionUser = AuthUserDto;
 
 /**
  * - `signed-out`: ninguém entrou neste aparelho (ou saiu).
- * - `renewing`: há dono e o refresh está saindo (ao abrir com rede, ao voltar a rede, depois de um `unauthorized`).
- *   A outbox e o pull esperam; o shell não manda para o /login.
+ * - `renewing`: há dono e o refresh está saindo (ao abrir com rede, ao voltar a rede, depois de um `unauthorized`), ou,
+ *   sem token, o último ficou sem resposta (rede, 429, 5xx) e o próximo está agendado (ADR 0062). A outbox e o pull
+ *   esperam; o shell não manda para o /login.
  * - `active`: o dono está com token; a outbox envia.
  * - `expired`: há dono, mas não há token (a API recusou o refresh, ou abriu sem rede). A outbox espera.
  */
@@ -59,6 +62,13 @@ let opening = true;
 /** A rede caiu (ou abriu sem ela): na volta, renova antes da outbox e do pull. */
 let renewOnReconnect = false;
 let lock: RefreshLock | undefined;
+/**
+ * O próximo refresh agendado depois de um sem resposta, sem token (ADR 0062). `notBefore`: antes dele, nenhum outro
+ * gatilho renova (o `Retry-After` do 429); sem `Retry-After`, é 0 e a volta da rede antecipa.
+ */
+let retry: { timer: ReturnType<typeof setTimeout>; notBefore: number } | null = null;
+/** Quantos refreshes seguidos ficaram sem resposta e sem `Retry-After`: de onde sai o backoff. */
+let backoffAttempt = 0;
 /**
  * A última renovação que esta aba conhece: a do token que ela tem (o login, o próprio refresh ou o anúncio adotado) ou,
  * sem token, a de quando abriu. Uma data mais nova no localStorage diz que outra aba renovou depois, e o anúncio dela
@@ -121,7 +131,7 @@ const openingRenewal = () => opening && !accessToken.get() && navigator.onLine;
 
 function statusOf(user: SessionUser | null): SessionStatus {
   if (!user) return "signed-out";
-  if (renewing || openingRenewal()) return "renewing";
+  if (renewing || retry || openingRenewal()) return "renewing";
   return accessToken.get() ? "active" : "expired";
 }
 
@@ -150,6 +160,39 @@ function subjectOf(token: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** O primeiro atraso do backoff do refresh sem resposta e sem `Retry-After`; dobra a cada falha, até 60 s. */
+export const RETRY_BACKOFF_MS = 1000;
+
+/** Esquece o refresh agendado; `resetBackoff` volta o backoff para o começo (a sessão se decidiu). */
+function clearRetry(resetBackoff = true) {
+  if (retry) clearTimeout(retry.timer);
+  retry = null;
+  if (resetBackoff) backoffAttempt = 0;
+}
+
+/**
+ * Agenda o próximo refresh depois de um sem resposta, sem token: o `Retry-After` do 429, ou o backoff (1 s, 2 s, 4 s…
+ * até 60 s). A sessão fica `renewing` até ele, e o shell não manda para o /login (ADR 0062).
+ */
+function scheduleRetry(retryAfterMs: number | undefined) {
+  clearRetry(false);
+  const delay =
+    retryAfterMs ?? Math.min(RETRY_BACKOFF_MS * 2 ** backoffAttempt++, MAX_RETRY_AFTER_MS);
+  retry = {
+    notBefore: retryAfterMs ? Date.now() + retryAfterMs : 0,
+    timer: setTimeout(() => {
+      retry = null;
+      void renewSession();
+    }, delay),
+  };
+}
+
+/** Como terminou um refresh, com o `Retry-After` da resposta quando ela veio sem decidir nada. */
+interface Renewal {
+  outcome: RenewOutcome;
+  retryAfterMs?: number;
 }
 
 /** Quanto uma aba espera o anúncio da outra que acabou de renovar, antes de pedir o próprio refresh. */
@@ -185,54 +228,62 @@ async function refreshAs(
   before: string | null,
   renewedBefore: string | null,
   contended: boolean,
-): Promise<RenewOutcome> {
+): Promise<Renewal> {
   const changed = () => {
     const now = accessToken.get();
     return now !== null && now !== before;
   };
-  if (changed()) return "renewed";
+  if (changed()) return { outcome: "renewed" };
   const renewedElsewhere = contended || readRenewedAt() !== renewedBefore;
   if (renewedElsewhere && (await nextAnnouncement(ANNOUNCE_WAIT_MS))) {
-    return "renewed";
+    return { outcome: "renewed" };
   }
-  if (changed()) return "renewed";
+  if (changed()) return { outcome: "renewed" };
   const result = await refreshToken();
-  if (current().user?.id !== owner.id) return "expired";
+  if (current().user?.id !== owner.id) return { outcome: "expired" };
   if (result.data) {
     const token = result.data.accessToken;
     if (subjectOf(token) !== owner.id.toLowerCase()) {
       accessToken.set(null);
-      return "expired";
+      return { outcome: "expired" };
     }
     accessToken.set(token);
     writeRenewedAt(new Date());
     refreshLock().announce({ userId: owner.id, accessToken: token });
-    return "renewed";
+    return { outcome: "renewed" };
   }
   if (handleProblem(readFailure(result)) === "renew-session") {
     accessToken.set(null);
-    return "expired";
+    return { outcome: "expired" };
   }
-  // Sem resposta, 429 ou 5xx: nada foi decidido. Fica como estava e tenta de novo no próximo gatilho.
-  return "offline";
+  // Sem resposta, 429 ou 5xx: nada foi decidido. Fica como estava e tenta de novo no próximo gatilho, que nunca sai
+  // antes do `Retry-After` (ADR 0062).
+  return { outcome: "offline", retryAfterMs: readRetryAfter(result.response) };
 }
 
 /**
  * Renova o access token pelo cookie: `renewed`, `expired` (refresh recusado: a sessão expira, o dono e a outbox
  * ficam, e o login do mesmo usuário retoma a fila) ou `offline`. Um por vez na aba, e entre abas pelo lock. Durante a
- * renovação a sessão fica `renewing`; uma sessão que saiu ou trocou de dono no meio descarta o resultado.
+ * renovação a sessão fica `renewing`; uma sessão que saiu ou trocou de dono no meio descarta o resultado. O `offline`
+ * sem token agenda o próximo refresh e a sessão segue `renewing`; com token, quem chamou (o client) tenta de novo.
  */
 export function renewSession(): Promise<RenewOutcome> {
   if (renewing) return renewing;
   const owner = current().user;
   if (!owner) return Promise.resolve("expired");
+  clearRetry(false);
   const before = accessToken.get();
   const renewedBefore = knownRenewedAt === undefined ? readRenewedAt() : knownRenewedAt;
   renewing = refreshLock()
     .run((contended) => refreshAs(owner, before, renewedBefore, contended))
-    .catch((): RenewOutcome => "offline")
-    .then((outcome) => {
+    .catch((): Renewal => ({ outcome: "offline" }))
+    .then(({ outcome, retryAfterMs }) => {
       if (outcome === "renewed") renewOnReconnect = false;
+      if (outcome === "offline" && !accessToken.get() && current().user?.id === owner.id) {
+        scheduleRetry(retryAfterMs);
+      } else if (outcome !== "offline") {
+        clearRetry();
+      }
       return outcome;
     })
     .finally(() => {
@@ -249,6 +300,8 @@ export function renewSession(): Promise<RenewOutcome> {
  */
 export function renewAfterReconnect(): void {
   if (!renewOnReconnect || !navigator.onLine || !current().user) return;
+  // O `Retry-After` de um 429 vale também para a volta da rede: o refresh agendado é o gatilho (ADR 0062).
+  if (retry && Date.now() < retry.notBefore) return;
   renewOnReconnect = false;
   void renewSession();
 }
@@ -264,6 +317,7 @@ function adopt({ userId, accessToken: token }: Announcement) {
   accessToken.set(token);
   knownRenewedAt = readRenewedAt();
   renewOnReconnect = false;
+  clearRetry();
   update(user);
   for (const arrived of [...announced]) arrived();
 }
@@ -320,6 +374,7 @@ export function beginSession({ accessToken: token, user }: AuthDto) {
   writeRenewedAt(new Date());
   renewOnReconnect = false;
   opening = false;
+  clearRetry();
   update(user);
 }
 
@@ -378,6 +433,7 @@ export async function signUpWithPassword(
  */
 export function expireSession(): void {
   opening = false;
+  clearRetry();
   accessToken.set(null);
   update(current().user);
 }
@@ -391,6 +447,7 @@ export function signOutSession(): void {
   writeOwner(null);
   writeRenewedAt(null);
   renewOnReconnect = false;
+  clearRetry();
   update(null);
 }
 
@@ -419,6 +476,7 @@ export function resetSession(): void {
   }
   lock?.close();
   lock = undefined;
+  clearRetry();
   accessToken.set(null);
   snapshot = undefined;
   renewing = null;

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { accessToken } from "@/shared/api/client";
 import { pendingOf, wipeLocalStore } from "@/features/local-store/services/local-store";
-import { signIn, signOut } from "@/shared/api/generated";
+import { refreshToken, signIn, signOut } from "@/shared/api/generated";
 import { canSendAs, resetSession } from "@/shared/auth/session";
 import type { Outbox } from "@/shared/sync/outbox";
 import { resetSyncStatus, trackOutbox } from "@/shared/sync/sync-status";
@@ -20,6 +20,7 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/shared/api/generated", async (original) => ({
   ...(await original<typeof import("@/shared/api/generated")>()),
   signIn: vi.fn<() => unknown>(),
+  refreshToken: vi.fn<() => unknown>(),
   signOut: vi.fn<() => unknown>(async () => ({ response: new Response(null, { status: 204 }) })),
 }));
 
@@ -45,6 +46,13 @@ const problem = (type: string, status: number) => ({
   response: new Response(null, { status }),
 });
 
+/** Como depois de um reload com o refresh recusado: o dono no localStorage, sem token, e a sessão `expired`. */
+function expiredSession() {
+  vi.mocked(refreshToken).mockResolvedValue(problem("unauthorized", 401) as never);
+  localStorage.setItem("vistoria.owner", JSON.stringify(owner));
+  resetSession();
+}
+
 async function fillAndSubmit(email = "ana@exemplo.com", password = "senha-longa") {
   const user = userEvent.setup();
   await user.type(screen.getByLabelText("E-mail"), email);
@@ -59,6 +67,7 @@ afterEach(() => {
   localStorage.clear();
   vi.restoreAllMocks();
   vi.mocked(signIn).mockReset();
+  vi.mocked(refreshToken).mockReset();
   vi.mocked(signOut).mockClear();
   vi.mocked(pendingOf).mockReset().mockResolvedValue(0);
   vi.mocked(wipeLocalStore).mockClear();
@@ -135,8 +144,7 @@ describe("/login", () => {
   });
 
   it("sessão expirada com pendências: SessionExpired acima do formulário", async () => {
-    localStorage.setItem("vistoria.owner", JSON.stringify(owner));
-    resetSession();
+    expiredSession();
     const entry = (id: string) => ({
       id,
       mutationFnName: "upsertClient",
@@ -161,8 +169,7 @@ describe("/login", () => {
   });
 
   it("sessão expirada sem pendências: o aviso espera a leitura da outbox", async () => {
-    localStorage.setItem("vistoria.owner", JSON.stringify(owner));
-    resetSession();
+    expiredSession();
 
     render(<SignInScreen />);
     expect(screen.queryByRole("status")).toBeNull();
