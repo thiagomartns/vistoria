@@ -2,7 +2,8 @@
 // Roteiro curto contra o docker-compose de produção (#177): o app abre, entra e sincroniza pelo Caddy, na mesma origem,
 // com TLS. Exige `pnpm prod:init` e `pnpm prod:up`. APP_URL troca a origem (padrão: https://localhost, com o
 // certificado da CA interna do Caddy, que o navegador do roteiro aceita sem instalar).
-// Os IPs forjados do passo 5 são da faixa de documentação (RFC 5737): nenhum IP real aparece aqui.
+// Os passos 6 e 7 gastam o rate limit do IP (signin e refresh) e ficam por último.
+// Os IPs forjados do passo 6 são da faixa de documentação (RFC 5737): nenhum IP real aparece aqui.
 
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
@@ -117,6 +118,46 @@ try {
   }
   assert.ok(limitedAt > 0, "o signin com X-Forwarded-For forjado precisa cair no limite");
   ok(`429 na tentativa ${limitedAt}, com um IP forjado diferente em cada uma`);
+
+  step(
+    7,
+    "Por último, de novo: reloads até o refresh dar 429 não levam para o /login, e a sessão volta depois do Retry-After",
+  );
+  // O refresh aceita 30 por minuto por IP; o passo 4 já gastou 1. Cada reload abre sem access token e renova pelo
+  // cookie. Com o 429, a sessão fica `renewing` com os dados locais e tenta de novo depois do Retry-After (#210).
+  let limited = null;
+  for (let i = 1; i <= 35 && !limited; i++) {
+    const answer = page.waitForResponse((res) => res.url() === `${base}/api/v1/auth/refresh`);
+    await page.reload();
+    const res = await answer;
+    if (res.status() === 429) {
+      limited = { at: Date.now(), reload: i, retryAfter: Number(res.headers()["retry-after"]) };
+    } else assert.equal(res.status(), 200, `refresh do reload ${i}`);
+  }
+  assert.ok(limited, "o refresh precisa cair no limite em até 35 reloads");
+  assert.ok(limited.retryAfter > 0, "o 429 do refresh traz o Retry-After");
+  let retriedAt = 0;
+  const retried = page.waitForResponse(
+    (res) => res.url() === `${base}/api/v1/auth/refresh` && (retriedAt = Date.now()) > 0,
+    { timeout: (limited.retryAfter + 15) * 1000 },
+  );
+  await page.getByRole("heading", { level: 1, name: "Clientes" }).waitFor();
+  await page.getByRole("table").getByRole("link", { name: clientName, exact: true }).waitFor();
+  await page.waitForTimeout(2_000);
+  assert.ok(!page.url().includes("/login"), "o 429 no refresh não pede login");
+  ok(
+    `429 no reload ${limited.reload} (Retry-After: ${limited.retryAfter} s); a lista local fica, sem /login`,
+  );
+  const again = await retried;
+  const waited = (retriedAt - limited.at) / 1000;
+  assert.equal(again.status(), 200, "o refresh depois do Retry-After");
+  assert.ok(
+    waited >= limited.retryAfter - 1,
+    `o refresh saiu ${waited.toFixed(1)} s depois do 429, antes do Retry-After`,
+  );
+  await synced(page);
+  assert.ok(!page.url().includes("/login"), "a sessão voltou sem login");
+  ok(`refresh 200 ${waited.toFixed(1)} s depois do 429; sessão ativa e sincronizada`);
 
   console.log("\nCompose de produção: o app abre, entra e sincroniza pelo Caddy, na mesma origem.");
 } finally {
