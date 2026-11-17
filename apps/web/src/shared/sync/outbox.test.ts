@@ -12,7 +12,6 @@ import {
   RetryableSyncError,
   enqueue,
   outboxHeaders,
-  readRetryAfter,
   shouldRetry,
   syncFailure,
   waitRetryAfter,
@@ -86,21 +85,6 @@ describe("Retry-After", () => {
 
     expect(error).toBeInstanceOf(RetryableSyncError);
     expect((error as RetryableSyncError).retryAfterMs).toBe(2_000);
-  });
-
-  it("ausente, ilegível ou data HTTP → só o backoff do executor; acima de 60 s, 60 s", () => {
-    expect(readRetryAfter(new Response(null))).toBeUndefined();
-    expect(readRetryAfter(undefined)).toBeUndefined();
-    expect(
-      readRetryAfter(new Response(null, { headers: { "Retry-After": "dois" } })),
-    ).toBeUndefined();
-    expect(readRetryAfter(new Response(null, { headers: { "Retry-After": "-1" } }))).toBeUndefined();
-    expect(
-      readRetryAfter(
-        new Response(null, { headers: { "Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT" } }),
-      ),
-    ).toBeUndefined();
-    expect(readRetryAfter(new Response(null, { headers: { "Retry-After": "3600" } }))).toBe(60_000);
   });
 
   it("waitRetryAfter espera só quando há Retry-After", async () => {

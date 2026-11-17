@@ -11,6 +11,7 @@ import {
 
 import { readFailure } from "../api/client";
 import { type ApiFailure, type ReactionGroup, handleProblem } from "../api/problems";
+import { readRetryAfter } from "../api/retry-after";
 import { canSendAs, expireSession, renewAfterReconnect, sessionStore } from "../auth/session";
 import { newId } from "./ids";
 
@@ -64,16 +65,6 @@ export class RejectedSyncError extends NonRetriableError {
     super(`Envio recusado (${group})`);
     this.name = "RejectedSyncError";
   }
-}
-
-/** O teto do `Retry-After` que a outbox respeita: o mesmo do backoff do executor. */
-export const MAX_RETRY_AFTER_MS = 60_000;
-
-/** O `Retry-After` em segundos (backend.md, "Cabeçalhos"), em ms; ausente ou ilegível → `undefined`. */
-export function readRetryAfter(response?: Response): number | undefined {
-  const value = response?.headers.get("Retry-After")?.trim();
-  if (!value || !/^\d+$/.test(value)) return undefined;
-  return Math.min(Number(value) * 1000, MAX_RETRY_AFTER_MS);
 }
 
 /** Transforma o `{ error, response }` de uma chamada que falhou no erro que a mutationFn lança. */
