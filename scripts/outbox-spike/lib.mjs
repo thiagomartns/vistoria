@@ -37,6 +37,14 @@ export function serveDir(dir) {
   outDir = dir;
 }
 
+/**
+ * Fixa a origem do app (`base`) sem o `serve()`: o roteiro da V1 (#178) roda contra o compose de produção, onde o Caddy
+ * serve o static export e a API na mesma origem.
+ */
+export function useOrigin(origin) {
+  base = origin.replace(/\/$/, "");
+}
+
 /** Confere o build e a API, e serve o static export numa porta livre (`base`). */
 export async function serve() {
   if (!existsSync(join(outDir, "index.html"))) {
@@ -80,14 +88,14 @@ const CHAOS_INTERVAL_MS = 1500;
 /**
  * Com `PULL_CHAOS=1`, todo contexto troca o intervalo de 60 s do pull por 1,5 s: o roteiro inteiro roda com pulls caindo
  * em qualquer ponto, sem uma linha a mais no app (#144). Os passos que dependem de o aparelho não ter puxado seguram o
- * pull com `holdPull`.
+ * pull com `holdPull`. `args` vai para o Chrome (o roteiro da V1 passa o `--ignore-certificate-errors`).
  */
-export async function launch() {
+export async function launch({ args = [] } = {}) {
   let browser;
   try {
-    browser = await chromium.launch({ channel: "chrome" });
+    browser = await chromium.launch({ channel: "chrome", args });
   } catch {
-    browser = await chromium.launch();
+    browser = await chromium.launch({ args });
   }
   const chaos = Boolean(process.env.PULL_CHAOS);
   if (chaos) console.log(`PULL_CHAOS: o pull roda a cada ${CHAOS_INTERVAL_MS} ms`);
