@@ -216,7 +216,11 @@ try {
   await notebook.getByRole("heading", { level: 1, name: "Novo roteiro" }).waitFor();
   await notebook.getByLabel("Nome do roteiro").fill("Apartamento");
   for (const [index, [room, ...items]] of TEMPLATE.entries()) {
-    if (index > 0) await notebook.getByRole("button", { name: "Adicionar ambiente" }).click();
+    if (index > 0) {
+      // Desde o #200, "Adicionar ambiente" abre o Sheet dos ambientes prontos; "Ambiente vazio" é o de antes.
+      await notebook.getByRole("button", { name: "Adicionar ambiente" }).click();
+      await notebook.getByRole("dialog", { name: "Adicionar ambientes" }).getByRole("button", { name: "Ambiente vazio" }).click();
+    }
     await notebook.getByLabel("Nome do ambiente").fill(room);
     for (const item of items) {
       await notebook.getByRole("button", { name: "Adicionar item" }).click();

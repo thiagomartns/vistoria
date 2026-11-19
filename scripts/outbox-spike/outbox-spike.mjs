@@ -62,6 +62,11 @@
 // Desde o #175 o passo 12n busca a Rua da Conclusão na lista, sem acento, filtra as concluídas pelo Status (a URL guarda
 // os dois), abre o laudo de uma e volta para a lista filtrada; com Tipo "Saída", nada combina, e "Limpar filtros" volta
 // a lista inteira. Com SCREENS=1, os prints em `.screens/vistorias/`, com o Período aberto e o Sheet de filtros.
+// Desde o #200 o passo 12o monta um roteiro offline só com ambientes prontos: no desktop, Sala, dois Quartos e um
+// Banheiro pelo Sheet "Adicionar ambientes" (os Quartos entram como "Quarto 1" e "Quarto 2"); no celular, uma Varanda.
+// Recarregado em modo avião, segue; com a rede, o servidor tem os ambientes na ordem, com os itens do catálogo e ids
+// todos diferentes, e cada transação chega uma vez só. Com SCREENS=1, os prints em `.screens/roteiros/`, com o prefixo
+// `prontos-`.
 // Desde o #133 o passo 13 passa pelo aviso de outro usuário (Cancelar faz o signOut da Bia e mantém a fila da Ana), e o
 // passo 15 prova a limpeza no IndexedDB de verdade: Sair com pendência pelo Dialog e "Apagar e entrar" de outro usuário.
 
@@ -138,6 +143,19 @@ const shootReport = shooter(reportDir);
 // Os roteiros (#173), com SCREENS=1.
 const templatesDir = process.env.SCREENS ? resolve(process.env.INIT_CWD ?? root, ".screens/roteiros") : null;
 const shootTemplates = shooter(templatesDir);
+
+/**
+ * O Sheet "Adicionar ambientes" (#200) na largura de agora: o Radix fecha o Dialog quando a janela muda, então cada
+ * largura tira o seu.
+ */
+async function shootPicker(page, name) {
+  if (!templatesDir) return;
+  mkdirSync(templatesDir, { recursive: true });
+  await wait(400);
+  const width = page.viewportSize().width < 768 ? "celular" : "desktop";
+  await page.screenshot({ path: join(templatesDir, `prontos-${name}-${width}.png`) });
+  ok(`print prontos-${name} (${width})`);
+}
 // A Nova vistoria pelo roteiro (#174), com SCREENS=1.
 const newDir = process.env.SCREENS ? resolve(process.env.INIT_CWD ?? root, ".screens/nova-vistoria") : null;
 const shootNew = shooter(newDir);
@@ -1537,6 +1555,8 @@ try {
   await addItems("Piso", "Teto");
   for (const [room, ...things] of [["Cozinha", "Pia"], ["Banheiro", "Box", "Ralo"]]) {
     await page.getByRole("button", { name: "Adicionar ambiente" }).click();
+    // Desde o #200, "Adicionar ambiente" abre o Sheet dos ambientes prontos; "Ambiente vazio" é o de antes.
+    await page.getByRole("dialog", { name: "Adicionar ambientes" }).getByRole("button", { name: "Ambiente vazio" }).click();
     await page.getByLabel("Nome do ambiente").fill(room);
     await addItems(...things);
   }
@@ -1852,6 +1872,88 @@ try {
   assert.equal(await search.inputValue(), "", "a busca limpa");
   assert.equal(new URL(page.url()).search, "", "a URL sem filtros");
   ok("Saída não deixa nenhuma: \"Nenhuma vistoria encontrada\", e \"Limpar filtros\" volta a lista inteira");
+  await goTo(page, "Clientes");
+
+  step("12o", "Ambientes prontos (#200): offline, um roteiro só com prontos, no desktop e no celular; recarregado, segue; com a rede, chega com os itens do catálogo e ids novos");
+  await context.setOffline(true);
+  await page.getByText("Você está offline").waitFor();
+  await goTo(page, "Roteiros");
+  await page.getByRole("link", { name: "Novo roteiro" }).first().click();
+  await page.getByRole("heading", { level: 1, name: "Novo roteiro" }).waitFor();
+  await page.getByLabel("Nome do roteiro").fill("Roteiro pronto");
+  // O roteiro novo começa com um ambiente vazio; sem itens, ele sai direto.
+  await page.getByRole("button", { name: "Remover ambiente" }).click();
+  await page.getByText("Adicione um ambiente para incluir itens.").waitFor();
+  const picker = page.getByRole("dialog", { name: "Adicionar ambientes" });
+  const plusRoom = (name) => picker.getByRole("button", { name: `Somar ${name}`, exact: true });
+  await page.getByRole("button", { name: "Adicionar ambiente" }).click();
+  await picker.getByText("Escolha quantos de cada. Cabem mais 40 neste roteiro.").waitFor();
+  assert.equal(await picker.getByRole("button", { name: "Adicionar ambientes" }).isDisabled(), true, "sem escolha, o botão desabilita");
+  await shootPicker(page, "vazio");
+  for (const name of ["Quarto", "Sala", "Quarto", "Banheiro"]) await plusRoom(name).click();
+  await picker.getByText("4 escolhidos").waitFor();
+  await shootPicker(page, "escolhidos");
+  await picker.getByRole("button", { name: "Adicionar 4 ambientes" }).click();
+  await picker.waitFor({ state: "hidden" });
+  assert.deepEqual(await sortableOrder(page, "Ambientes"), ["Sala", "Quarto 1", "Quarto 2", "Banheiro"], "na ordem do catálogo, numerados");
+  assert.equal(await page.getByLabel("Nome do ambiente").inputValue(), "Sala", "o primeiro novo aberto");
+  await shootTemplates(page, "prontos-editor");
+  await page.getByRole("button", { name: "Salvar roteiro" }).click();
+  await page.getByRole("heading", { level: 1, name: "Roteiros" }).waitFor();
+  const readyRow = page.getByRole("row", { name: /Roteiro pronto/ });
+  await readyRow.getByText("Salvo no aparelho").waitFor();
+  const readyId = new URL(await readyRow.getByRole("link").getAttribute("href"), "http://x").searchParams.get("id");
+  ok("desktop, offline: Sala, \"Quarto 1\", \"Quarto 2\" e Banheiro pelo Sheet, sem digitar nenhum item");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("link", { name: /Roteiro pronto/ }).locator("visible=true").first().click();
+  await page.getByRole("heading", { level: 1, name: "Roteiro pronto" }).waitFor();
+  await page.getByRole("button", { name: "Adicionar ambiente" }).click();
+  await picker.getByText("Escolha quantos de cada. Cabem mais 36 neste roteiro.").waitFor();
+  await plusRoom("Varanda").click();
+  await shootPicker(page, "escolhidos");
+  await picker.getByRole("button", { name: "Adicionar 1 ambiente" }).click();
+  await picker.waitFor({ state: "hidden" });
+  // No celular, a tela segue nos ambientes.
+  await page.getByRole("heading", { level: 1, name: "Roteiro pronto" }).waitFor();
+  assert.deepEqual(await sortableOrder(page, "Ambientes"), ["Sala", "Quarto 1", "Quarto 2", "Banheiro", "Varanda"]);
+  await shootTemplates(page, "prontos-editor-ambientes");
+  await page.getByRole("button", { name: "Salvar roteiro" }).click();
+  await page.getByRole("heading", { level: 1, name: "Roteiros" }).waitFor();
+  await page.reload();
+  await page.getByRole("heading", { level: 1, name: "Roteiros" }).waitFor();
+  await page.getByRole("link", { name: /Roteiro pronto/ }).locator("visible=true").first().waitFor();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await readyRow.getByText("Salvo no aparelho").waitFor();
+  assert.equal((await serverTemplate(user, readyId)).status, 404, "o roteiro pronto não pode estar no servidor ainda");
+  ok("no celular, a Varanda entra no fim e a tela segue nos ambientes; recarregado em modo avião, segue \"Salvo no aparelho\"");
+
+  const readySentFrom = Date.now();
+  await context.setOffline(false);
+  await until(async () => (await outboxCount(page, user)) === 0, "o roteiro pronto sai quando a rede volta", 90_000);
+  const sentReady = (await serverTemplate(user, readyId)).body;
+  const quarto = ["Piso", "Paredes", "Teto", "Porta", "Janela", "Armário"];
+  assert.deepEqual(
+    sentReady.rooms.map((room) => [room.name, room.position, room.items.map((thing) => thing.name)]),
+    [
+      ["Sala", 0, ["Piso", "Paredes", "Teto", "Portas", "Janelas", "Iluminação", "Tomadas e interruptores"]],
+      ["Quarto 1", 1, quarto],
+      ["Quarto 2", 2, quarto],
+      ["Banheiro", 3, ["Piso", "Paredes", "Teto", "Vaso sanitário", "Pia e torneira", "Box e chuveiro"]],
+      ["Varanda", 4, ["Piso", "Paredes", "Teto", "Guarda-corpo", "Porta"]],
+    ],
+    "o servidor tem os prontos na ordem, com os itens do catálogo",
+  );
+  const readyIds = sentReady.rooms.flatMap((room) => [room.id, ...room.items.map((thing) => thing.id)]);
+  assert.equal(new Set(readyIds).size, readyIds.length, "ids todos diferentes, inclusive entre os dois Quartos");
+  const readyKeys = puts
+    .filter((put) => put.entity === "templates" && put.at >= readySentFrom)
+    .filter(succeeded)
+    .map((put) => put.key);
+  assert.ok(readyKeys.length >= 1, "o roteiro pronto chega por PUT");
+  assert.equal(new Set(readyKeys).size, readyKeys.length, "cada transação chega uma vez só");
+  await readyRow.getByText("Salvo no aparelho").waitFor({ state: "hidden" });
+  ok(`a rede volta: o roteiro pronto chega em ${readyKeys.length} PUT, cada chave uma vez, com ${readyIds.length} ids diferentes`);
   await goTo(page, "Clientes");
 
   step(13, "Outro usuário entra: a fila do anterior não sai com a conta dele");
