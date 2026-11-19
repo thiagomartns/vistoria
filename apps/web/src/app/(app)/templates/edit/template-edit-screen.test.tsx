@@ -103,6 +103,12 @@ const itemValues = () =>
     .getAllByRole("textbox")
     .map((input) => (input as HTMLInputElement).value);
 const saved = () => vi.mocked(saveTemplate).mock.calls[0]?.[1];
+/** O Sheet "Adicionar ambientes" (#200). */
+const picker = () => screen.getByRole("dialog", { name: "Adicionar ambientes" });
+const plus = (name: string) =>
+  within(picker()).getByRole("button", { name: `Somar ${name}` }) as HTMLButtonElement;
+const minus = (name: string) =>
+  within(picker()).getByRole("button", { name: `Tirar ${name}` }) as HTMLButtonElement;
 
 afterEach(() => {
   local.value = { store: {}, ready: true, templates: [], drafts: [], states: new Map() };
@@ -183,12 +189,14 @@ describe("TemplateEditScreen · novo", () => {
     });
   });
 
-  it("Adicionar ambiente cria um vazio e abre o nome dele", async () => {
+  it("Adicionar ambiente → Ambiente vazio: cria um vazio e abre o nome dele, como antes do #200", async () => {
     const user = userEvent.setup();
     open(null);
 
     await user.click(screen.getByRole("button", { name: "Adicionar ambiente" }));
+    await user.click(within(picker()).getByRole("button", { name: "Ambiente vazio" }));
 
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(heading().textContent).toBe("Ambiente sem nome");
     expect(document.activeElement).toBe(field("Nome do ambiente"));
     await user.click(within(header()).getByRole("button", { name: "Voltar" }));
@@ -339,6 +347,94 @@ describe("TemplateEditScreen · edição", () => {
   });
 });
 
+describe("TemplateEditScreen · ambientes prontos (#200)", () => {
+  it("Sala e dois Quartos entram no fim, com os itens do catálogo e ids novos; a Sala continua a contagem", async () => {
+    const user = userEvent.setup();
+    open("t1", { templates: [apartamento] });
+
+    await user.click(screen.getByRole("button", { name: "Adicionar ambiente" }));
+    expect(within(picker()).getByText("Escolha quantos de cada. Cabem mais 37 neste roteiro.")).toBeDefined();
+    expect(within(picker()).getByText("Nenhum escolhido")).toBeDefined();
+    expect(
+      (within(picker()).getByRole("button", { name: "Adicionar ambientes" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(minus("Sala").disabled).toBe(true);
+    expect(within(picker()).getByText("7 itens · Piso, Paredes, Teto e mais 4")).toBeDefined();
+
+    await user.click(plus("Sala"));
+    await user.click(plus("Quarto"));
+    await user.click(plus("Quarto"));
+    await user.click(plus("Banheiro"));
+    await user.click(minus("Banheiro"));
+    expect(within(picker()).getByText("3 escolhidos")).toBeDefined();
+    await user.click(within(picker()).getByRole("button", { name: "Adicionar 3 ambientes" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // No celular, a tela segue nos ambientes, para ver o que entrou.
+    expect(heading().textContent).toBe("Apartamento");
+    expect(roomDetails()).toEqual([
+      "Sala3 itens",
+      "Cozinha2 itens",
+      "Varanda0 itens",
+      "Sala 27 itens",
+      "Quarto 16 itens",
+      "Quarto 26 itens",
+    ]);
+    expect(screen.getByText("6 de 40")).toBeDefined();
+
+    await user.click(screen.getByRole("button", { name: "Salvar roteiro" }));
+    const rooms = saved()?.rooms ?? [];
+    expect(rooms.slice(3).map((room) => [room.name, room.items.map((item) => item.name)])).toEqual([
+      ["Sala 2", ["Piso", "Paredes", "Teto", "Portas", "Janelas", "Iluminação", "Tomadas e interruptores"]],
+      ["Quarto 1", ["Piso", "Paredes", "Teto", "Porta", "Janela", "Armário"]],
+      ["Quarto 2", ["Piso", "Paredes", "Teto", "Porta", "Janela", "Armário"]],
+    ]);
+    const ids = rooms.flatMap((room) => [room.id, ...room.items.map((item) => item.id)]);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(rooms.map((room) => room.position)).toEqual([0, 1, 2, 3, 4, 5]);
+  });
+
+  it("fechar sem adicionar não muda nada, e a escolha recomeça do zero", async () => {
+    const user = userEvent.setup();
+    open("t1", { templates: [apartamento] });
+
+    await user.click(screen.getByRole("button", { name: "Adicionar ambiente" }));
+    await user.click(plus("Cozinha"));
+    await user.click(within(picker()).getByRole("button", { name: "Fechar" }));
+    expect(roomDetails()).toHaveLength(3);
+
+    await user.click(screen.getByRole("button", { name: "Adicionar ambiente" }));
+    expect(within(picker()).getByText("Nenhum escolhido")).toBeDefined();
+  });
+
+  it("com 38 ambientes, cabem mais 2: depois de dois, os + desabilitam e o aviso do limite aparece", async () => {
+    const user = userEvent.setup();
+    const many = Array.from({ length: 38 }, (_, index) => ({
+      id: `r${index}`,
+      name: `Ambiente ${index + 1}`,
+      position: index,
+      items: [],
+    }));
+    open("t1", { templates: [{ ...apartamento, rooms: many }] });
+
+    await user.click(screen.getByRole("button", { name: "Adicionar ambiente" }));
+    expect(within(picker()).getByText("Escolha quantos de cada. Cabem mais 2 neste roteiro.")).toBeDefined();
+    await user.click(plus("Quarto"));
+    expect(plus("Sala").disabled).toBe(false);
+    await user.click(plus("Quarto"));
+
+    expect(within(picker()).getAllByRole("button", { name: /^Somar / }).every((b) => (b as HTMLButtonElement).disabled)).toBe(true);
+    expect(within(picker()).getByText("O roteiro pode ter até 40 ambientes.")).toBeDefined();
+    await user.click(within(picker()).getByRole("button", { name: "Adicionar 2 ambientes" }));
+
+    expect(screen.getByText("40 de 40")).toBeDefined();
+    expect(
+      (screen.getByRole("button", { name: "Adicionar ambiente" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+});
+
 describe("TemplateEditScreen · tablet (768 px)", () => {
   beforeEach(viewport(768));
 
@@ -380,7 +476,9 @@ describe("TemplateEditScreen · desktop", () => {
     open("t1", { templates: [apartamento] });
 
     await user.click(screen.getByRole("button", { name: "Adicionar ambiente" }));
+    await user.click(within(picker()).getByRole("button", { name: "Ambiente vazio" }));
     expect(field("Nome do ambiente").value).toBe("");
+    expect(document.activeElement).toBe(field("Nome do ambiente"));
     await user.type(field("Nome do ambiente"), "Lavanderia");
 
     expect(roomDetails()).toEqual([

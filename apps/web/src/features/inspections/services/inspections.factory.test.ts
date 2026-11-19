@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 
+import { ROOM_CATALOG } from "@/features/templates/models/room-catalog";
 import type { TemplateRoom } from "@/features/templates/models/template";
 
 import type { InspectionRecord } from "../models/inspection";
@@ -28,6 +29,12 @@ describe("DEFAULT_TEMPLATE", () => {
         expect(name.length).toBeGreaterThanOrEqual(1);
         expect(name.length).toBeLessThanOrEqual(60);
       }
+    }
+  });
+
+  it("vem do catálogo de ambientes prontos (#200): cada ambiente é o mesmo objeto do ROOM_CATALOG", () => {
+    for (const room of DEFAULT_TEMPLATE) {
+      expect(ROOM_CATALOG).toContain(room);
     }
   });
 });

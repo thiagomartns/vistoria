@@ -22,6 +22,7 @@ import {
   templateErrors,
   templateFormSchema,
 } from "../schemas/template.schemas";
+import { type RoomChoice, catalogRoomViews, roomsFromCatalog } from "../services/room-catalog";
 import { fetchTemplate, saveTemplate, templateConflictHref } from "../services/templates.sync";
 import { type TemplateRow, itemsLabel, templateRowOf } from "../services/templates.view";
 
@@ -178,6 +179,8 @@ export function useTemplateForm(id: string | null) {
   const [open, setOpen] = useState(false);
   // O ambiente com itens esperando a confirmação para sair.
   const [removalId, setRemovalId] = useState<string | null>(null);
+  // O Sheet "Adicionar ambientes" (#200): "Ambiente vazio" ou ambientes prontos.
+  const [picking, setPicking] = useState(false);
   // O ambiente recém-criado, cujo nome ganha o foco assim que o campo aparece.
   const focusId = useRef<string | null>(null);
 
@@ -212,13 +215,37 @@ export function useTemplateForm(id: string | null) {
     setOpen(true);
   }
 
+  /** Abre o Sheet "Adicionar ambientes"; no limite, nada. */
   function addRoom() {
+    if (rooms.length < ROOMS_MAX) setPicking(true);
+  }
+
+  /** "Ambiente vazio": o de antes do #200, um ambiente sem itens, aberto, com o nome em foco. */
+  function addEmptyRoom() {
+    setPicking(false);
     if (rooms.length >= ROOMS_MAX) return;
     const room = newRoom();
     roomList.append(room, { shouldFocus: false });
     setSelectedId(room.roomId);
     focusId.current = room.roomId;
     setOpen(true);
+  }
+
+  /**
+   * Os ambientes prontos escolhidos entram no fim, com ids novos, até o limite; o primeiro deles fica selecionado (no
+   * celular, a tela segue nos ambientes, para ver o que entrou).
+   */
+  function addReadyRooms(choices: RoomChoice[]) {
+    setPicking(false);
+    const added = roomsFromCatalog(
+      choices,
+      rooms.map((room) => room.name),
+      ROOMS_MAX - rooms.length,
+    );
+    if (added.length === 0) return;
+    roomList.append(added, { shouldFocus: false });
+    setSelectedId(added[0]?.roomId ?? null);
+    setOpen(false);
   }
 
   function removeRoom(index: number) {
@@ -275,6 +302,16 @@ export function useTemplateForm(id: string | null) {
     /** Celular: volta aos ambientes, sem perder o que foi digitado. */
     close: () => setOpen(false),
     addRoom,
+    /** O Sheet "Adicionar ambientes": "Ambiente vazio" e os prontos, com quantos ainda cabem. */
+    picker: {
+      open: picking,
+      onOpenChange: setPicking,
+      rooms: catalogRoomViews(),
+      left: ROOMS_MAX - rooms.length,
+      max: ROOMS_MAX,
+      onEmpty: addEmptyRoom,
+      onAdd: addReadyRooms,
+    },
     moveRoom: (from: number, to: number) => {
       // O aberto é o primeiro quando nada foi escolhido: fixa o id antes de mover, para ele seguir aberto.
       setSelectedId(rooms[selected]?.roomId ?? null);

@@ -3,6 +3,7 @@
 import { useSearchParams } from "next/navigation";
 
 import { RemoveRoomDialog } from "@/features/templates/components/remove-room-dialog";
+import { RoomPicker } from "@/features/templates/components/room-picker";
 import { TemplateForm } from "@/features/templates/components/template-form";
 import { TEMPLATES_HREF, useTemplateForm } from "@/features/templates/hooks/useTemplateForm";
 import { ConflictNotice } from "@/shared/components/conflict-notice";
@@ -11,7 +12,7 @@ import { useIsLarge } from "@/shared/useIsDesktop";
 
 import { PageHeader } from "../../shell-header";
 
-// /templates/edit (Figma "Roteiros (#173)", estados 3 a 8): a mesma tela para novo (sem `id`, "Novo roteiro") e
+// /templates/edit (Figma "Roteiros (#173)", estados 3 a 8, e "Ambientes prontos (#200)", o Sheet de "Adicionar ambiente"): a mesma tela para novo (sem `id`, "Novo roteiro") e
 // edição. A partir de 1024 px, dois painéis; abaixo, dois níveis na mesma rota (no tablet, os dois painéis não cabem,
 // #208): no segundo, o cabeçalho mostra o ambiente e o "Voltar" volta aos ambientes sem navegar. Em conflito, o aviso com "Resolver conflito" acima do formulário. Um id
 // que o aparelho não tem é buscado no servidor; sem rede, não encontrado ou com falha, o aviso toma o lugar do editor.
@@ -52,6 +53,7 @@ export function TemplateEditScreen() {
             rejection={inRoom ? null : editor.rejection}
             cancelHref={TEMPLATES_HREF}
           />
+          <RoomPicker {...editor.picker} />
           <RemoveRoomDialog
             room={editor.removal}
             onConfirm={editor.confirmRemoval}
