@@ -11,6 +11,7 @@ import {
 } from "@sanjou/ui/form";
 import { Input } from "@sanjou/ui/input";
 import { CircleAlert } from "lucide-react";
+import { MaskedInput } from "@/shared/components/masked-input";
 import Link from "next/link";
 import type { FormEventHandler } from "react";
 import type { Control, UseFormReturn } from "react-hook-form";
@@ -23,6 +24,8 @@ export type ClientFormFields = { name: string; document: string; email: string; 
 type ClientFormProps<TOutput> = {
   form: UseFormReturn<ClientFormFields, unknown, TOutput>;
   onSubmit: FormEventHandler<HTMLFormElement>;
+  /** A máscara ao digitar de cada campo que tem uma (documento e telefone); o valor sai mascarado, e o schema a tira ao salvar. */
+  masks?: Partial<Record<keyof ClientFormFields, (raw: string) => string>>;
   /** Erro do formulário inteiro (recusa do servidor sem campo); o de campo vai no próprio campo. */
   error: string | null;
   cancelHref: string;
@@ -45,12 +48,13 @@ const FIELDS: FieldSpec[] = [
     input: { autoComplete: "off", autoCapitalize: "characters", spellCheck: false },
   },
   { name: "email", label: "E-mail", input: { type: "email", autoComplete: "off" } },
-  { name: "phone", label: "Telefone", input: { type: "tel", autoComplete: "off" } },
+  { name: "phone", label: "Telefone", input: { type: "tel", inputMode: "tel", autoComplete: "off" } },
 ];
 
 export function ClientForm<TOutput>({
   form,
   onSubmit,
+  masks = {},
   error,
   cancelHref,
   disabled,
@@ -67,7 +71,7 @@ export function ClientForm<TOutput>({
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : null}
-        {FIELDS.map((spec) => (
+        {FIELDS.map((field) => ({ ...field, mask: masks[field.name] })).map((spec) => (
           <FormField
             key={spec.name}
             control={control}
@@ -76,7 +80,11 @@ export function ClientForm<TOutput>({
               <FormItem>
                 <FormLabel>{spec.label}</FormLabel>
                 <FormControl>
-                  <Input {...spec.input} {...field} />
+                  {spec.mask ? (
+                    <MaskedInput {...spec.input} {...field} mask={spec.mask} />
+                  ) : (
+                    <Input {...spec.input} {...field} />
+                  )}
                 </FormControl>
                 {spec.description ? <FormDescription>{spec.description}</FormDescription> : null}
                 <FormMessage />

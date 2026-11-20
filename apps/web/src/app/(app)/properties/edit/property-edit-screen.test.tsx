@@ -214,6 +214,20 @@ describe("PropertyEditScreen", () => {
     });
   });
 
+  it("novo: o CEP digitado sem hífen ganha a máscara e sai sem ela", async () => {
+    const user = userEvent.setup();
+    open(null);
+
+    await fill(user);
+    await user.clear(field("CEP"));
+    await user.type(field("CEP"), "01400000");
+    expect(field("CEP").value).toBe("01400-000");
+    await user.click(screen.getByRole("button", { name: "Salvar" }));
+
+    await vi.waitFor(() => expect(saveProperty).toHaveBeenCalledOnce());
+    expect(vi.mocked(saveProperty).mock.calls[0]?.[1]).toMatchObject({ zipCode: "01400000" });
+  });
+
   it("edição: o registro no formulário (CEP com hífen) e o endereço no título", () => {
     open("p1", { properties: [flores] });
 

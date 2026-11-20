@@ -13,6 +13,7 @@ import { Input } from "@sanjou/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@sanjou/ui/select";
 import { Textarea } from "@sanjou/ui/textarea";
 import { CircleAlert } from "lucide-react";
+import { MaskedInput } from "@/shared/components/masked-input";
 import Link from "next/link";
 import type { ComponentProps, FormEventHandler, ReactNode } from "react";
 import type { Control, UseFormReturn } from "react-hook-form";
@@ -44,6 +45,8 @@ type PropertyFormProps<TOutput> = {
   onSubmit: FormEventHandler<HTMLFormElement>;
   clientOptions: Option[];
   typeOptions: Option[];
+  /** A máscara ao digitar de cada campo que tem uma (o CEP); o valor sai mascarado, e o schema a tira ao salvar. */
+  masks?: Partial<Record<TextName, (raw: string) => string>>;
   /** Para cadastrar um cliente quando o aparelho não tem nenhum. */
   newClientHref: string;
   /** Erro do formulário inteiro (recusa do servidor sem campo); o de campo vai no próprio campo. */
@@ -58,6 +61,7 @@ export function PropertyForm<TOutput>({
   onSubmit,
   clientOptions,
   typeOptions,
+  masks = {},
   newClientHref,
   error,
   cancelHref,
@@ -79,7 +83,11 @@ export function PropertyForm<TOutput>({
         <FormItem className={className}>
           <FormLabel>{label}</FormLabel>
           <FormControl>
-            <Input autoComplete="off" {...input} {...field} />
+            {masks[name] ? (
+              <MaskedInput autoComplete="off" {...input} {...field} mask={masks[name]} />
+            ) : (
+              <Input autoComplete="off" {...input} {...field} />
+            )}
           </FormControl>
           <FormMessage />
         </FormItem>

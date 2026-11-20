@@ -16,7 +16,7 @@ import { PageHeader } from "../../shell-header";
 
 export function ClientEditScreen() {
   const id = useSearchParams().get("id");
-  const { status, unavailable, title, sync, form, onSubmit, formError, conflict } =
+  const { status, unavailable, title, sync, form, onSubmit, masks, formError, conflict } =
     useClientForm(id);
 
   return (
@@ -27,7 +27,13 @@ export function ClientEditScreen() {
       ) : status === "loading" ? null : (
         <div className="flex flex-col gap-5">
           {conflict ? <ConflictNotice {...conflict} className="md:max-w-[560px]" /> : null}
-          <ClientForm form={form} onSubmit={onSubmit} error={formError} cancelHref={CLIENTS_HREF} />
+          <ClientForm
+            form={form}
+            onSubmit={onSubmit}
+            masks={masks}
+            error={formError}
+            cancelHref={CLIENTS_HREF}
+          />
         </div>
       )}
     </>

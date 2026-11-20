@@ -135,6 +135,60 @@ describe("ClientEditScreen", () => {
     });
   });
 
+  it("novo: digitar sem máscara mostra com máscara, e a outbox recebe o documento e o telefone sem ela", async () => {
+    const user = userEvent.setup();
+    open(null);
+
+    await user.type(field("Nome"), "Maria Souza");
+    await user.type(field("CPF ou CNPJ"), "12abc34501de35");
+    await user.type(field("Telefone"), "71999990000");
+
+    expect(field("CPF ou CNPJ").value).toBe("12.ABC.345/01DE-35");
+    expect(field("Telefone").value).toBe("(71) 99999-0000");
+    await user.click(screen.getByRole("button", { name: "Salvar" }));
+
+    await vi.waitFor(() => expect(saveClient).toHaveBeenCalledOnce());
+    expect(vi.mocked(saveClient).mock.calls[0]?.[1]).toMatchObject({
+      document: "12ABC34501DE35",
+      phone: "71999990000",
+    });
+  });
+
+  it("novo: colar o telefone com o +55 dá o mesmo que digitar", async () => {
+    const user = userEvent.setup();
+    open(null);
+
+    await user.type(field("Nome"), "Maria Souza");
+    await user.click(field("Telefone"));
+    await user.paste("+55 (71) 3333-0000");
+
+    expect(field("Telefone").value).toBe("(71) 3333-0000");
+    await user.click(screen.getByRole("button", { name: "Salvar" }));
+    await vi.waitFor(() => expect(saveClient).toHaveBeenCalledOnce());
+    expect(vi.mocked(saveClient).mock.calls[0]?.[1]).toMatchObject({ phone: "7133330000" });
+  });
+
+  it("novo: o telefone fora da regra não sai do aparelho", async () => {
+    const user = userEvent.setup();
+    open(null);
+
+    await user.type(field("Nome"), "Maria Souza");
+    await user.type(field("Telefone"), "7199990000");
+    await user.click(screen.getByRole("button", { name: "Salvar" }));
+
+    expect(
+      await screen.findByText("Informe o telefone com DDD: 10 dígitos (fixo) ou 11 (celular)."),
+    ).toBeDefined();
+    expect(saveClient).not.toHaveBeenCalled();
+  });
+
+  it("edição: o telefone salvo sem máscara abre com ela", () => {
+    open("c2", { clients: [{ ...maria, phone: "11987654321" }] });
+
+    expect(field("Telefone").value).toBe("(11) 98765-4321");
+    expect(field("CPF ou CNPJ").value).toBe("529.982.247-25");
+  });
+
   it("edição: o registro no formulário e no título; sincronizado aparece no cabeçalho", () => {
     open("c2", { clients: [maria] });
 
@@ -173,7 +227,7 @@ describe("ClientEditScreen", () => {
     expect(vi.mocked(saveClient).mock.calls[0]?.[1]).toMatchObject({
       id: "c2",
       name: "Maria S. Souza",
-      phone: "(11) 95555-6666",
+      phone: "11955556666",
     });
   });
 
@@ -317,7 +371,7 @@ describe("ClientEditScreen", () => {
       await user.click(screen.getByRole("button", { name: "Salvar" }));
 
       await vi.waitFor(() => expect(saveClient).toHaveBeenCalledOnce());
-      expect(vi.mocked(saveClient).mock.calls[0]?.[1]).toMatchObject({ id: "c2", phone: "(11) 95555-6666" });
+      expect(vi.mocked(saveClient).mock.calls[0]?.[1]).toMatchObject({ id: "c2", phone: "11955556666" });
       expect(navigation.push).toHaveBeenCalledWith("/clients/conflict?id=c2");
     });
 

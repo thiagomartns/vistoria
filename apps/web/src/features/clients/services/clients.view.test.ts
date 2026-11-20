@@ -63,8 +63,9 @@ describe("estado de sync de um client", () => {
 
 describe("clientRows", () => {
   const alfa = client("Imobiliária Alfa", { document: "11222333000181", email: "contato@alfa.com" });
-  const beta = client("beta Imóveis", { email: "vistorias@beta.com.br" });
-  const lar = client("Lar Imóveis", { document: "52998224725" });
+  const beta = client("beta Imóveis", { email: "vistorias@beta.com.br", phone: "71999990000" });
+  // O telefone de antes da regra, com máscara, que a migração não converteu (ADR 0063).
+  const lar = client("Lar Imóveis", { document: "52998224725", phone: "(11) 3456-7890" });
 
   it("ordem alfabética, sem caixa nem acento", () => {
     const rows = clientRows([lar, beta, alfa], [], states());
@@ -103,6 +104,10 @@ describe("clientRows", () => {
     ["documento com máscara", "529.982", ["Lar Imóveis"]],
     ["documento sem máscara", "112223", ["Imobiliária Alfa"]],
     ["e-mail", "beta.com", ["beta Imóveis"]],
+    ["telefone com máscara", "(71) 99999", ["beta Imóveis"]],
+    ["telefone sem máscara", "999990000", ["beta Imóveis"]],
+    ["telefone de antes da regra, sem máscara", "34567890", ["Lar Imóveis"]],
+    ["telefone de antes da regra, com outra máscara", "3456-7890", ["Lar Imóveis"]],
     ["vazio", "  ", ["beta Imóveis", "Imobiliária Alfa", "Lar Imóveis"]],
     ["sem resultado", "zzz", []],
   ])("busca por %s", (_, search, names) => {

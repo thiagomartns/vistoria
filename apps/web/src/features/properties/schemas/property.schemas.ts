@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { zPropertyType, zUpsertPropertyDto } from "@/shared/api/generated/zod.gen";
+import { digitsOf, fillPattern } from "@/shared/mask";
 
 import type { PropertyType } from "../models/property";
 
@@ -31,6 +32,11 @@ export const TYPE_OPTIONS = (Object.entries(PROPERTY_TYPES) as [PropertyType, st
 /** O CEP como a API guarda: sem hífen, ponto e espaços. */
 export function stripZipCode(value: string): string {
   return value.replace(/[.\-\s]/g, "");
+}
+
+/** Máscara ao digitar (ADR 0063): 00000-000, só dígitos e no máximo 8. */
+export function maskZipCode(raw: string): string {
+  return fillPattern(digitsOf(raw).slice(0, 8), "00000-000");
 }
 
 /** Máscara de exibição: 01400-000. O que não tiver 8 dígitos sai como está. */

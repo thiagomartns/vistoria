@@ -38,12 +38,12 @@ const client = (id: string, name: string, over: Partial<ClientRecord> = {}): Cli
 const horizonte = client("c1", "Imobiliária Horizonte", {
   document: "11222333000181",
   email: "contato@horizonte.com.br",
-  phone: "(11) 3456-7890",
+  phone: "1134567890",
 });
 const maria = client("c2", "Maria Souza", {
   version: null,
   document: "52998224725",
-  phone: "(11) 98765-4321",
+  phone: "11987654321",
 });
 
 function seed(over: Partial<typeof local.value>) {
@@ -83,7 +83,7 @@ describe("ClientsScreen", () => {
     expect(screen.queryByRole("table")).toBeNull();
   });
 
-  it("lista em ordem alfabética, documento com máscara, linha leva à edição", () => {
+  it("lista em ordem alfabética, documento e telefone com máscara, linha leva à edição", () => {
     seed({ clients: [maria, horizonte] });
 
     render(<ClientsScreen />);
@@ -94,6 +94,8 @@ describe("ClientsScreen", () => {
       "Maria Souza",
     ]);
     expect(rows[0]?.textContent).toContain("11.222.333/0001-81");
+    expect(rows[0]?.textContent).toContain("(11) 3456-7890");
+    expect(rows[1]?.textContent).toContain("(11) 98765-4321");
     expect(within(rows[1]!).getByRole("link", { name: "Maria Souza" }).getAttribute("href")).toBe(
       "/clients/edit?id=c2",
     );
@@ -173,7 +175,7 @@ describe("ClientsScreen", () => {
     expect(within(gamaRow).getByText("Correção necessária")).toBeDefined();
   });
 
-  it("busca local por nome, documento e e-mail; sem resultado, o EmptyState da busca", async () => {
+  it("busca local por nome, documento, telefone e e-mail; sem resultado, o EmptyState da busca", async () => {
     seed({ clients: [horizonte, maria] });
     const user = userEvent.setup();
     render(<ClientsScreen />);
@@ -182,6 +184,16 @@ describe("ClientsScreen", () => {
     await user.type(search, "529.982");
     expect(within(table()).getAllByRole("row")).toHaveLength(2);
     expect(table().textContent).toContain("Maria Souza");
+
+    await user.clear(search);
+    await user.type(search, "(11) 98765");
+    expect(table().textContent).toContain("Maria Souza");
+    expect(table().textContent).not.toContain("Imobiliária Horizonte");
+
+    await user.clear(search);
+    await user.type(search, "34567890");
+    expect(table().textContent).toContain("Imobiliária Horizonte");
+    expect(table().textContent).not.toContain("Maria Souza");
 
     await user.clear(search);
     await user.type(search, "horizonte.com");

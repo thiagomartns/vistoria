@@ -43,6 +43,7 @@ export function PropertyEditScreen() {
     typeOptions,
     formError,
     conflict,
+    masks,
   } = usePropertyForm(id);
   const history = usePropertyHistory(status === "found" ? id : null);
 
@@ -54,6 +55,7 @@ export function PropertyEditScreen() {
         onSubmit={onSubmit}
         clientOptions={clientOptions}
         typeOptions={typeOptions}
+        masks={masks}
         newClientHref={NEW_CLIENT_HREF}
         error={formError}
         cancelHref={PROPERTIES_HREF}
