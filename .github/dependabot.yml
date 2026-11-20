@@ -42,6 +42,14 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    # A major dos pacotes da Microsoft e do dotnet-ef acompanha a do runtime (TargetFramework em
+    # Directory.Build.props) e sobe junto com ele, à mão: a 11 do ApiDescription.Server só traz o
+    # GetDocument para net11.0 e quebra a geração do openapi.json no net10.0 (#219).
+    ignore:
+      - dependency-name: "Microsoft.*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "dotnet-ef"
+        update-types: ["version-update:semver-major"]
     groups:
       nuget:
         patterns: ["*"]
