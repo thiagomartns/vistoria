@@ -82,6 +82,20 @@ export function tableProblems(table, { width, columns }) {
 }
 
 /**
+ * A rolagem da tabela de uma lista, a partir de `lg` (#222): rolando o `main` até o fim, a última linha aparece, e com a
+ * lista rolada o cabeçalho fica no topo dele. `measure`: `{ rows, lastRowVisible, headerPinned }`, com `rows` as linhas
+ * da tabela, `headerPinned` null quando a lista não rola (cabe na tela, sem o que prender).
+ */
+export function scrollProblems(measure) {
+  const problems = [];
+  if (!measure.lastRowVisible) {
+    problems.push(`a última das ${measure.rows} linhas da tabela não fica visível rolando até o fim`);
+  }
+  if (measure.headerPinned === false) problems.push("o cabeçalho da tabela não fica no topo com a lista rolada");
+  return problems;
+}
+
+/**
  * A tela de campo: o trilho de ambientes (layout de desktop) só com a StepperForm a partir de `STEPPER_WIDE`, e nenhum
  * chip de condição cortado. `measure`: `{ stepper, rail, truncatedChips: [text] }`, com `stepper` a largura da
  * StepperForm e `rail` se os ambientes estão em coluna.

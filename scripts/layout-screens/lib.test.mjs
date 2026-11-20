@@ -8,6 +8,7 @@ import {
   listProblems,
   overflowProblems,
   screenName,
+  scrollProblems,
   tableProblems,
 } from "./lib.mjs";
 
@@ -85,6 +86,25 @@ describe("tableProblems", () => {
       "a 1440 px faltam colunas do Figma: E-mail",
     ]);
     assert.deepEqual(tableProblems(table, { width: 1279, columns: clients.columns }), []);
+  });
+});
+
+describe("scrollProblems", () => {
+  it("aceita a lista que rola até a última linha com o cabeçalho no topo, e a que cabe na tela", () => {
+    assert.deepEqual(scrollProblems({ rows: 50, lastRowVisible: true, headerPinned: true }), []);
+    assert.deepEqual(scrollProblems({ rows: 1, lastRowVisible: true, headerPinned: null }), []);
+  });
+
+  it("acusa a tabela cortada sem a página rolar (/inspections a 1440 px, antes da #222)", () => {
+    assert.deepEqual(scrollProblems({ rows: 50, lastRowVisible: false, headerPinned: null }), [
+      "a última das 50 linhas da tabela não fica visível rolando até o fim",
+    ]);
+  });
+
+  it("acusa o cabeçalho que sai com a rolagem", () => {
+    assert.deepEqual(scrollProblems({ rows: 50, lastRowVisible: true, headerPinned: false }), [
+      "o cabeçalho da tabela não fica no topo com a lista rolada",
+    ]);
   });
 });
 
