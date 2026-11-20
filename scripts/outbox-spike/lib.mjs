@@ -536,11 +536,21 @@ export const linkOf = (page, name) =>
 
 export const idOf = async (link) => new URL(await link.getAttribute("href"), base).searchParams.get("id");
 
-/** Cria um client por /clients/edit, de volta na lista, e devolve o id gerado no aparelho. */
-export async function create(page, name) {
+/**
+ * Cria um client por /clients/edit, de volta na lista, e devolve o id gerado no aparelho. Com `phone`, digita o
+ * telefone tecla a tecla (ou cola, com `paste`) e confere que o campo mostra `shown`.
+ */
+export async function create(page, name, { phone, paste = false, shown } = {}) {
   await page.getByRole("link", { name: "Novo cliente" }).first().click();
   await page.getByRole("heading", { level: 1, name: "Novo cliente" }).waitFor();
   await page.getByLabel("Nome").fill(name);
+  if (phone) {
+    // Tecla a tecla passa pela máscara a cada dígito; o `fill` entra de uma vez, como uma colagem (#215).
+    const field = page.getByLabel("Telefone");
+    if (paste) await field.fill(phone);
+    else await field.pressSequentially(phone);
+    if (shown) assert.equal(await field.inputValue(), shown, `o Telefone de ${name} com a máscara`);
+  }
   await page.getByRole("button", { name: "Salvar" }).click();
   const link = linkOf(page, name);
   await link.waitFor({ timeout: 2000 });

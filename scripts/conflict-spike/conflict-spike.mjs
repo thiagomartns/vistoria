@@ -429,7 +429,7 @@ try {
   assert.equal(clientResolution[0].ifMatch, `"${bClientVersion}"`);
   assert.notEqual(clientResolution[0].key, aPuts[fromAClient].key, "a resolução sai com chave nova");
   const resolvedClient = (await serverClient(user, client)).body;
-  assert.equal(resolvedClient.phone, "(71) 3000-0001", "o Telefone escolhido");
+  assert.equal(resolvedClient.phone, "7130000001", "o Telefone escolhido, só com dígitos");
   assert.equal(resolvedClient.email, "celular@doisaparelhos.com", "o E-mail do celular");
   assert.equal(resolvedClient.name, "Dois Aparelhos Imóveis", "o Nome do desktop");
   ok(`"Neste aparelho" no celular → PUT com If-Match "${bClientVersion}" e chave nova → 200; servidor com Telefone e E-mail do celular e Nome do desktop`);
