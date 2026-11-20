@@ -2,6 +2,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import Link from "next/link";
 
 import { ListRow } from "@/shared/components/list-row";
+import { STICKY_TABLE_HEADER } from "@/shared/components/list-table";
 import { SyncBadge, type SyncBadgeState } from "@/shared/components/sync-badge";
 
 // A lista de /properties (Figma 71:2726 e 71:2900): Table no desktop, ListRow abaixo de `lg`. A linha inteira abre
@@ -37,9 +38,9 @@ const badgeOf = (item: PropertyListItem) =>
 export function PropertiesList({ items }: { items: PropertyListItem[] }) {
   return (
     <>
-      <div className="@container hidden overflow-hidden rounded-lg border border-border lg:block">
+      <div className="@container hidden overflow-clip rounded-lg border border-border lg:block @min-[360px]:*:data-[slot=table-container]:overflow-x-visible">
         <Table className="min-w-[360px] table-fixed">
-          <TableHeader>
+          <TableHeader className={STICKY_TABLE_HEADER}>
             <TableRow>
               <TableHead>Endereço</TableHead>
               <TableHead className={COLUMN.client}>Cliente</TableHead>

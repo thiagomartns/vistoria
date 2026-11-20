@@ -2,6 +2,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import Link from "next/link";
 
 import { ListRow } from "@/shared/components/list-row";
+import { STICKY_TABLE_HEADER } from "@/shared/components/list-table";
 import { SyncBadge, type SyncBadgeState } from "@/shared/components/sync-badge";
 
 // A lista de /templates (Figma "Roteiros (#173)", estado 1): Table no desktop, ListRow abaixo de `lg`. A linha inteira
@@ -34,9 +35,9 @@ const plural = (count: number, one: string, many: string) => `${count} ${count =
 export function TemplatesList({ items }: { items: TemplateListItem[] }) {
   return (
     <>
-      <div className="@container hidden overflow-hidden rounded-lg border border-border lg:block">
+      <div className="@container hidden overflow-clip rounded-lg border border-border lg:block @min-[360px]:*:data-[slot=table-container]:overflow-x-visible">
         <Table className="min-w-[360px] table-fixed">
-          <TableHeader>
+          <TableHeader className={STICKY_TABLE_HEADER}>
             <TableRow>
               <TableHead>Nome</TableHead>
               <TableHead className={COLUMN.rooms}>Ambientes</TableHead>
