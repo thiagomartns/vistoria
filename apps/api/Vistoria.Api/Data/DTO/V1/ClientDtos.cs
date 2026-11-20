@@ -20,7 +20,8 @@ public sealed record UpsertClientDto
     [EmailAddress(ErrorMessage = "Informe um e-mail válido.")]
     public string? Email { get; init; }
 
-    [MaxLength(ClientConfiguration.PhoneMaxLength, ErrorMessage = "O telefone pode ter até {1} caracteres.")]
+    // Com máscara ou com o +55 também passa: o serviço grava só os dígitos (ADR 0063).
+    [Telefone]
     public string? Phone { get; init; }
 }
 
