@@ -38,6 +38,8 @@ Essas fronteiras são regra, não convenção (viram regras de lint).
   componente local em `src/shared/components/`, só com primitivos e tokens do Sanjou
   ([ADR 0020](../../docs/decisions/0020-componentes-que-faltam-no-sanjou-ficam-no-app.md)); se for
   genérico, entra em "Candidatos ao Sanjou".
+- **A caixa da tabela das listas usa `overflow-clip`, nunca `overflow-hidden`**: no `main` flex do shell, ela encolheria e
+  cortaria as linhas. O cabeçalho fixo é o `STICKY_TABLE_HEADER` de `shared/components/list-table.ts` ([ADR 0064](../../docs/decisions/0064-no-desktop-a-pagina-rola-inteira-a-tabela-das-listas-tem-overflow-clip-e-o-cabecalho-fixo-e-o-container-do-table-do-sanjou-so-rola-abaixo-do-min-w-222.md)).
 - React Compiler ligado: sem `useMemo`/`useCallback` manuais; no react-hook-form, `useWatch`/`useFormState`, nunca `watch()`.
 - **Next 16 muda APIs e convenções.** Antes de usar uma API do Next, consultar a documentação da versão
   instalada em `node_modules/next/dist/docs/`, não a memória.

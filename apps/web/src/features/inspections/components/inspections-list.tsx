@@ -5,6 +5,7 @@ import { Printer } from "lucide-react";
 import Link from "next/link";
 
 import { ListRow } from "@/shared/components/list-row";
+import { STICKY_TABLE_HEADER } from "@/shared/components/list-table";
 import { SyncBadge, type SyncBadgeState } from "@/shared/components/sync-badge";
 
 import { DeleteInspection } from "./delete-inspection";
@@ -74,9 +75,9 @@ export function InspectionsList({
 }) {
   return (
     <>
-      <div className="@container hidden overflow-hidden rounded-lg border border-border lg:block">
+      <div className="@container hidden overflow-clip rounded-lg border border-border lg:block @min-[556px]:*:data-[slot=table-container]:overflow-x-visible">
         <Table className="min-w-[556px] table-fixed">
-          <TableHeader>
+          <TableHeader className={STICKY_TABLE_HEADER}>
             <TableRow>
               <TableHead>Imóvel</TableHead>
               <TableHead className={COLUMN.client}>Cliente</TableHead>

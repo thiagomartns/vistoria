@@ -5,7 +5,8 @@
 // passa da borda de quem o contém, fora de uma faixa que rola de propósito e do texto com reticências. E mais
 // (ADR 0061):
 // - as quatro listas: a do celular abaixo de 1024 px; a tabela a partir dele, com a primeira coluna de 180 px ou mais,
-//   nenhuma célula transbordando sem corte e todas as colunas do Figma a 1440 px;
+//   nenhuma célula transbordando sem corte e todas as colunas do Figma a 1440 px; rolando a página, a última linha
+//   aparece e o cabeçalho fica no topo (#222), também depois do "Mostrar mais" de /inspections;
 // - a tela de campo, numa vistoria em andamento: o layout de desktop só com a StepperForm a partir de 1072 px, e
 //   nenhum chip de condição cortado (o "Ausente" marcado, quando o seed tem um);
 // - o editor de roteiro: dois painéis a partir de 1024 px (abre de novo a cada largura: o estado do celular não
@@ -19,9 +20,11 @@ import { mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { base, launch, ok, printTrace, serve, signIn, step, wait } from "../outbox-spike/lib.mjs";
+import { base, launch, ok, printTrace, serve, signIn, step, until, wait } from "../outbox-spike/lib.mjs";
 import { DEV_EMAIL, apiSignIn, devPassword, serverDelta } from "../volume-spike/lib.mjs";
 import {
+  FIGMA_WIDTH,
+  LARGE,
   LISTS,
   WIDTHS,
   editorProblems,
@@ -29,6 +32,7 @@ import {
   listProblems,
   overflowProblems,
   screenName,
+  scrollProblems,
 } from "./lib.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -88,6 +92,41 @@ const measureList = (page) =>
       });
     }
     return { table: { headers, spills }, rows };
+  });
+
+/**
+ * A rolagem da tabela aberta (ver `scrollProblems`): rola o `main` até o cabeçalho passar do topo e confere que ele
+ * fica lá, por cima das linhas; rola até o fim e confere que a última linha aparece (o que está no ponto do meio dela é
+ * ela, e não algo que a cobre ou o corte de quem a contém). Volta ao topo, para o print não mudar.
+ */
+const measureScroll = (page) =>
+  page.evaluate(async () => {
+    const frame = () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+    const main = document.querySelector("main");
+    const table = document.querySelector("main table");
+    const rows = table.querySelectorAll("tbody tr");
+    const shows = (element, inside) => {
+      const rect = element.getBoundingClientRect();
+      const hit = document.elementFromPoint(rect.left + Math.min(rect.width / 2, 40), rect.top + rect.height / 2);
+      return Boolean(hit && inside.contains(hit));
+    };
+    const mainTop = () => main.getBoundingClientRect().top;
+    const max = main.scrollHeight - main.clientHeight;
+    const pinAt = table.getBoundingClientRect().top - mainTop() + main.scrollTop + 100;
+    let headerPinned = null;
+    if (max >= pinAt) {
+      main.scrollTop = pinAt;
+      await frame();
+      const th = table.querySelector("thead th");
+      headerPinned = Math.abs(th.getBoundingClientRect().top - mainTop()) <= 1 && shows(th, table.tHead);
+    }
+    main.scrollTop = max;
+    await frame();
+    const last = rows[rows.length - 1];
+    const lastRowVisible = shows(last, last);
+    main.scrollTop = 0;
+    await frame();
+    return { rows: rows.length, lastRowVisible, headerPinned };
   });
 
 /** A tela de campo aberta (ver `fieldProblems`). */
@@ -168,8 +207,27 @@ try {
       name: route.slice(1),
       route,
       ready: listReady,
-      extra: async (p, width) => listProblems(await measureList(p), { width, columns }),
+      extra: async (p, width) => [
+        ...listProblems(await measureList(p), { width, columns }),
+        ...(width >= LARGE ? scrollProblems(await measureScroll(p)) : []),
+      ],
     });
+  }
+
+  step(++n, `/inspections a ${FIGMA_WIDTH} px: "Mostrar mais" e as linhas novas visíveis rolando`);
+  await page.setViewportSize({ width: FIGMA_WIDTH, height: 900 });
+  await page.goto(`${base}/inspections`);
+  await listReady(page);
+  const tableRows = page.locator("main tbody tr");
+  const before = await tableRows.count();
+  await page.getByRole("button", { name: "Mostrar mais" }).click();
+  await until(async () => (await tableRows.count()) > before, "as linhas do Mostrar mais na tabela");
+  const more = scrollProblems(await measureScroll(page));
+  if (more.length === 0) ok(`${await tableRows.count()} linhas, a última visível rolando até o fim`);
+  else {
+    console.log('   ✗ depois do "Mostrar mais"');
+    for (const problem of more) console.log(`     - ${problem}`);
+    failures.push(...more.map((problem) => `/inspections depois do "Mostrar mais": ${problem}`));
   }
 
   step(++n, "a tela de campo, numa vistoria em andamento");
