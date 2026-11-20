@@ -1,29 +1,22 @@
+import { type RoomMold, catalogRoom } from "@/features/templates/models/room-catalog";
 import { newId } from "@/shared/sync/ids";
 
 import type { InspectionRecord } from "../models/inspection";
 
-/** Um ambiente como molde da entrada: o nome e os itens, na ordem em que a vistoria os recebe. */
-export interface RoomMold {
-  name: string;
-  items: readonly { name: string }[];
-}
-
-const mold = (name: string, items: readonly string[]): RoomMold => ({
-  name,
-  items: items.map((item) => ({ name: item })),
-});
+export type { RoomMold };
 
 /**
  * O roteiro padrão, embutido: a entrada parte dele só num aparelho sem nenhum roteiro (conta nova, #174). Não é gravado
- * no banco local nem enviado; a vistoria copia os ambientes e os itens, como de qualquer roteiro.
+ * no banco local nem enviado; a vistoria copia os ambientes e os itens, como de qualquer roteiro. Os ambientes são os
+ * do catálogo de ambientes prontos (#200), a fonte única.
  */
 export const DEFAULT_TEMPLATE: readonly RoomMold[] = [
-  mold("Sala", ["Piso", "Paredes", "Teto", "Portas", "Janelas", "Iluminação", "Tomadas e interruptores"]),
-  mold("Cozinha", ["Piso", "Paredes", "Teto", "Pia e torneira", "Armários", "Tomadas e interruptores"]),
-  mold("Banheiro", ["Piso", "Paredes", "Teto", "Vaso sanitário", "Pia e torneira", "Box e chuveiro"]),
-  mold("Quarto", ["Piso", "Paredes", "Teto", "Porta", "Janela", "Armário"]),
-  mold("Área de serviço", ["Piso", "Paredes", "Tanque", "Torneira"]),
-];
+  "Sala",
+  "Cozinha",
+  "Banheiro",
+  "Quarto",
+  "Área de serviço",
+].map(catalogRoom);
 
 /**
  * Uma vistoria de entrada nova para o imóvel, a partir dos ambientes de um roteiro (vision.md, "Modelo de domínio"): em
