@@ -13,6 +13,7 @@ import {
   TYPE_OPTIONS,
   type PropertyFormValues,
   formatZipCode,
+  maskZipCode,
   propertyErrors,
   propertyFormSchema,
 } from "../schemas/property.schemas";
@@ -37,6 +38,8 @@ export const UNAVAILABLE: UnavailableMessages = {
 };
 
 export const SERVER_REJECTED = "O servidor recusou este cadastro. Corrija e salve de novo.";
+
+const PROPERTY_MASKS = { zipCode: maskZipCode };
 
 const EMPTY: PropertyFormValues = {
   clientId: "",
@@ -152,6 +155,8 @@ export function usePropertyForm(id: string | null) {
     onSubmit,
     clientOptions: clientOptionsOf(clients),
     typeOptions: TYPE_OPTIONS,
+    /** As máscaras ao digitar (ADR 0063); o schema as tira ao salvar. */
+    masks: PROPERTY_MASKS,
     /** O rascunho em conflito: o aviso e o caminho para o ConflictResolver. */
     conflict: conflictHref
       ? { title: CONFLICT_TITLE, description: CONFLICT_DESCRIPTION, href: conflictHref }

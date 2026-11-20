@@ -383,7 +383,7 @@ public class IdempotencyTests(ApiFactory factory) : IClassFixture<ApiFactory>
     {
         if (resource == "clients")
         {
-            return new() { ["name"] = "Maria Locadora", ["phone"] = "71 3333-0000" };
+            return new() { ["name"] = "Maria Locadora", ["phone"] = "7133330000" };
         }
 
         // Ambientes como objetos anônimos em camelCase, para o JSON serializado bater com o current da resposta.
@@ -448,7 +448,7 @@ public class IdempotencyTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var changed = new Dictionary<string, object?>(body);
         if (changed.ContainsKey("phone"))
         {
-            changed["phone"] = "71 3333-4242";
+            changed["phone"] = "7133334242";
         }
         else if (changed.ContainsKey("kind"))
         {

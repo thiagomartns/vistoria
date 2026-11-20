@@ -6,6 +6,7 @@ import {
   type PropertyFormValues,
   UFS,
   formatZipCode,
+  maskZipCode,
   propertyErrors,
   propertyFormSchema,
   stripZipCode,
@@ -115,5 +116,33 @@ describe("CEP", () => {
     expect(stripZipCode(" 01.400-000 ")).toBe("01400000");
     expect(formatZipCode("01400000")).toBe("01400-000");
     expect(formatZipCode("0140")).toBe("0140");
+  });
+
+  it("maskZipCode ao digitar: o hífen entra no 6º dígito, e o 9º não entra", () => {
+    const steps: string[] = [];
+    let value = "";
+    for (const key of "014000001") {
+      value = maskZipCode(value + key);
+      steps.push(value);
+    }
+    expect(steps).toEqual([
+      "0",
+      "01",
+      "014",
+      "0140",
+      "01400",
+      "01400-0",
+      "01400-00",
+      "01400-000",
+      "01400-000",
+    ]);
+  });
+
+  it.each([
+    ["sem máscara", "01400000"],
+    ["com máscara", "01400-000"],
+    ["com ponto e espaços", " 01.400-000 "],
+  ])("maskZipCode ao colar %s", (_, pasted) => {
+    expect(maskZipCode(pasted)).toBe("01400-000");
   });
 });

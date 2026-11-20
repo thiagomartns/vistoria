@@ -4,7 +4,7 @@ import { type FlatConflict, type FlatConflictGroup, flatConflictGroups } from "@
 import type { RecordSyncState } from "@/shared/sync/sync-view";
 
 import { CLIENT_ENTITY, type ClientRecord } from "../models/client";
-import { formatDocument } from "../schemas/client.schemas";
+import { formatDocument, formatPhone } from "../schemas/client.schemas";
 
 // Do banco local para o que a lista de clientes e o cabeçalho do registro mostram. Função pura: cada estado cabe
 // num teste, e os componentes recebem só o resultado.
@@ -48,14 +48,18 @@ export function clientRowOf(
   return { ...fieldsOf(client, client.id), sync: syncState ?? "sincronizado" };
 }
 
-/** Busca local por nome, documento (com ou sem máscara) e e-mail. */
+/** Busca local por nome, documento e telefone (os dois com ou sem máscara) e e-mail. */
 export function matchesSearch(row: ClientRow, search: string): boolean {
   const query = fold(search.trim());
   if (query === "") return true;
   const documentQuery = query.replace(/[.\-/\s]/g, "");
+  // Só o texto com forma de telefone (dígitos e a pontuação da máscara) busca no telefone, pelos dígitos dos dois
+  // lados: o canônico e o de antes da regra, que ainda pode ter máscara (ADR 0063).
+  const phoneQuery = /^[\d\s().+-]+$/.test(query) ? query.replace(/\D/g, "") : "";
   return (
     fold(row.name).includes(query) ||
     (documentQuery !== "" && fold(row.document ?? "").includes(documentQuery)) ||
+    (phoneQuery !== "" && (row.phone ?? "").replace(/\D/g, "").includes(phoneQuery)) ||
     fold(row.email ?? "").includes(query)
   );
 }
@@ -81,13 +85,18 @@ export function clientRows(
 }
 
 /**
- * Os campos em disputa de um cliente, num grupo só ("Cliente"), com os nomes e a ordem do formulário. O documento
- * aparece com a máscara.
+ * Os campos em disputa de um cliente, num grupo só ("Cliente"), com os nomes e a ordem do formulário. O documento e
+ * o telefone aparecem com a máscara.
  */
 export function clientConflictGroups(conflict: FlatConflict<ClientRecord>): FlatConflictGroup[] {
   return flatConflictGroups(conflict, {
     title: "Cliente",
     labels: { name: "Nome", document: "CPF ou CNPJ", email: "E-mail", phone: "Telefone" },
-    format: (field, value) => (field === "document" ? formatDocument(String(value)) : String(value)),
+    format: (field, value) =>
+      field === "document"
+        ? formatDocument(String(value))
+        : field === "phone"
+          ? formatPhone(String(value))
+          : String(value),
   });
 }

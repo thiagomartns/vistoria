@@ -206,7 +206,7 @@ export const zUpsertClientDto = z.object({
     name: z.string().min(2).max(120),
     document: z.string().nullish(),
     email: z.string().max(254).nullish(),
-    phone: z.string().max(20).nullish()
+    phone: z.string().nullish()
 });
 
 export const zUpsertInspectionItemDto = z.object({

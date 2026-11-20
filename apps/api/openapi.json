@@ -2314,7 +2314,6 @@
             ]
           },
           "phone": {
-            "maxLength": 20,
             "type": [
               "null",
               "string"

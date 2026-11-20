@@ -57,7 +57,7 @@ public class ClientsTests(ApiFactory factory) : IClassFixture<ApiFactory>
         body.GetProperty("name").GetString().Should().Be("Maria Locadora");
         body.GetProperty("document").GetString().Should().Be("52998224725");
         body.GetProperty("email").GetString().Should().Be("maria@teste.local");
-        body.GetProperty("phone").GetString().Should().Be("+55 11 91234-5678");
+        body.GetProperty("phone").GetString().Should().Be("11912345678");
         body.GetProperty("createdAt").GetDateTimeOffset().Should().Be(factory.Time.GetUtcNow());
         body.TryGetProperty("ownerId", out _).Should().BeFalse();
     }
@@ -141,6 +141,42 @@ public class ClientsTests(ApiFactory factory) : IClassFixture<ApiFactory>
         await AssertProblem(response, HttpStatusCode.BadRequest, ProblemTypes.Validation);
         var body = await Body(response);
         body.GetProperty("errors").EnumerateObject().Select(p => p.Name).Should().Equal(key);
+        (await StoredOrNull(id)).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("11912345678", "11912345678")]
+    [InlineData("(71) 3333-0000", "7133330000")]
+    [InlineData("+55 (71) 99999-0000", "71999990000")]
+    public async Task Put_Phone_IsStoredOnlyWithDigits(string phone, string canonical)
+    {
+        var id = Guid.CreateVersion7();
+
+        var response = await Put(factory.CreateAuthenticatedClient(), id, new { name = "Maria", phone });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        (await Body(response)).GetProperty("phone").GetString().Should().Be(canonical);
+        (await Stored(id)).Phone.Should().Be(canonical);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("3333-0000")]        // sem DDD
+    [InlineData("(10) 3333-0000")]   // DDD que não existe
+    [InlineData("(71) 9999-0000")]   // celular sem o 9
+    [InlineData("+1 415 555 0100")]  // de fora do Brasil
+    [InlineData("71 3333-0000 ramal 12")]
+    public async Task Put_InvalidPhone_Returns400OnThePhone(string phone)
+    {
+        var id = Guid.CreateVersion7();
+
+        var response = await Put(factory.CreateAuthenticatedClient(), id, new { name = "Maria", phone });
+
+        await AssertProblem(response, HttpStatusCode.BadRequest, ProblemTypes.Validation);
+        var errors = (await Body(response)).GetProperty("errors");
+        errors.EnumerateObject().Select(p => p.Name).Should().Equal("phone");
+        errors.GetProperty("phone")[0].GetString().Should()
+            .Be("Informe o telefone com DDD: 10 dígitos (fixo) ou 11 (celular).");
         (await StoredOrNull(id)).Should().BeNull();
     }
 

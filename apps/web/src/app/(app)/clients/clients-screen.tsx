@@ -43,7 +43,7 @@ export function ClientsScreen() {
         <Input
           type="search"
           aria-label="Buscar clientes"
-          placeholder="Buscar por nome, documento ou e-mail"
+          placeholder="Buscar por nome, documento, telefone ou e-mail"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           className="lg:flex-1"

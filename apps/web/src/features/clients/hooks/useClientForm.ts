@@ -14,6 +14,9 @@ import {
   clientErrors,
   clientFormSchema,
   formatDocument,
+  formatPhone,
+  maskDocument,
+  maskPhone,
 } from "../schemas/client.schemas";
 import { fetchClient, clientConflictHref, saveClient } from "../services/clients.sync";
 import { type ClientRow, clientRowOf } from "../services/clients.view";
@@ -37,13 +40,15 @@ export const UNAVAILABLE: UnavailableMessages = {
 
 export const SERVER_REJECTED = "O servidor recusou este cadastro. Corrija e salve de novo.";
 
+const CLIENT_MASKS = { document: maskDocument, phone: maskPhone };
+
 const EMPTY: ClientFormValues = { name: "", document: "", email: "", phone: "" };
 
 const valuesOf = (row: ClientRow): ClientFormValues => ({
   name: row.name,
   document: row.document ? formatDocument(row.document) : "",
   email: row.email ?? "",
-  phone: row.phone ?? "",
+  phone: row.phone ? formatPhone(row.phone) : "",
 });
 
 /** O formulário tem algo diferente de `saved`, campo a campo. */
@@ -137,6 +142,8 @@ export function useClientForm(id: string | null) {
     sync: status === "found" ? row?.sync : undefined,
     form,
     onSubmit,
+    /** As máscaras ao digitar (ADR 0063); o schema as tira ao salvar. */
+    masks: CLIENT_MASKS,
     /** O rascunho em conflito: o aviso e o caminho para o ConflictResolver. */
     conflict: conflictHref
       ? { title: CONFLICT_TITLE, description: CONFLICT_DESCRIPTION, href: conflictHref }

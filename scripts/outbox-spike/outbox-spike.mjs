@@ -392,14 +392,16 @@ try {
   await page.evaluate(() => navigator.serviceWorker.ready);
   ok("service worker ativo");
 
-  step(4, "Offline: criar dois clients por /clients/edit e um imóvel do segundo por /properties/edit");
+  step(4, "Offline: criar dois clients por /clients/edit, com o telefone digitado e colado, e um imóvel do segundo por /properties/edit");
   await context.setOffline(true);
-  const alfa = await create(page, "Imobiliária Alfa");
-  const beta = await create(page, "Imobiliária Beta");
-  for (const name of ["Imobiliária Alfa", "Imobiliária Beta"]) {
+  // O telefone (#215): digitado sem máscara na Alfa e colado com o +55 na Beta; os dois aparecem com a máscara.
+  const alfa = await create(page, "Imobiliária Alfa", { phone: "71999990000", shown: "(71) 99999-0000" });
+  const beta = await create(page, "Imobiliária Beta", { phone: "+55 71 3333-0000", paste: true, shown: "(71) 3333-0000" });
+  for (const [name, phone] of [["Imobiliária Alfa", "(71) 99999-0000"], ["Imobiliária Beta", "(71) 3333-0000"]]) {
     await rowOf(page, name).getByText("Salvo no aparelho").waitFor();
+    await rowOf(page, name).getByText(phone, { exact: false }).waitFor();
   }
-  ok("criados: as linhas aparecem na hora, com o SyncBadge \"Salvo no aparelho\"");
+  ok("criados: as linhas aparecem na hora, com o SyncBadge \"Salvo no aparelho\" e o telefone com a máscara");
   const casa = await createProperty(page, "Imobiliária Beta", "Rua do Roteiro");
   ok("imóvel criado com a Imobiliária Beta, ainda pendente, com \"Salvo no aparelho\" em /properties");
   await until(async () => (await outboxCount(page, user)) === 3, "três transações na outbox");
@@ -457,10 +459,12 @@ try {
     await until(async () => (await rowOf(page, name).getByText("Salvo no aparelho").count()) === 0, `badge de ${name} some`);
   }
   ok("sincronizado: o SyncBadge some das linhas (silêncio no caminho feliz)");
-  for (const [id, name] of [[alfa, "Imobiliária Alfa"], [beta, "Imobiliária Beta"]]) {
+  for (const [id, name, phone] of [[alfa, "Imobiliária Alfa", "71999990000"], [beta, "Imobiliária Beta", "7133330000"]]) {
+    assert.equal(JSON.parse(sent.find((put) => put.id === id).body).phone, phone, `o PUT de ${name} sai sem máscara`);
     const saved = await serverClient(user, id);
     assert.equal(saved.status, 200);
     assert.equal(saved.body.name, name);
+    assert.equal(saved.body.phone, phone, `${name} com o telefone canônico no servidor`);
   }
   const property = await serverProperty(user, casa);
   assert.equal(property.status, 200);
@@ -469,7 +473,7 @@ try {
   assert.equal(property.body.state, "BA");
   const client = await serverClient(user, beta);
   assert.ok(client.body.createdAt <= property.body.createdAt, "o cliente chega antes do imóvel");
-  ok("getClient e getProperty confirmam os três no SQL Server, o imóvel da Beta depois dela (CEP sem hífen, UF BA)");
+  ok("getClient e getProperty confirmam os três no SQL Server, o imóvel da Beta depois dela (telefones só com dígitos, CEP sem hífen, UF BA)");
 
   step(7, "Editar um client sincronizado: If-Match com a version do servidor");
   const created = await serverClient(user, alfa);
@@ -483,7 +487,7 @@ try {
   const [edit] = puts.slice(fromEdit);
   assert.equal(edit.ifMatch, `"${created.body.version}"`);
   const edited = await serverClient(user, alfa);
-  assert.equal(edited.body.phone, "(71) 3333-0000");
+  assert.equal(edited.body.phone, "7133330000", "o telefone chega sem máscara");
   assert.notEqual(edited.body.version, created.body.version);
   ok(`PUT com If-Match ${edit.ifMatch} → 200, version ${edited.body.version}`);
 
@@ -589,7 +593,7 @@ try {
   const kept = await serverClient(user, alfa);
   assert.equal(kept.body.version, elsewhere.body.version);
   assert.equal(kept.body.email, "outro@aparelho.com");
-  assert.notEqual(kept.body.phone, "(71) 4444-0000", "a edição em conflito não chega ao servidor");
+  assert.notEqual(kept.body.phone, "7144440000", "a edição em conflito não chega ao servidor");
   ok("PUT com If-Match antigo → 412; 1 envio em 5 s, a outbox vazia e a linha com \"Conflito\"; o servidor fica com a do outro aparelho");
   await rowOf(page, "Imobiliária Alfa").getByRole("link").click();
   await page.getByText("Este cliente foi alterado em outro aparelho").waitFor();
@@ -609,7 +613,7 @@ try {
   assert.equal(clientResolution[0].ifMatch, `"${elsewhere.body.version}"`);
   assert.notEqual(clientResolution[0].key, conflictPuts[0].key, "a resolução sai com chave nova");
   const resolvedClient = await serverClient(user, alfa);
-  assert.equal(resolvedClient.body.phone, "(71) 4444-0000", "a escolha chega ao servidor");
+  assert.equal(resolvedClient.body.phone, "7144440000", "a escolha chega ao servidor");
   assert.equal(resolvedClient.body.email, "outro@aparelho.com", "o que só o outro aparelho mudou fica");
   await goTo(page, "Clientes");
   assert.equal(await rowOf(page, "Imobiliária Alfa").getByText("Conflito").count(), 0);
@@ -641,7 +645,7 @@ try {
   assert.equal(mergePuts[1].ifMatch, `"${otherClient.body.version}"`);
   assert.notEqual(mergePuts[1].key, mergePuts[0].key, "o reenvio sai com chave nova");
   const merged = await serverClient(user, alfa);
-  assert.equal(merged.body.phone, "(71) 5555-0000");
+  assert.equal(merged.body.phone, "7155550000");
   assert.equal(merged.body.email, "vendas@alfa.com");
   assert.equal(await rowOf(page, "Imobiliária Alfa").getByText("Conflito").count(), 0);
   ok(`412 → reenvio com If-Match ${mergePuts[1].ifMatch} e chave nova → 200; servidor com o telefone daqui e o e-mail de lá, sem perguntar`);
@@ -660,13 +664,13 @@ try {
   assert.equal(pulledFirst.status, 200, `o PUT do outro aparelho respondeu ${pulledFirst.status}`);
   await rowOf(page, "Imobiliária Alfa").getByRole("link").click();
   await page.getByRole("heading", { level: 1, name: "Imobiliária Alfa" }).waitFor();
-  await page.getByLabel("Telefone").fill("(71) 6666-0000");
+  await page.getByLabel("Telefone").fill("(71) 2222-0000");
   await pullNow(context, page);
   await until(
     async () => (await page.getByLabel("E-mail").inputValue()) === "compras@alfa.com",
     "o pull traz o e-mail de lá para a tela aberta",
   );
-  assert.equal(await page.getByLabel("Telefone").inputValue(), "(71) 6666-0000", "o que foi digitado fica");
+  assert.equal(await page.getByLabel("Telefone").inputValue(), "(71) 2222-0000", "o que foi digitado fica");
   const fromPulled = puts.length;
   await page.getByRole("button", { name: "Salvar" }).click();
   await page.getByRole("heading", { level: 1, name: "Clientes" }).waitFor();
@@ -675,7 +679,7 @@ try {
   assert.deepEqual(pulledPuts.map((put) => put.status), [200], "um envio só, sem 412");
   assert.equal(pulledPuts[0].ifMatch, `"${pulledFirst.body.version}"`);
   const both = await serverClient(user, alfa);
-  assert.equal(both.body.phone, "(71) 6666-0000");
+  assert.equal(both.body.phone, "7122220000");
   assert.equal(both.body.email, "compras@alfa.com");
   ok(`PUT com If-Match ${pulledPuts[0].ifMatch} (a version que o pull trouxe) → 200; servidor com o telefone daqui e o e-mail de lá`);
 

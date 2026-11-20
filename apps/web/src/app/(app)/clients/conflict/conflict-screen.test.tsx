@@ -104,6 +104,31 @@ describe("ClientConflictScreen", () => {
     expect(screen.getByRole("button", { name: "Enviar resolução" }).hasAttribute("disabled")).toBe(true);
   });
 
+  it("o telefone em disputa aparece com a máscara nos dois lados, e a escolha leva o canônico", async () => {
+    const user = userEvent.setup();
+    window.history.pushState(null, "", "/clients/conflict?id=c2");
+    const here = { ...maria, phone: "11987654321" };
+    const there = { ...maria, version: "B", phone: "7133330000" };
+    open({
+      drafts: [
+        {
+          ...conflicted,
+          data: here,
+          conflict: { current: { ...there, updatedAt: "2026-10-27T17:58:00+00:00" }, base: maria, collisions: [] },
+        },
+      ],
+    });
+
+    const field = await screen.findByRole("radiogroup", { name: "Telefone" });
+    expect(within(field).getByRole("radio", { name: /Neste aparelho.*\(11\) 98765-4321/ })).toBeDefined();
+    expect(within(field).getByRole("radio", { name: /No servidor.*\(71\) 3333-0000/ })).toBeDefined();
+    await user.click(within(field).getByText("(71) 3333-0000"));
+    await user.click(screen.getByRole("button", { name: "Enviar resolução" }));
+
+    const [, { resolved }] = vi.mocked(resolveClientConflict).mock.calls[0]!;
+    expect(resolved.phone).toBe("7133330000");
+  });
+
   it("escolher o do servidor: a resolução leva o CPF de lá, o telefone daqui e o e-mail de lá", async () => {
     const user = userEvent.setup();
     window.history.pushState(null, "", "/clients/conflict?id=c2");

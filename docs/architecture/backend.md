@@ -222,6 +222,18 @@ O `type` é uma URN: `urn:vistoria:problem:` seguido do slug da tabela (por exem
 - Erros de desserialização (tipo errado, JSON malformado) perdem o prefixo `$.` (`$` sozinho vira `""`, erro do corpo inteiro) e trocam a mensagem do System.Text.Json, que cita tipo .NET, linha e byte, por "Valor ausente ou com formato inválido.". O erro "campo obrigatório" do próprio parâmetro de corpo é descartado.
 - DTO de entrada usa propriedades `{ get; init; }`, sem record posicional nem `required` do C#: o provider não atua nos parâmetros do construtor, e o `required` falha na desserialização, antes da validação.
 
+### Formato dos campos
+
+O banco e o contrato guardam o valor canônico, sem máscara; a máscara é só da UI ([ADR 0063](../decisions/0063-o-telefone-e-guardado-so-com-digitos-a-api-normaliza-a-entrada-com-mascara-ou-55-so-numeros-brasileiros-e-a-mascara-e-so-da-ui-215.md)).
+
+| Campo | Canônico | Entrada com máscara |
+| --- | --- | --- |
+| `document` (Client) | CPF com 11 dígitos ou CNPJ com 14 (alfanumérico nas 12 primeiras posições), com os verificadores (`[CpfCnpj]`) | Recusada: 400 `validation` em `errors.document` |
+| `phone` (Client) | Só dígitos: DDD (um dos 67 da Anatel) e fixo com 10 (o número de 2 a 5) ou celular com 11 (começando por 9). Só números brasileiros (`[Telefone]`) | Normalizada antes de validar: sai tudo que não é dígito e o `55` do país que sobra (12 ou 13 dígitos). O serviço grava o normalizado, e a resposta já volta com ele. Fora da regra: 400 `validation` em `errors.phone` |
+| `zipCode` (Property) | 8 dígitos (`^[0-9]{8}$`) | Recusada: 400 `validation` em `errors.zipCode` |
+
+O telefone normaliza porque a fila de um aparelho pode ter o formato de antes da regra, e a API não recusa o que já estava na fila. A migração `NormalizeClientPhones` converteu o que se encaixava; o resto ficou como estava e só cai no 400 no próximo `PUT` do cliente.
+
 ### OpenAPI
 
 - `AddOpenApi()` + `MapOpenApi()` (documento em `/openapi/v1.json`) + `UseSwaggerUI(o => o.SwaggerEndpoint("/openapi/v1.json", "v1"))`.

@@ -148,7 +148,8 @@ export function clientBody(index) {
     name: `${FIRST_NAMES[index % FIRST_NAMES.length]} ${LAST_NAMES[lastName % LAST_NAMES.length]}`,
     document: null,
     email: `cliente${index + 1}@exemplo.com`,
-    phone: `(11) 9${digits.slice(0, 4)}-${digits.slice(4)}`,
+    // Só dígitos, como a API guarda (ADR 0063): um celular de São Paulo.
+    phone: `119${digits}`,
   };
 }
 

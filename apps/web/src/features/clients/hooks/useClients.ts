@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useLocalStore } from "@/features/local-store/hooks/useLocalStore";
 import { propertyCountByClient } from "@/features/properties/services/properties.view";
 
-import { formatDocument } from "../schemas/client.schemas";
+import { formatDocument, formatPhone } from "../schemas/client.schemas";
 import { clientRows, matchesSearch } from "../services/clients.view";
 
 /**
@@ -20,12 +20,13 @@ export function useClients() {
     ready,
     /** O aparelho não tem nenhum client (o EmptyState de lista vazia, não o de busca sem resultado). */
     empty: all.length === 0,
-    /** As linhas que passam na busca, com o documento já mascarado para exibir. */
+    /** As linhas que passam na busca, com o documento e o telefone já mascarados para exibir. */
     rows: all
       .filter((row) => matchesSearch(row, search))
       .map((row) => ({
         ...row,
         document: row.document && formatDocument(row.document),
+        phone: row.phone && formatPhone(row.phone),
         properties: counts.get(row.id) ?? 0,
       })),
     search,

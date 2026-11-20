@@ -143,7 +143,7 @@ describe("corpos", () => {
     for (let i = 0; i < 300; i += 7) {
       const client = clientBody(i);
       assert.ok(client.name.length >= 2 && client.name.length <= 120);
-      assert.ok(client.phone.length <= 20);
+      assert.match(client.phone, /^119\d{8}$/, "um celular com DDD, só dígitos");
       const property = propertyBody(i, "c");
       assert.equal(property.clientId, "c");
       assert.match(property.zipCode, /^\d{8}$/);
