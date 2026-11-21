@@ -129,12 +129,16 @@ jobs:
             -p 1433:1433 mcr.microsoft.com/mssql/server:2022-latest
           timeout 180 bash -c 'until docker logs vistoria-db 2>&1 | grep -q "SQL Server is now ready for client connections"; do sleep 2; done'
 
-      # Em Development, a API aplica as migrações ao subir.
+      # Em Development, a API aplica as migrações ao subir. Só aqui o rate limit sobe: os roteiros entram mais de 5 vezes
+      # por minuto, e cada 429 era uma espera de 60 s pelo Retry-After (#197). O limite padrão continua coberto pelo
+      # RateLimitTests e pelo passo 6 do smoke:prod, no job prod, cujo compose não leva estas variáveis.
       - name: API
         working-directory: apps/api
         env:
           ASPNETCORE_ENVIRONMENT: Development
           ASPNETCORE_URLS: http://localhost:8080
+          RateLimit__CredentialPermitLimit: "1000"
+          RateLimit__RefreshPermitLimit: "1000"
         run: |
           dotnet build Vistoria.Api -c Release
           nohup dotnet run --project Vistoria.Api -c Release --no-build --no-launch-profile > "$RUNNER_TEMP/api.log" 2>&1 &
@@ -156,8 +160,8 @@ jobs:
       - name: Roteiro do aparelho
         run: pnpm spike:device
 
-      # Depois dos roteiros: o signup do seed não divide o limite de 5 por minuto com os deles. Duas vezes, para provar
-      # que rodar de novo completa até N sem duplicar nada (o seed confere o total pelo delta e falha se não bater).
+      # Duas vezes, para provar que rodar de novo completa até N sem duplicar nada (o seed confere o total pelo delta e
+      # falha se não bater).
       - name: Seed
         run: |
           pnpm seed --inspections 200
@@ -172,7 +176,23 @@ jobs:
       - name: Roteiro do volume
         run: pnpm spike:volume --inspections 200
 
-      # O banco local da versão 6 (a main de antes da #172) para a 7, com as mesmas 200: o build antigo sai de um git worktree.
+      # O build do PREVIOUS_REF do roteiro da migração, pelo sha: o roteiro só o constrói (git worktree, install e
+      # next build) se não estiver em node_modules/.cache/migration-spike (#197).
+      - name: Commit do build anterior
+        id: previous-ref
+        # Sem o sha, o grep falha e o passo quebra: a chave nunca sai vazia.
+        run: |
+          sha=$(grep -oP 'const PREVIOUS_REF = "\K[0-9a-f]{40}' scripts/volume-spike/migration-spike.mjs)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Cache do build anterior
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: node_modules/.cache/migration-spike
+          key: migration-spike-${{ steps.previous-ref.outputs.sha }}
+
+      # O banco local da versão 6 (a main de antes da #172) para a 7, com as mesmas 200: o build antigo vem do cache
+      # acima ou de um git worktree.
       - name: Roteiro da migração
         run: pnpm spike:migration
 
