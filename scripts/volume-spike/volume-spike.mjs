@@ -54,7 +54,9 @@ const RUNS = 3;
 const shotsDir = process.env.SCREENS ? resolve(process.env.INIT_CWD ?? root, ".screens/busca") : null;
 if (shotsDir) mkdirSync(shotsDir, { recursive: true });
 const shoot = async (page, device, name) => {
-  if (shotsDir) await page.screenshot({ path: resolve(shotsDir, `busca-${name}-${device}.png`) });
+  // O `pnpm screens --files` lê `<nome>-celular.png` e `<nome>-desktop.png`.
+  const suffix = device === "phone" ? "celular" : device;
+  if (shotsDir) await page.screenshot({ path: resolve(shotsDir, `busca-${name}-${suffix}.png`) });
 };
 
 /**
