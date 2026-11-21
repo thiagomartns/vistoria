@@ -30,7 +30,8 @@ Pastas em [Estrutura de pastas](../../docs/architecture/backend.md#estrutura-de-
 - **Rota exige access token por padrão** (fallback policy). Só `/auth/*` leva `[AllowAnonymous]`, além do
   documento OpenAPI de dev e dos health checks (`/health/live` e `/health/ready`, mapeados pelo nativo em
   `HealthConfig`, fora de `/api/v1` e do contrato: a única rota que não é controller). Rate limit por política
-  nomeada em `RateLimitConfig` (`[EnableRateLimiting]`), pelo IP do cliente: atrás do Caddy, o `ProxyConfig` lê o
+  nomeada em `RateLimitConfig` (`[EnableRateLimiting]`), com os limites das `RateLimitOptions` (seção `RateLimit`,
+  padrão de backend.md; só o job `e2e` do CI os sobe), pelo IP do cliente: atrás do Caddy, o `ProxyConfig` lê o
   `X-Forwarded-For` só vindo de um IP de `ForwardedHeaders:KnownProxies`; sem nenhum, ignora o cabeçalho.
 - **Todo endpoint tem `[EndpointName]` em camelCase** (vira o `operationId` e o nome da função no front).
 - **Endpoint que pode falhar declara `[ProblemResponses(...)]`** com os status da tabela de
