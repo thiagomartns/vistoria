@@ -261,8 +261,13 @@ Todo prazo e limite do sistema está aqui, e só aqui. O front lê esta tabela; 
 | Backoff de retry | 1 s, dobrando até 5 min, com jitter | Front |
 | Pendência "travada" | 24 h falhando sem sucesso | Front |
 | Envio pela outbox | Um por vez, na ordem de criação ([ADR 0034](../decisions/0034-outbox-serial-uma-transacao-por-vez-na-ordem-de-criacao.md)) | Front |
-| Rate limit de `signup` e `signin` | 5 por minuto por IP, cada | .NET |
-| Rate limit de `refresh` | 30 por minuto por IP | .NET |
+| Rate limit de `signup` e `signin` | 5 por minuto por IP, cada | .NET (`RateLimit:CredentialPermitLimit`) |
+| Rate limit de `refresh` | 30 por minuto por IP | .NET (`RateLimit:RefreshPermitLimit`) |
+
+**Rate limit no CI.** Os dois limites são configuráveis, mas os valores acima valem em dev e em produção, e nenhum
+`appsettings*.json` os muda. Só o job `e2e` do CI os sobe, por variável de ambiente, para os roteiros não esperarem 60 s
+pelo `Retry-After` a cada sexto signin. O limite padrão continua provado pelo `RateLimitTests` e pelo passo 6 do
+`smoke:prod`, no job `prod`.
 
 **Como os prazos se encaixam.** A chave de idempotência vale 7 dias, o mesmo que o refresh token. Um aparelho offline por mais tempo que isso precisa entrar de novo antes de enviar qualquer coisa. O caso que sobra (chave vencida reenviada) responde 412 com `current` igual ao corpo enviado, e o front trata isso como sucesso (ver Sync).
 
