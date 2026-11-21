@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using AwesomeAssertions;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 using Vistoria.Api.Infrastructure.Errors;
 using Vistoria.Api.Tests.Support;
 
@@ -80,6 +82,21 @@ public class RateLimitTests(ApiFactory factory) : IClassFixture<ApiFactory>
         int.Parse(thirtyFirst.Headers.GetValues("Retry-After").Single(),
             System.Globalization.CultureInfo.InvariantCulture).Should().BeInRange(1, 60);
         (await PostOnce(client, SignIn)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    // Os testes acima rodam sem a seção RateLimit, com o padrão de backend.md; só o job e2e do CI a configura (#197).
+    [Fact]
+    public async Task ConfiguredCredentialLimit_ReplacesTheDefault()
+    {
+        using var configured = factory.WithWebHostBuilder(builder => builder.ConfigureAppConfiguration(config =>
+            config.AddInMemoryCollection(new Dictionary<string, string?> { ["RateLimit:CredentialPermitLimit"] = "2" })));
+        var client = configured.CreateClient();
+
+        var firstTwo = await Post(client, SignIn, times: 2);
+        var third = await PostOnce(client, SignIn);
+
+        firstTwo.Should().AllSatisfy(r => r.StatusCode.Should().Be(HttpStatusCode.BadRequest));
+        third.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
     }
 
     private static async Task<HttpResponseMessage[]> Post(HttpClient client, string path, int times)
