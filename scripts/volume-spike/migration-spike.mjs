@@ -28,6 +28,7 @@ import {
   outboxCount,
   printTrace,
   root,
+  savePages,
   serve,
   serveDir,
   signIn,
@@ -303,6 +304,7 @@ try {
   console.log("\nRoteiro concluído.");
 } catch (error) {
   printTrace();
+  await savePages("migration", browser);
   throw error;
 } finally {
   await browser.close();

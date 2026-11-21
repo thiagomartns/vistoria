@@ -17,6 +17,7 @@ import { extname, join, resolve } from "node:path";
 
 import { chromium } from "playwright-core";
 
+import { savePages } from "../outbox-spike/lib.mjs";
 import { candidateFiles } from "../screens/lib.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
@@ -214,6 +215,9 @@ try {
   ok("entrou de novo, voltou para /templates, o cliente saiu e o SyncStatus está sincronizado");
 
   console.log("\nSpike 4: o shell abre offline depois da primeira visita.");
+} catch (error) {
+  await savePages("shell", browser);
+  throw error;
 } finally {
   await browser.close();
   server.close();

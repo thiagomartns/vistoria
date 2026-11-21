@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { createServer, request } from "node:http";
 import { extname, join, resolve } from "node:path";
 
@@ -104,6 +104,7 @@ export async function launch({ args = [] } = {}) {
     const context = await newContext(options);
     const name = `contexto ${++contexts}`;
     context.on("page", (page) => {
+      pageNames.set(page, name);
       trace(page, name);
       trackPrefetch(page);
     });
@@ -122,6 +123,8 @@ export async function launch({ args = [] } = {}) {
 const TRACE_SIZE = 80;
 const traced = [];
 let contexts = 0;
+// O nome do contexto de cada página, o mesmo do rastro, para o `savePages` dizer de quem é cada print (#218).
+const pageNames = new WeakMap();
 const started = Date.now();
 
 function trace(page, name) {
@@ -203,6 +206,46 @@ export async function prefetched(page, routes = []) {
 export function printTrace() {
   console.log(`\nAs últimas ${traced.length} requisições da API, antes da falha:`);
   for (const line of traced) console.log(`  ${line}`);
+}
+
+/**
+ * A URL e um print de página inteira de cada página aberta, na hora da falha (o roteiro chama no `catch`, junto do
+ * `printTrace`): a evidência para separar o roteiro frágil do app com uma janela de tempo errada (#218). Os prints vão
+ * para `.screens/falha/<script>/`, fora das pastas do `SCREENS=1` (o `pnpm screens --files` não os publica); no CI, o
+ * job que falha sobe a pasta como artifact. O campo de senha sai mascarado. Nunca lança, e o conjunto tem prazo: a
+ * página pode estar travada, e a falha original não pode se perder por causa do print. `named` (`{ celular: page }`)
+ * troca o rótulo de uma página pelo nome.
+ */
+export async function savePages(script, browser, { named = {}, dir, timeout = 15_000 } = {}) {
+  const folder = dir ?? resolve(process.env.INIT_CWD ?? root, ".screens/falha", script);
+  const names = new Map(Object.entries(named).map(([name, page]) => [page, name]));
+  let pending = 0;
+  const all = (async () => {
+    rmSync(folder, { recursive: true, force: true });
+    mkdirSync(folder, { recursive: true });
+    const open = browser.contexts();
+    console.log(`\nPáginas abertas na hora da falha (${open.reduce((n, c) => n + c.pages().length, 0)}):`);
+    for (const [c, context] of open.entries()) {
+      for (const [p, page] of context.pages().entries()) {
+        const label = names.get(page) ?? `${pageNames.get(page) ?? `contexto ${c + 1}`}-p${p + 1}`;
+        console.log(`  ${label}  ${page.url()}`);
+        const file = join(folder, `${label.replace(/[^\p{L}\p{N}-]+/gu, "-")}.png`);
+        pending++;
+        await page
+          .screenshot({ path: file, fullPage: true, timeout: 5_000, mask: [page.locator('input[type="password"]')] })
+          .then(() => console.log(`    print: ${file}`))
+          .catch((error) => console.log(`    print não saiu: ${String(error?.message ?? error).split("\n")[0]}`))
+          .finally(() => pending--);
+      }
+    }
+  })().catch((error) => console.log(`  as páginas não saíram: ${String(error?.message ?? error).split("\n")[0]}`));
+  let timer;
+  const late = new Promise((done) => (timer = setTimeout(() => done(true), timeout)));
+  if (await Promise.race([all.then(() => false), late])) {
+    console.log(`  prazo de ${timeout} ms esgotado${pending ? `, com ${pending} print em andamento` : ""}`);
+  }
+  clearTimeout(timer);
+  console.log(`Prints da falha em ${folder}`);
 }
 
 const PULL_ROUTE = /\/api\/v1\/(sync\/|(clients|properties|inspections)\/[^/]+$)/;

@@ -15,7 +15,7 @@
 
 import assert from "node:assert/strict";
 
-import { callApi, launch, ok, printTrace, serve, signIn, step, until, uuidv7, wait } from "../outbox-spike/lib.mjs";
+import { callApi, launch, ok, printTrace, savePages, serve, signIn, step, until, uuidv7, wait } from "../outbox-spike/lib.mjs";
 import {
   DEV_EMAIL,
   ROW_LINK,
@@ -434,6 +434,7 @@ try {
   console.log("\nRoteiro concluído.");
 } catch (error) {
   printTrace();
+  await savePages("volume", browser);
   throw error;
 } finally {
   await browser.close();
