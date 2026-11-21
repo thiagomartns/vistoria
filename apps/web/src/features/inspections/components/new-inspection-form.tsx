@@ -15,6 +15,7 @@ import Link from "next/link";
 import type { FormEventHandler } from "react";
 import type { UseFormReturn } from "react-hook-form";
 
+import { SearchSelect } from "@/shared/components/search-select";
 import { ToggleGroup, ToggleGroupItem } from "@/shared/components/toggle-group";
 
 // O formulário de /inspections/new (wireframes 68:1644 e 68:1878, e a seção "Nova vistoria · roteiro (#174)"): Imóvel
@@ -37,7 +38,12 @@ type NewInspectionFormProps = {
     templateId: string;
   }>;
   onSubmit: FormEventHandler<HTMLFormElement>;
-  propertyOptions: Option[];
+  /** Os imóveis do aparelho; uma função, chamada só com o campo aberto (#225). */
+  propertyOptions: () => Option[];
+  /** O texto do imóvel escolhido, ou null. */
+  propertyLabel: string | null;
+  /** O aparelho não tem imóvel. */
+  noProperties: boolean;
   /** Os roteiros do aparelho, ou só o roteiro padrão. */
   templateOptions: Option[];
   /** O roteiro de onde a entrada parte: o escolhido, ou o primeiro. */
@@ -66,6 +72,8 @@ export function NewInspectionForm({
   form,
   onSubmit,
   propertyOptions,
+  propertyLabel,
+  noProperties,
   templateOptions,
   templateId,
   defaultTemplate,
@@ -80,7 +88,6 @@ export function NewInspectionForm({
   propertiesHref,
   cancelHref,
 }: NewInspectionFormProps) {
-  const noProperties = propertyOptions.length === 0;
   return (
     <Form {...form}>
       <form noValidate onSubmit={onSubmit} className="flex w-full flex-col gap-6 md:max-w-[560px]">
@@ -101,26 +108,23 @@ export function NewInspectionForm({
           render={({ field }) => (
             <FormItem>
               <FormLabel>Imóvel</FormLabel>
-              <Select
-                name={field.name}
-                // Um `?propertyId=` que o aparelho não tem não escolhe nada (#176).
-                value={propertyOptions.some((option) => option.value === field.value) ? field.value : ""}
-                onValueChange={field.onChange}
-                disabled={noProperties}
-              >
-                <FormControl>
-                  <SelectTrigger ref={field.ref} onBlur={field.onBlur} className="w-full">
-                    <SelectValue placeholder="Escolha o imóvel" />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  {propertyOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <FormControl>
+                {/* Com busca: o aparelho pode ter milhares de imóveis (#225). Um `?propertyId=` que o aparelho não
+                    tem não escolhe nada (#176). */}
+                <SearchSelect
+                  label="Imóvel"
+                  layout="campo"
+                  placeholder="Escolha o imóvel"
+                  emptyText="Nenhum imóvel encontrado"
+                  value={propertyLabel === null ? null : field.value}
+                  selectedLabel={propertyLabel}
+                  options={propertyOptions}
+                  onChange={(value) => field.onChange(value ?? "")}
+                  disabled={noProperties}
+                  ref={field.ref}
+                  onBlur={field.onBlur}
+                />
+              </FormControl>
               <FormDescription>
                 Imóvel novo? Cadastre em{" "}
                 <Link href={propertiesHref} className="font-medium text-foreground underline">
