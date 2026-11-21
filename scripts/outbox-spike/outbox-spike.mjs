@@ -111,6 +111,7 @@ import {
   root,
   route,
   rowOf,
+  savePages,
   serve,
   serverClient,
   serverInspection,
@@ -2091,6 +2092,7 @@ try {
   console.log("\nRoteiro concluído.");
 } catch (error) {
   printTrace();
+  await savePages("outbox", browser);
   throw error;
 } finally {
   await browser.close();

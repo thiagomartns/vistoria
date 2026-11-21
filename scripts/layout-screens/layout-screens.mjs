@@ -20,7 +20,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { base, launch, ok, printTrace, serve, signIn, step, until, wait } from "../outbox-spike/lib.mjs";
+import { base, launch, ok, printTrace, savePages, serve, signIn, step, until, wait } from "../outbox-spike/lib.mjs";
 import { DEV_EMAIL, apiSignIn, devPassword, serverDelta } from "../volume-spike/lib.mjs";
 import {
   FIGMA_WIDTH,
@@ -272,6 +272,7 @@ try {
   console.log("\nRoteiro concluído.");
 } catch (error) {
   printTrace();
+  await savePages("layout", browser);
   throw error;
 } finally {
   await browser.close();

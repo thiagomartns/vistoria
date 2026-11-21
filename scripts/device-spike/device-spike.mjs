@@ -35,6 +35,7 @@ import {
   printTrace,
   pullNow,
   root,
+  savePages,
   serve,
   serverInspection,
   settled,
@@ -410,6 +411,7 @@ try {
   console.log("\nRoteiro concluído.");
 } catch (error) {
   printTrace();
+  await savePages("device", browser);
   throw error;
 } finally {
   await browser.close();

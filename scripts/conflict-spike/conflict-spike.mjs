@@ -36,6 +36,7 @@ import {
   pullNow,
   root,
   rowOf,
+  savePages,
   serve,
   serverClient,
   serverInspection,
@@ -363,6 +364,8 @@ try {
   await releaseRemovalPull();
   ok("desktop: DELETE com a versão de antes da mudança do celular → 412, e a linha volta com \"Conflito\"");
   await changedRow.getByRole("link").click();
+  // A URL antes do Dialog: se a navegação não acontece, o erro aponta o clique, não o Dialog (#218).
+  await b.waitForURL(/\/inspections\/conflict\?/, { timeout: 15_000 });
   const removal = b.getByRole("dialog", { name: "Excluir mesmo assim?" });
   await removal.waitFor();
   const behind = b
@@ -437,6 +440,7 @@ try {
   console.log("\nRoteiro concluído.");
 } catch (error) {
   printTrace();
+  await savePages("conflict", browser);
   throw error;
 } finally {
   await browser.close();

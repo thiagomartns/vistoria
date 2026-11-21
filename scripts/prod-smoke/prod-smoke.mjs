@@ -10,6 +10,8 @@ import { randomBytes } from "node:crypto";
 
 import { chromium } from "playwright-core";
 
+import { savePages } from "../outbox-spike/lib.mjs";
+
 const base = (process.env.APP_URL ?? "https://localhost").replace(/\/$/, "");
 const contextOptions = { ignoreHTTPSErrors: true, viewport: { width: 1440, height: 900 } };
 
@@ -160,6 +162,9 @@ try {
   ok(`refresh 200 ${waited.toFixed(1)} s depois do 429; sessão ativa e sincronizada`);
 
   console.log("\nCompose de produção: o app abre, entra e sincroniza pelo Caddy, na mesma origem.");
+} catch (error) {
+  await savePages("smoke", browser);
+  throw error;
 } finally {
   await browser.close();
 }

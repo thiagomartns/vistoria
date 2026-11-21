@@ -82,6 +82,17 @@ jobs:
       - name: Shell offline
         run: pnpm spike:shell
 
+      # A URL e o print de cada página aberta na hora da falha, que o roteiro que falhou grava em .screens/falha/ (#218).
+      # Só essa pasta sobe: nada de infra/.env*, e os roteiros não gravam storageState em disco.
+      - name: Prints da falha
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: falha-web
+          path: .screens/falha/
+          retention-days: 7
+          if-no-files-found: ignore
+
   # Os roteiros dos spikes contra a API real: o que a outbox e o pull fazem juntos só aparece com o banco, a API e o
   # static export de verdade (#144). A outbox e o conflito rodam com PULL_CHAOS: o pull a cada 1,5 s em vez de 60 s, caindo
   # em qualquer ponto do roteiro (#145).
@@ -169,6 +180,17 @@ jobs:
         if: failure()
         run: tail -n 300 "$RUNNER_TEMP/api.log"
 
+      # A URL e o print de cada página aberta na hora da falha, que o roteiro que falhou grava em .screens/falha/ (#218).
+      # Só essa pasta sobe: nada de infra/.env*, e os roteiros não gravam storageState em disco.
+      - name: Prints da falha
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: falha-e2e
+          path: .screens/falha/
+          retention-days: 7
+          if-no-files-found: ignore
+
   # O docker-compose de produção (#177): as duas imagens, a migração pelo efbundle e o Caddy servindo o front e a API na
   # mesma origem, com TLS. O roteiro curto entra, sincroniza, renova a sessão pelo cookie e confere o IP do rate limit.
   prod:
@@ -206,6 +228,17 @@ jobs:
       - name: Logs do compose
         if: failure()
         run: docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod logs --tail 200
+
+      # A URL e o print de cada página aberta na hora da falha, que o roteiro que falhou grava em .screens/falha/ (#218).
+      # Só essa pasta sobe: nada de infra/.env*, e os roteiros não gravam storageState em disco.
+      - name: Prints da falha
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: falha-prod
+          path: .screens/falha/
+          retention-days: 7
+          if-no-files-found: ignore
 
   security:
     name: security

@@ -28,6 +28,7 @@ import {
   printTrace,
   pullNow,
   root,
+  savePages,
   signIn,
   step,
   until,
@@ -399,11 +400,8 @@ try {
   console.log(`\nV1 ponta a ponta no compose de produção (${base}). Laudos em ${outDir}.`);
 } catch (error) {
   printTrace();
-  // A tela de cada aparelho na hora da falha, para o log do CI dizer o que eles mostravam.
-  for (const [device, page] of Object.entries(pages)) {
-    await page.screenshot({ path: join(outDir, `falha-${device}.png`) }).catch(() => {});
-  }
-  console.log(`Telas da falha em ${outDir}/falha-*.png`);
+  // A tela de cada aparelho na hora da falha, fora do V1_OUT, que o `pnpm screens --files` publica (#218).
+  await savePages("v1", browser, { named: pages });
   throw error;
 } finally {
   await browser.close();
