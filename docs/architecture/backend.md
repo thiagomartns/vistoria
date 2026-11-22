@@ -172,7 +172,7 @@ Rotas no plural com a versão no prefixo (`/api/v1/...`). `operationId` explíci
 | `POST /api/v1/auth/signin` | `signIn` | 200 `{ accessToken, expiresAt, user: { id, name } }` + cookie | 400, 401 (`invalid-credentials`), 429 |
 | `POST /api/v1/auth/refresh` | `refreshToken` | 200 `{ accessToken, expiresAt }` + cookie novo (exceto na tolerância) | 401, 429 |
 | `POST /api/v1/auth/signout` | `signOut` | 204, cookie apagado | — |
-| `GET /api/v1/zip-codes/{zipCode}` | `getAddressByZipCode` | 200 `{ zipCode, street, district, city, state }` no formato do `Property`; o que o provedor não traz vem `null` | 400 (`errors.zipCode`), 401, 404, 429, 503 |
+| `GET /api/v1/zip-codes/{zipCode}` | `getAddressByZipCode` | 200 `{ zipCode, street, district, city, state }` no formato do `Property`; o que o provedor não traz vem `null` ([ADR 0067](../decisions/0067-o-endereco-pelo-cep-vem-da-nossa-api-pelo-viacep-com-a-brasilapi-de-reserva-com-cache-em-memoria-o-type-upstream-unavailable-e-a-consulta-fora-da-outbox-185.md)) | 400 (`errors.zipCode`), 401, 404, 429, 503 |
 
 **Por que `PUT` com ID do cliente em vez de `POST`.** O cliente já sabe o ID, então criar e atualizar viram a mesma operação (upsert), e reenviar é naturalmente seguro.
 
@@ -364,6 +364,8 @@ Em produção, front e API ficam na **mesma origem**, atrás de um proxy. Isso e
 **IP do rate limit atrás do proxy.** O limite é por `RemoteIpAddress`. Atrás do Caddy esse é o IP do proxy, então o `ForwardedHeaders` (`ProxyConfig`) troca pelo do `X-Forwarded-For`, só quando a requisição vem de um IP de `ForwardedHeaders:KnownProxies`: no compose, o IP fixo do `proxy` na rede `edge`. O Caddy descarta o `X-Forwarded-For` que vem do cliente e manda o IP de quem falou com ele. Sem proxy configurado (dev, testes), a API não lê o cabeçalho, nem do loopback.
 
 **O IP não fica guardado.** Ele só particiona o rate limit, em memória, e some com a janela. Não vai para o banco, nem para o log (o `UseSerilogRequestLogging` não registra IP), nem para serviço externo. O Caddy não grava access log.
+
+**Consulta do CEP** ([ADR 0067](../decisions/0067-o-endereco-pelo-cep-vem-da-nossa-api-pelo-viacep-com-a-brasilapi-de-reserva-com-cache-em-memoria-o-type-upstream-unavailable-e-a-consulta-fora-da-outbox-185.md)). O `getAddressByZipCode` é a única rota que depende de terceiros: o ViaCEP e, quando ele falha ou não conhece o CEP, a BrasilAPI. Cada um tem o próprio `HttpClient` (`Infrastructure/ZipCodes/`), com o handler de resiliência padrão ajustado nos prazos de Parâmetros compartilhados, e as URLs na seção `ZipCode` da configuração. O resultado fica no `HybridCache` em memória, por instância. O provedor recebe só o CEP, nunca o IP nem o usuário, e o log registra a falha do provedor sem o CEP. Os testes trocam os dois handlers por falsos (a `ApiFactory` falha alto se um teste chegar à rede).
 
 ## Correções obrigatórias no código do curso
 
