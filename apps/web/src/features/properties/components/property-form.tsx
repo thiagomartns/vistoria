@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@sanjou/ui/textarea";
 import { CircleAlert } from "lucide-react";
 import { MaskedInput } from "@/shared/components/masked-input";
+import { SearchSelect } from "@/shared/components/search-select";
 import Link from "next/link";
 import type { ComponentProps, FormEventHandler, ReactNode } from "react";
 import type { Control, UseFormReturn } from "react-hook-form";
@@ -96,7 +97,7 @@ export function PropertyForm<TOutput>({
   );
 
   const select = (
-    name: "clientId" | "type",
+    name: "type",
     label: string,
     placeholder: string,
     options: Option[],
@@ -140,18 +141,37 @@ export function PropertyForm<TOutput>({
           </Alert>
         ) : null}
         <div className="flex flex-col gap-5 md:flex-row md:items-start md:gap-3">
-          {select(
-            "clientId",
-            "Cliente",
-            "Selecione o cliente",
-            clientOptions,
-            "md:min-w-0 md:flex-1",
-            clientOptions.length === 0 ? (
-              <Link href={newClientHref} className="font-medium text-foreground underline">
-                Cadastre um cliente antes.
-              </Link>
-            ) : undefined,
-          )}
+          <FormField
+            control={control}
+            name="clientId"
+            render={({ field }) => (
+              <FormItem className="md:min-w-0 md:flex-1">
+                <FormLabel>Cliente</FormLabel>
+                <FormControl>
+                  {/* Com busca: o aparelho pode ter centenas de clientes (#225). */}
+                  <SearchSelect
+                    label="Cliente"
+                    layout="campo"
+                    placeholder="Selecione o cliente"
+                    emptyText="Nenhum cliente encontrado"
+                    value={field.value === "" ? null : field.value}
+                    options={clientOptions}
+                    onChange={(value) => field.onChange(value ?? "")}
+                    ref={field.ref}
+                    onBlur={field.onBlur}
+                  />
+                </FormControl>
+                {clientOptions.length === 0 ? (
+                  <FormDescription>
+                    <Link href={newClientHref} className="font-medium text-foreground underline">
+                      Cadastre um cliente antes.
+                    </Link>
+                  </FormDescription>
+                ) : null}
+                <FormMessage />
+              </FormItem>
+            )}
+          />
           {select("type", "Tipo", "Selecione o tipo", typeOptions, "md:w-[220px] md:shrink-0")}
         </div>
         <div className="flex flex-col gap-5 md:flex-row md:items-start md:gap-3">

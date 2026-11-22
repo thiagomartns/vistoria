@@ -20,6 +20,8 @@ export function NewInspectionScreen() {
     form,
     onSubmit,
     propertyOptions,
+    propertyLabel,
+    noProperties,
     templateOptions,
     templateId,
     defaultTemplate,
@@ -40,6 +42,8 @@ export function NewInspectionScreen() {
           form={form}
           onSubmit={onSubmit}
           propertyOptions={propertyOptions}
+          propertyLabel={propertyLabel}
+          noProperties={noProperties}
           templateOptions={templateOptions}
           templateId={templateId}
           defaultTemplate={defaultTemplate}

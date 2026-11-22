@@ -66,6 +66,7 @@ export function InspectionsScreen() {
       selectedLabel: inspections.clientLabel,
       options: inspections.clientOptions,
       onChange: (clientId) => setFilters({ clientId }),
+      search: { emptyText: "Nenhum cliente encontrado" },
     },
     {
       name: "imovel",
@@ -75,6 +76,7 @@ export function InspectionsScreen() {
       selectedLabel: inspections.propertyLabel,
       options: inspections.propertyOptions,
       onChange: (propertyId) => setFilters({ propertyId }),
+      search: { emptyText: "Nenhum imóvel encontrado" },
     },
     {
       name: "tipo",

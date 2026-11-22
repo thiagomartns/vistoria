@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { useLocalStore } from "@/features/local-store/hooks/useLocalStore";
 import { templateRows } from "@/features/templates/services/templates.view";
+import { byText } from "@/shared/search";
 
 import { newMoveInInspection, newMoveOutInspection } from "../services/inspections.factory";
 import { DELETE_INSPECTION, UPSERT_INSPECTION, saveInspection } from "../services/inspections.sync";
@@ -21,6 +22,9 @@ import { useInspectionRecord } from "./useInspectionRecord";
 import { useInspectionRecords } from "./useInspectionRecords";
 import { useInspectionSummaries } from "./useInspectionSummaries";
 import { inspectionHref, placesOf } from "./useInspections";
+
+const propertyOptionLabel = (place: { address: string; clientName?: string | null }) =>
+  [place.address, place.clientName].filter(Boolean).join(" · ");
 
 const newInspectionSchema = z.object({
   propertyId: z.string().min(1, "Escolha o imóvel."),
@@ -85,6 +89,7 @@ export function useNewInspection(initialPropertyId: string | null = null) {
   const chosen = chosenOption?.value ?? "";
   const { record: moveIn } = useInspectionRecord(store, moveOut && chosen ? chosen : null);
   const [confirming, setConfirming] = useState(false);
+  const chosenPlace = places.get(propertyId);
 
   const create = (values: NewInspectionValues) => {
     if (!store) return;
@@ -112,13 +117,18 @@ export function useNewInspection(initialPropertyId: string | null = null) {
     ready,
     form,
     onSubmit,
-    /** "Rua das Flores, 120 · ap 32 · Imobiliária Horizonte", em ordem de endereço. */
-    propertyOptions: [...places]
-      .map(([value, place]) => ({
-        value,
-        label: [place.address, place.clientName].filter(Boolean).join(" · "),
-      }))
-      .toSorted((a, b) => a.label.localeCompare(b.label, "pt-BR")),
+    /**
+     * "Rua das Flores, 120 · ap 32 · Imobiliária Horizonte", em ordem de endereço. Uma função: só o SearchSelect aberto a
+     * chama, e os 2.500 imóveis do spike 2 não são montados nem ordenados com o campo fechado (#225).
+     */
+    propertyOptions: () =>
+      [...places]
+        .map(([value, place]) => ({ value, label: propertyOptionLabel(place) }))
+        .toSorted((a, b) => byText(a.label, b.label)),
+    /** O texto do imóvel escolhido; null sem escolha ou com um `?propertyId=` que o aparelho não tem (#176). */
+    propertyLabel: chosenPlace ? propertyOptionLabel(chosenPlace) : null,
+    /** O aparelho não tem imóvel: o aviso leva ao cadastro. */
+    noProperties: places.size === 0,
     /** Os roteiros do aparelho que servem de molde, ou só o roteiro padrão. */
     templateOptions: templateOptions.map(({ value, label }) => ({ value, label })),
     /** O roteiro de onde a entrada parte: o escolhido, ou o primeiro. */

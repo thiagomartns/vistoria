@@ -1,7 +1,9 @@
 import { type FilterOption, FilterSelect } from "@/shared/components/filter-select";
+import { SearchSelect } from "@/shared/components/search-select";
 
-// Os filtros de /properties (Figma 71:2799 e 71:2803): Cliente e Tipo, um FilterSelect cada. Na barra do desktop, lado
-// a lado com 180 px; no Sheet "Filtros" do celular, um campo por filtro, com o Label em cima, em largura total.
+// Os filtros de /properties (Figma 71:2799 e 71:2803): Cliente, com busca (o SearchSelect, Figma "Escolha com busca
+// (#225)"), e Tipo, num FilterSelect. Na barra do desktop, lado a lado com 180 px; no Sheet "Filtros" do celular, um
+// campo por filtro, com o Label em cima, em largura total.
 
 type PropertyFiltersProps<TType extends string> = {
   clientId: string | null;
@@ -23,9 +25,10 @@ export function PropertyFilters<TType extends string>({
 }: PropertyFiltersProps<TType>) {
   return (
     <>
-      <FilterSelect
+      <SearchSelect
         label="Cliente"
         allLabel="Todos"
+        emptyText="Nenhum cliente encontrado"
         value={clientId}
         options={clientOptions}
         onChange={(value) => onChange({ clientId: value, type })}

@@ -6,7 +6,10 @@
 // - a live query da lista: da resposta do delta com uma mudança até a linha mudar;
 // - a abertura do app recarregado em modo avião até a lista pronta, e a da tela de campo pela lista;
 // - a busca e os filtros (#175), em modo avião: o reload com um filtro na URL até a lista filtrada pronta, e a busca
-//   pelo nome de um cliente, da digitação até a lista só com as vistorias dele.
+//   pelo nome de um cliente, da digitação até a lista só com as vistorias dele;
+// - o filtro Imóvel (#225), com todos os imóveis do aparelho: do clique até as opções na tela (no celular, dentro do
+//   Sheet "Filtros"). Com SCREENS=1, os prints do SearchSelect aberto, buscando e sem resultado, e os da Nova vistoria e
+//   do formulário de imóvel, em `.screens/busca/`.
 // As metas ficaram fixadas antes de medir (frontend.md, Spike 2); uma meta não cumprida quebra o roteiro. A do reload
 // offline foi cumprida pela lista pelo resumo (#154, ADR 0048).
 // `--inspections` é o mínimo de vistorias vivas que o servidor precisa ter (10 mil por padrão; o CI roda com 200).
@@ -14,8 +17,23 @@
 // A senha do usuário de dev vem de DEV_USER_PASSWORD ou do infra/.env, nunca impressa (ADR 0025).
 
 import assert from "node:assert/strict";
+import { mkdirSync } from "node:fs";
+import { resolve } from "node:path";
 
-import { callApi, launch, ok, printTrace, savePages, serve, signIn, step, until, uuidv7, wait } from "../outbox-spike/lib.mjs";
+import {
+  callApi,
+  launch,
+  ok,
+  printTrace,
+  root,
+  savePages,
+  serve,
+  signIn,
+  step,
+  until,
+  uuidv7,
+  wait,
+} from "../outbox-spike/lib.mjs";
 import {
   DEV_EMAIL,
   ROW_LINK,
@@ -31,6 +49,38 @@ import {
 } from "./lib.mjs";
 
 const RUNS = 3;
+
+/** Com SCREENS=1, os prints do SearchSelect (#225), com os dados do seed. */
+const shotsDir = process.env.SCREENS ? resolve(process.env.INIT_CWD ?? root, ".screens/busca") : null;
+if (shotsDir) mkdirSync(shotsDir, { recursive: true });
+const shoot = async (page, device, name) => {
+  // O `pnpm screens --files` lê `<nome>-celular.png` e `<nome>-desktop.png`.
+  const suffix = device === "phone" ? "celular" : device;
+  if (shotsDir) await page.screenshot({ path: resolve(shotsDir, `busca-${name}-${suffix}.png`) });
+};
+
+/**
+ * Do clique no filtro Imóvel visível (a barra no desktop, o painel do Sheet no celular) até a primeira opção depois do
+ * "Todos" na tela; devolve o tempo e quantas opções a lista montou.
+ */
+const openPropertyFilter = (page) =>
+  page.evaluate(
+    () =>
+      new Promise((done) => {
+        const trigger = [...document.querySelectorAll('button[aria-label="Filtrar por imóvel"]')].find((button) =>
+          button.checkVisibility(),
+        );
+        const clicked = performance.now();
+        trigger.click();
+        const check = () => {
+          const options = document.querySelectorAll('[role="listbox"] [role="option"]');
+          if (options.length > 1 && options[1].checkVisibility()) {
+            done({ ms: performance.now() - clicked, options: options.length });
+          } else requestAnimationFrame(check);
+        };
+        requestAnimationFrame(check);
+      }),
+  );
 const MB = 1024 * 1024;
 
 /** As metas, por aparelho. Fixadas antes da primeira medida (#134): não se ajustam ao número. */
@@ -43,6 +93,8 @@ const TARGETS = {
   // As da busca e dos filtros (#175), fixadas antes de medir: as metas da lista, a da live query e a do reload.
   filteredReload: { label: "Reload offline filtrado → lista", unit: "ms", phone: 2000, desktop: 1000 },
   search: { label: "Busca (digitação → lista)", unit: "ms", phone: 500, desktop: 200 },
+  // A do filtro Imóvel (#225), fixada antes de medir: o SearchSelect monta no máximo 50 opções.
+  propertyFilter: { label: "Filtro Imóvel (clique → opções)", unit: "ms", phone: 300, desktop: 150 },
 };
 
 const DEVICES = [
@@ -368,6 +420,60 @@ async function measure(browser, device, user, server) {
         `(mediana ${format(results.filteredReload, "ms")})`,
     );
     ok(`busca → lista: ${search.map((t) => format(t, "ms")).join(", ")} (mediana ${format(results.search, "ms")})`);
+
+    // 6. O filtro Imóvel (#225), ainda em modo avião, com todos os imóveis do aparelho. No celular, dentro do Sheet
+    // "Filtros"; o Esc fecha só o SearchSelect.
+    await page.goto(new URL("/inspections", page.url()).href);
+    await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
+    await until(async () => (await listedTotal(page)) === server.count, "a lista sem filtros");
+    if (device.name === "phone") {
+      await page.getByRole("button", { name: /^Filtros/ }).click();
+      await page.getByRole("dialog", { name: "Filtros" }).waitFor();
+    }
+    const propertyFilter = [];
+    let mounted = 0;
+    for (let run = 0; run < RUNS; run++) {
+      const opened = await openPropertyFilter(page);
+      propertyFilter.push(opened.ms);
+      mounted = opened.options;
+      if (run < RUNS - 1) {
+        await page.keyboard.press("Escape");
+        await page.getByRole("listbox", { name: "Imóvel" }).waitFor({ state: "hidden" });
+      }
+    }
+    const properties = server.properties;
+    assert.equal(mounted, Math.min(properties, 50) + 1, "o \"Todos\" e no máximo 50 imóveis montados");
+    if (properties > 50) {
+      await page.getByText(`Mais ${(properties - 50).toLocaleString("pt-BR")}: refine a busca`).waitFor();
+    }
+    results.propertyFilter = median(propertyFilter);
+    ok(
+      `filtro Imóvel → opções: ${propertyFilter.map((t) => format(t, "ms")).join(", ")} ` +
+        `(mediana ${format(results.propertyFilter, "ms")}; ${mounted} de ${properties + 1} opções montadas)`,
+    );
+    await shoot(page, device.name, "1-aberto");
+    const third = await page.getByRole("option").nth(2).textContent();
+    const term = third.split(",")[0].split(" ").at(-1);
+    await page.keyboard.type(term);
+    await until(async () => (await page.getByRole("option").count()) >= 2, `os imóveis com "${term}"`);
+    await shoot(page, device.name, "2-buscando");
+    await page.keyboard.press("ControlOrMeta+a");
+    await page.keyboard.type("rua que não existe");
+    await page.getByText("Nenhum imóvel encontrado").waitFor();
+    await shoot(page, device.name, "3-sem-resultado");
+    await page.keyboard.press("Escape");
+    if (shotsDir) {
+      if (device.name === "phone") await page.keyboard.press("Escape");
+      // A Nova vistoria e o formulário de imóvel, com o campo aberto.
+      await page.goto(new URL("/inspections/new", page.url()).href);
+      await page.getByLabel("Imóvel", { exact: true }).click();
+      await page.getByRole("listbox", { name: "Imóvel" }).waitFor();
+      await shoot(page, device.name, "4-nova-vistoria");
+      await page.goto(new URL("/properties/edit", page.url()).href);
+      await page.getByLabel("Cliente", { exact: true }).click();
+      await page.getByRole("listbox", { name: "Cliente" }).waitFor();
+      await shoot(page, device.name, "5-imovel-cliente");
+    }
     return results;
   } finally {
     await context.close();
@@ -417,7 +523,8 @@ try {
   const rooms = live.reduce((sum, inspection) => sum + inspection.rooms.length, 0);
   const items = live.reduce((sum, inspection) => sum + inspection.rooms.reduce((n, room) => n + room.items.length, 0), 0);
   ok(`${live.length} vistorias vivas, com ${rooms} ambientes e ${items} itens`);
-  const context = { count: live.length, user: apiUser };
+  const properties = (await serverDelta(apiUser, "properties")).filter((property) => !property.deletedAt).length;
+  const context = { count: live.length, properties, user: apiUser };
 
   const measured = {};
   let n = 1;
