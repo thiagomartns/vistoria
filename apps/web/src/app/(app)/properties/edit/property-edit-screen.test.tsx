@@ -6,6 +6,7 @@ import type { ClientRecord } from "@/features/clients/models/client";
 import type { InspectionSummary } from "@/features/inspections/models/inspection-summary";
 import type { PropertyRecord } from "@/features/properties/models/property";
 import { fetchProperty, saveProperty } from "@/features/properties/services/properties.sync";
+import { type ZipCodeLookup, lookupZipCode } from "@/features/properties/services/zip-code";
 import { resetSession } from "@/shared/auth/session";
 import type { DraftRecord } from "@/shared/sync/drafts";
 import type { FetchOutcome } from "@/shared/sync/fetch";
@@ -59,6 +60,11 @@ vi.mock("@/features/properties/services/properties.sync", () => ({
   saveProperty: vi.fn<() => string>(() => "novo-id"),
   fetchProperty: vi.fn<(store: unknown, id: string) => Promise<FetchOutcome>>(async () => "not-found"),
   propertyConflictHref: (id: string) => `/properties/conflict?id=${id}`,
+}));
+
+// A consulta do CEP (#185): por padrão, nenhum provedor conhece o CEP.
+vi.mock("@/features/properties/services/zip-code", () => ({
+  lookupZipCode: vi.fn<(zipCode: string) => Promise<ZipCodeLookup>>(async () => ({ kind: "not-found" })),
 }));
 
 const client = (id: string, name: string): ClientRecord => ({
@@ -138,6 +144,8 @@ afterEach(() => {
   navigation.replace.mockReset();
   vi.mocked(saveProperty).mockClear();
   vi.mocked(fetchProperty).mockReset().mockResolvedValue("not-found");
+  vi.mocked(lookupZipCode).mockReset().mockResolvedValue({ kind: "not-found" });
+  vi.restoreAllMocks();
   resetSyncStatus();
   resetSession();
 });
@@ -297,6 +305,172 @@ describe("PropertyEditScreen", () => {
       clientId: C2,
       complement: null,
       zipCode: "01400000",
+    });
+  });
+
+  describe("endereço pelo CEP (#185)", () => {
+    const paulista: ZipCodeLookup = {
+      kind: "found",
+      address: { street: "Avenida Paulista", district: "Bela Vista", city: "São Paulo", state: "SP" },
+    };
+
+    function deferred() {
+      let resolve: (value: ZipCodeLookup) => void = () => {};
+      const promise = new Promise<ZipCodeLookup>((done) => {
+        resolve = done;
+      });
+      return { promise, resolve };
+    }
+
+    const hintOf = (label: string) =>
+      itemOf(field(label)).querySelector("[data-slot=form-description]")?.textContent ?? null;
+
+    it("completar o CEP mostra 'Buscando endereço…', preenche os vazios e põe o foco no Número", async () => {
+      const user = userEvent.setup();
+      const answer = deferred();
+      vi.mocked(lookupZipCode).mockReturnValue(answer.promise);
+      open(null);
+
+      await user.type(field("CEP"), "0131010");
+      expect(lookupZipCode).not.toHaveBeenCalled();
+      await user.type(field("CEP"), "0");
+
+      expect(lookupZipCode).toHaveBeenCalledExactlyOnceWith("01310100");
+      expect(hintOf("CEP")).toBe("Buscando endereço…");
+      answer.resolve(paulista);
+
+      await vi.waitFor(() => expect(field("Rua").value).toBe("Avenida Paulista"));
+      expect(field("Bairro").value).toBe("Bela Vista");
+      expect(field("Cidade").value).toBe("São Paulo");
+      expect(field("UF").value).toBe("SP");
+      expect(document.activeElement).toBe(field("Número"));
+      expect(hintOf("CEP")).toBeNull();
+    });
+
+    it("o que a pessoa já digitou fica; o endereço preenchido vai para o banco local", async () => {
+      const user = userEvent.setup();
+      vi.mocked(lookupZipCode).mockResolvedValue(paulista);
+      open(null);
+
+      await choose(user, "Cliente", "Imobiliária Horizonte");
+      await choose(user, "Tipo", "Apartamento");
+      await user.type(field("Rua"), "Al. Santos");
+      await user.type(field("CEP"), "01310100");
+      await vi.waitFor(() => expect(field("Bairro").value).toBe("Bela Vista"));
+      await user.type(field("Número"), "900");
+      await user.click(screen.getByRole("button", { name: "Salvar" }));
+
+      expect(field("Rua").value).toBe("Al. Santos");
+      await vi.waitFor(() => expect(saveProperty).toHaveBeenCalledOnce());
+      expect(vi.mocked(saveProperty).mock.calls[0]?.[1]).toMatchObject({
+        zipCode: "01310100",
+        street: "Al. Santos",
+        number: "900",
+        district: "Bela Vista",
+        city: "São Paulo",
+        state: "SP",
+      });
+    });
+
+    it("corrigir o CEP troca o que a consulta pôs e ninguém mexeu, e limpa o que o CEP novo não tem", async () => {
+      const user = userEvent.setup();
+      vi.mocked(lookupZipCode).mockResolvedValueOnce(paulista).mockResolvedValueOnce({
+        kind: "found",
+        address: { street: null, district: null, city: "Brumadinho", state: "MG" },
+      });
+      open(null);
+
+      await user.type(field("CEP"), "01310100");
+      await vi.waitFor(() => expect(field("Cidade").value).toBe("São Paulo"));
+      await user.clear(field("Bairro"));
+      await user.type(field("Bairro"), "Centro");
+      await user.clear(field("CEP"));
+      await user.type(field("CEP"), "35460000");
+
+      await vi.waitFor(() => expect(field("Cidade").value).toBe("Brumadinho"));
+      expect(field("UF").value).toBe("MG");
+      expect(field("Rua").value).toBe("");
+      expect(field("Bairro").value).toBe("Centro");
+      // CEP geral: sem rua, o foco vai para a Rua.
+      expect(document.activeElement).toBe(field("Rua"));
+    });
+
+    it("não encontrado: a dica, que não impede salvar", async () => {
+      const user = userEvent.setup();
+      open(null);
+
+      await fill(user);
+
+      expect(await screen.findByText("CEP não encontrado. Preencha o endereço.")).toBeDefined();
+      await user.click(screen.getByRole("button", { name: "Salvar" }));
+      await vi.waitFor(() => expect(saveProperty).toHaveBeenCalledOnce());
+    });
+
+    it("a consulta falhou: a dica de indisponível, e nada é preenchido", async () => {
+      const user = userEvent.setup();
+      vi.mocked(lookupZipCode).mockResolvedValue({ kind: "failed" });
+      open(null);
+
+      await user.type(field("CEP"), "01310100");
+
+      expect(await screen.findByText("Busca indisponível. Preencha à mão.")).toBeDefined();
+      expect(field("Rua").value).toBe("");
+      expect(document.activeElement).toBe(field("CEP"));
+    });
+
+    it("offline: não consulta e não mostra dica", async () => {
+      const user = userEvent.setup();
+      vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+      open(null);
+
+      await user.type(field("CEP"), "01310100");
+
+      expect(lookupZipCode).not.toHaveBeenCalled();
+      expect(hintOf("CEP")).toBeNull();
+    });
+
+    it("a resposta de um CEP que já mudou é descartada", async () => {
+      const user = userEvent.setup();
+      const first = deferred();
+      vi.mocked(lookupZipCode).mockReturnValueOnce(first.promise).mockResolvedValueOnce({ kind: "failed" });
+      open(null);
+
+      await user.type(field("CEP"), "01310100");
+      await user.type(field("CEP"), "{Backspace}9");
+      expect(await screen.findByText("Busca indisponível. Preencha à mão.")).toBeDefined();
+      first.resolve(paulista);
+      await first.promise;
+
+      expect(field("Rua").value).toBe("");
+      expect(hintOf("CEP")).toBe("Busca indisponível. Preencha à mão.");
+    });
+
+    it("com o foco já em outro campo, a resposta não o tira de lá", async () => {
+      const user = userEvent.setup();
+      const answer = deferred();
+      vi.mocked(lookupZipCode).mockReturnValue(answer.promise);
+      open(null);
+
+      await user.type(field("CEP"), "01310100");
+      await user.click(field("Complemento"));
+      answer.resolve(paulista);
+
+      await vi.waitFor(() => expect(field("Rua").value).toBe("Avenida Paulista"));
+      expect(document.activeElement).toBe(field("Complemento"));
+    });
+
+    it("edição: abrir um imóvel não consulta; mudar o CEP consulta e preenche só o vazio", async () => {
+      const user = userEvent.setup();
+      vi.mocked(lookupZipCode).mockResolvedValue(paulista);
+      open("p1", { properties: [{ ...flores, district: "" }] });
+
+      expect(lookupZipCode).not.toHaveBeenCalled();
+      await user.clear(field("CEP"));
+      await user.type(field("CEP"), "01310100");
+
+      await vi.waitFor(() => expect(field("Bairro").value).toBe("Bela Vista"));
+      expect(field("Rua").value).toBe("Rua das Flores");
+      expect(field("Cidade").value).toBe("São Paulo");
     });
   });
 
