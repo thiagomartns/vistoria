@@ -8,7 +8,7 @@ import Link from "next/link";
 import { TemplatesList } from "@/features/templates/components/templates-list";
 import { useTemplates } from "@/features/templates/hooks/useTemplates";
 import { EmptyState } from "@/shared/components/empty-state";
-import { useIsDesktop } from "@/shared/useIsDesktop";
+import { useIsDesktop, useIsLarge } from "@/shared/useIsDesktop";
 
 // /templates (Figma "Roteiros (#173)", estados 1 e 2): busca local pelo nome, "Novo roteiro" e a lista em ordem de
 // nome. Sem roteiro no aparelho, o EmptyState sem ação, porque "Novo roteiro" já está acima. Sem exclusão na V1.
@@ -18,6 +18,7 @@ const NEW_TEMPLATE_HREF = "/templates/edit";
 export function TemplatesScreen() {
   const { ready, empty, rows, search, setSearch } = useTemplates();
   const desktop = useIsDesktop();
+  const large = useIsLarge();
 
   if (!ready) return null;
 
@@ -52,7 +53,7 @@ export function TemplatesScreen() {
           description="Confira a busca ou crie um roteiro novo."
         />
       ) : (
-        <TemplatesList items={rows} />
+        <TemplatesList items={rows} layout={large ? "tabela" : "linhas"} />
       )}
     </>
   );

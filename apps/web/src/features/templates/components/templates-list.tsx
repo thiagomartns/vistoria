@@ -2,11 +2,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import Link from "next/link";
 
 import { ListRow } from "@/shared/components/list-row";
-import { STICKY_TABLE_HEADER } from "@/shared/components/list-table";
+import { type ListLayout, STICKY_TABLE_HEADER } from "@/shared/components/list-table";
 import { SyncBadge, type SyncBadgeState } from "@/shared/components/sync-badge";
 
-// A lista de /templates (Figma "Roteiros (#173)", estado 1): Table no desktop, ListRow abaixo de `lg`. A linha inteira
-// abre /templates/edit?id=. O SyncBadge só aparece fora do sincronizado (silêncio no caminho feliz).
+// A lista de /templates (Figma "Roteiros (#173)", estado 1): Table a partir de `lg`, ListRow abaixo; só a versão da
+// largura existe na página, pelo `layout` que a tela passa (#223). A linha inteira abre /templates/edit?id=. O
+// SyncBadge só aparece fora do sincronizado (silêncio no caminho feliz).
 
 export interface TemplateListItem {
   id: string;
@@ -32,51 +33,56 @@ const badgeOf = (item: TemplateListItem) =>
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
 
-export function TemplatesList({ items }: { items: TemplateListItem[] }) {
-  return (
-    <>
-      <div className="@container hidden overflow-clip rounded-lg border border-border lg:block @min-[360px]:*:data-[slot=table-container]:overflow-x-visible">
-        <Table className="min-w-[360px] table-fixed">
-          <TableHeader className={STICKY_TABLE_HEADER}>
-            <TableRow>
-              <TableHead>Nome</TableHead>
-              <TableHead className={COLUMN.rooms}>Ambientes</TableHead>
-              <TableHead className={COLUMN.items}>Itens</TableHead>
-              <TableHead className={COLUMN.sync}>Sincronização</TableHead>
+export function TemplatesList({
+  items,
+  layout,
+}: {
+  items: TemplateListItem[];
+  layout: ListLayout;
+}) {
+  return layout === "tabela" ? (
+    <div className="@container overflow-clip rounded-lg border border-border @min-[360px]:*:data-[slot=table-container]:overflow-x-visible">
+      <Table className="min-w-[360px] table-fixed">
+        <TableHeader className={STICKY_TABLE_HEADER}>
+          <TableRow>
+            <TableHead>Nome</TableHead>
+            <TableHead className={COLUMN.rooms}>Ambientes</TableHead>
+            <TableHead className={COLUMN.items}>Itens</TableHead>
+            <TableHead className={COLUMN.sync}>Sincronização</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {items.map((item) => (
+            <TableRow key={item.id} className="relative">
+              <TableCell className="truncate">
+                {/* O link cobre a linha inteira (::after), e o nome continua sendo o nome acessível. */}
+                <Link
+                  href={templateHref(item.id)}
+                  className="outline-none after:absolute after:inset-0 focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-ring"
+                >
+                  {item.name}
+                </Link>
+              </TableCell>
+              <TableCell className={`tabular-nums ${COLUMN.rooms}`}>{item.roomCount}</TableCell>
+              <TableCell className={`tabular-nums ${COLUMN.items}`}>{item.itemCount}</TableCell>
+              <TableCell>{badgeOf(item)}</TableCell>
             </TableRow>
-          </TableHeader>
-          <TableBody>
-            {items.map((item) => (
-              <TableRow key={item.id} className="relative">
-                <TableCell className="truncate">
-                  {/* O link cobre a linha inteira (::after), e o nome continua sendo o nome acessível. */}
-                  <Link
-                    href={templateHref(item.id)}
-                    className="outline-none after:absolute after:inset-0 focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-ring"
-                  >
-                    {item.name}
-                  </Link>
-                </TableCell>
-                <TableCell className={`tabular-nums ${COLUMN.rooms}`}>{item.roomCount}</TableCell>
-                <TableCell className={`tabular-nums ${COLUMN.items}`}>{item.itemCount}</TableCell>
-                <TableCell>{badgeOf(item)}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-      <ul className="flex flex-col lg:hidden">
-        {items.map((item) => (
-          <li key={item.id}>
-            <ListRow
-              href={templateHref(item.id)}
-              title={item.name}
-              subtitle={`${plural(item.roomCount, "ambiente", "ambientes")} · ${plural(item.itemCount, "item", "itens")}`}
-              trailing={badgeOf(item)}
-            />
-          </li>
-        ))}
-      </ul>
-    </>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  ) : (
+    <ul className="flex flex-col">
+      {items.map((item) => (
+        <li key={item.id}>
+          <ListRow
+            href={templateHref(item.id)}
+            title={item.name}
+            subtitle={`${plural(item.roomCount, "ambiente", "ambientes")} · ${plural(item.itemCount, "item", "itens")}`}
+            trailing={badgeOf(item)}
+          />
+        </li>
+      ))}
+    </ul>
   );
 }
