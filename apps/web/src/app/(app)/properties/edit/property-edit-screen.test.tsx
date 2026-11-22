@@ -459,18 +459,65 @@ describe("PropertyEditScreen", () => {
       expect(document.activeElement).toBe(field("Complemento"));
     });
 
-    it("edição: abrir um imóvel não consulta; mudar o CEP consulta e preenche só o vazio", async () => {
+    it("edição: abrir um imóvel não consulta; trocar o CEP troca o endereço do registro", async () => {
       const user = userEvent.setup();
       vi.mocked(lookupZipCode).mockResolvedValue(paulista);
-      open("p1", { properties: [{ ...flores, district: "" }] });
+      open("p1", { properties: [{ ...flores, city: "Santos" }] });
 
       expect(lookupZipCode).not.toHaveBeenCalled();
       await user.clear(field("CEP"));
       await user.type(field("CEP"), "01310100");
 
-      await vi.waitFor(() => expect(field("Bairro").value).toBe("Bela Vista"));
-      expect(field("Rua").value).toBe("Rua das Flores");
+      await vi.waitFor(() => expect(field("Rua").value).toBe("Avenida Paulista"));
+      expect(field("Bairro").value).toBe("Bela Vista");
       expect(field("Cidade").value).toBe("São Paulo");
+      expect(field("UF").value).toBe("SP");
+      // Número e Complemento não vêm do CEP.
+      expect(field("Número").value).toBe("120");
+      expect(field("Complemento").value).toBe("ap 32");
+      await user.click(screen.getByRole("button", { name: "Salvar" }));
+      await vi.waitFor(() => expect(saveProperty).toHaveBeenCalledOnce());
+      expect(vi.mocked(saveProperty).mock.calls[0]?.[1]).toMatchObject({
+        id: "p1",
+        zipCode: "01310100",
+        street: "Avenida Paulista",
+        district: "Bela Vista",
+        city: "São Paulo",
+        state: "SP",
+      });
+    });
+
+    it("edição: o que a pessoa mexeu nesta tela fica; o resto do registro troca", async () => {
+      const user = userEvent.setup();
+      vi.mocked(lookupZipCode).mockResolvedValue(paulista);
+      open("p1", { properties: [flores] });
+
+      await user.clear(field("Rua"));
+      await user.type(field("Rua"), "Al. Santos");
+      await user.clear(field("CEP"));
+      await user.type(field("CEP"), "01310100");
+
+      await vi.waitFor(() => expect(field("Bairro").value).toBe("Bela Vista"));
+      expect(field("Rua").value).toBe("Al. Santos");
+      expect(field("Cidade").value).toBe("São Paulo");
+    });
+
+    it("edição: o CEP geral de uma cidade limpa a rua e o bairro do registro", async () => {
+      const user = userEvent.setup();
+      vi.mocked(lookupZipCode).mockResolvedValue({
+        kind: "found",
+        address: { street: null, district: null, city: "Brumadinho", state: "MG" },
+      });
+      open("p1", { properties: [flores] });
+
+      await user.clear(field("CEP"));
+      await user.type(field("CEP"), "35460000");
+
+      await vi.waitFor(() => expect(field("Cidade").value).toBe("Brumadinho"));
+      expect(field("UF").value).toBe("MG");
+      expect(field("Rua").value).toBe("");
+      expect(field("Bairro").value).toBe("");
+      expect(document.activeElement).toBe(field("Rua"));
     });
   });
 

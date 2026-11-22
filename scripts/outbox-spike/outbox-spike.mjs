@@ -70,8 +70,8 @@
 // Desde o #185 o passo 12p digita o CEP no Novo imóvel, com a consulta respondida pela rota da página (o `launch()`
 // responde "não encontrado" em todo o resto, e nenhum roteiro sai para o ViaCEP): a falha e o não encontrado só dão a
 // dica; o encontrado mostra "Buscando endereço…", preenche Rua, Bairro, Cidade e UF e põe o foco no Número; corrigido para
-// um CEP geral, troca a cidade e limpa o que a consulta anterior pôs. Salvo, chega pela outbox. Com SCREENS=1, os prints
-// em `.screens/cep/`.
+// um CEP geral, troca a cidade e limpa o que a consulta anterior pôs. Salvo, chega pela outbox; aberto de novo, trocar
+// o CEP troca o endereço do registro. Com SCREENS=1, os prints em `.screens/cep/`.
 // Desde o #133 o passo 13 passa pelo aviso de outro usuário (Cancelar faz o signOut da Bia e mantém a fila da Ana), e o
 // passo 15 prova a limpeza no IndexedDB de verdade: Sair com pendência pelo Dialog e "Apagar e entrar" de outro usuário.
 
@@ -1971,7 +1971,7 @@ try {
   ok(`a rede volta: o roteiro pronto chega em ${readyKeys.length} PUT, cada chave uma vez, com ${readyIds.length} ids diferentes`);
   await goTo(page, "Clientes");
 
-  step("12p", "Endereço pelo CEP (#185): a falha e o não encontrado só dão a dica; o encontrado preenche os vazios e põe o foco no Número; corrigir o CEP troca o que a consulta pôs; salvar segue pela outbox");
+  step("12p", "Endereço pelo CEP (#185): a falha e o não encontrado só dão a dica; o encontrado preenche os vazios e põe o foco no Número; corrigir o CEP troca o que a consulta pôs; salvar segue pela outbox; na edição, trocar o CEP troca o endereço do registro");
   // A consulta responde pela rota da página, por cima da do `launch()`: nenhum provedor de verdade.
   const zipLookups = [];
   let releaseFound = () => {};
@@ -2058,8 +2058,21 @@ try {
     [zipProperty.zipCode, zipProperty.street, zipProperty.district, zipProperty.city, zipProperty.state],
     ["35460000", "Rua do CEP", "Centro", "Brumadinho", "MG"],
   );
-  await page.unroute(ZIP_CODE_ROUTE);
   ok("salvo: o imóvel chega ao servidor pela outbox, com a cidade e a UF da consulta");
+
+  // Na edição, trocar o CEP troca o endereço do registro; o Número, que não vem do CEP, fica.
+  await zipLink.click();
+  await page.getByRole("heading", { level: 1, name: "Rua do CEP, 7" }).waitFor();
+  await zipField.fill("01310100");
+  await until(async () => (await page.getByLabel("Rua").inputValue()) === "Avenida Paulista", "a rua do CEP novo");
+  assert.deepEqual(
+    await Promise.all(["Bairro", "Cidade", "UF", "Número"].map((label) => page.getByLabel(label).inputValue())),
+    ["Bela Vista", "São Paulo", "SP", "7"],
+  );
+  await page.getByRole("link", { name: "Cancelar" }).click();
+  await page.getByRole("heading", { level: 1, name: "Imóveis" }).waitFor();
+  await page.unroute(ZIP_CODE_ROUTE);
+  ok("edição: o CEP trocado troca Rua, Bairro, Cidade e UF do registro, e o Número fica; Cancelar não salva");
   await goTo(page, "Clientes");
 
   step(13, "Outro usuário entra: a fila do anterior não sai com a conta dele");

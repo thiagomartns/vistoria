@@ -26,9 +26,11 @@ type Lookup = { zipCode: string; status: "searching" | "found" | "not-found" | "
  * Consulta o endereço quando a pessoa completa os 8 dígitos do CEP (`onZipCodeChange`, ligado à digitação: abrir um
  * imóvel não consulta). Sem rede, não consulta e não mostra nada. A resposta de um CEP que já mudou é descartada.
  *
- * Preenche só Rua, Bairro, Cidade e UF vazios na hora da resposta, ou com o valor que a consulta anterior pôs e ninguém
- * mexeu: corrigir um dígito do CEP troca a cidade errada, e o que a pessoa digitou nunca é trocado. Se o foco ainda está
- * no CEP, ele vai para a Rua, se ela ficou vazia (o CEP geral de uma cidade), ou para o Número.
+ * Troca Rua, Bairro, Cidade e UF que a pessoa não digitou nesta tela: o campo vazio, o que a consulta anterior pôs e
+ * ninguém mexeu (corrigir um dígito do CEP troca a cidade errada) e o que veio do registro e ninguém mexeu (na edição,
+ * trocar o CEP é dizer que o endereço mudou). O que a pessoa digitou nesta tela nunca é trocado. O que o CEP novo não
+ * traz (a rua e o bairro do CEP geral de uma cidade) fica vazio. Se o foco ainda está no CEP, ele vai para a Rua, se
+ * ela ficou vazia, ou para o Número.
  */
 export function useZipCodeLookup(
   form: UseFormReturn<PropertyFormValues, unknown, PropertyFormOutput>,
@@ -42,7 +44,9 @@ export function useZipCodeLookup(
   const apply = (address: ZipCodeAddress) => {
     for (const name of ADDRESS_FIELDS) {
       const current = form.getValues(name);
-      const ours = current.trim() === "" || current === filled.current[name];
+      // O registro carregado é o `defaultValues` do formulário (o `values` do usePropertyForm); no novo, "".
+      const saved = form.formState.defaultValues?.[name];
+      const ours = current.trim() === "" || current === filled.current[name] || current === saved;
       if (!ours) continue;
       const next = address[name] ?? "";
       if (next === "" && current === "") continue;
