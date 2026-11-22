@@ -44,6 +44,8 @@ function reactionFor(type: ProblemType): ReactionGroup {
     case "urn:vistoria:problem:internal":
     case "urn:vistoria:problem:rate-limited":
     case "urn:vistoria:problem:idempotency-in-progress":
+    // Só a consulta do CEP o recebe, e ela não tenta de novo sozinha: mostra a dica e o cadastro segue à mão (#185).
+    case "urn:vistoria:problem:upstream-unavailable":
       return "retry";
     case "urn:vistoria:problem:unauthorized":
       return "renew-session";

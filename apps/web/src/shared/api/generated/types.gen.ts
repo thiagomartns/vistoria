@@ -100,7 +100,7 @@ export type ProblemDetails = {
 /**
  * type de erro do catálogo (backend.md, "Catálogo de erros"). O front reage por ele.
  */
-export type ProblemType = 'urn:vistoria:problem:validation' | 'urn:vistoria:problem:invalid-cursor' | 'urn:vistoria:problem:unauthorized' | 'urn:vistoria:problem:invalid-credentials' | 'urn:vistoria:problem:forbidden' | 'urn:vistoria:problem:not-found' | 'urn:vistoria:problem:unsupported-request' | 'urn:vistoria:problem:version-conflict' | 'urn:vistoria:problem:idempotency-in-progress' | 'urn:vistoria:problem:locked' | 'urn:vistoria:problem:deleted' | 'urn:vistoria:problem:cursor-expired' | 'urn:vistoria:problem:idempotency-key-reused' | 'urn:vistoria:problem:precondition-required' | 'urn:vistoria:problem:rate-limited' | 'urn:vistoria:problem:internal';
+export type ProblemType = 'urn:vistoria:problem:validation' | 'urn:vistoria:problem:invalid-cursor' | 'urn:vistoria:problem:unauthorized' | 'urn:vistoria:problem:invalid-credentials' | 'urn:vistoria:problem:forbidden' | 'urn:vistoria:problem:not-found' | 'urn:vistoria:problem:unsupported-request' | 'urn:vistoria:problem:version-conflict' | 'urn:vistoria:problem:idempotency-in-progress' | 'urn:vistoria:problem:locked' | 'urn:vistoria:problem:deleted' | 'urn:vistoria:problem:cursor-expired' | 'urn:vistoria:problem:idempotency-key-reused' | 'urn:vistoria:problem:precondition-required' | 'urn:vistoria:problem:rate-limited' | 'urn:vistoria:problem:upstream-unavailable' | 'urn:vistoria:problem:internal';
 
 export type PropertyDto = {
     id: string;
@@ -254,6 +254,14 @@ export type UpsertTemplateRoomDto = {
     name: string;
     position: null | number;
     items: Array<UpsertTemplateItemDto>;
+};
+
+export type ZipCodeAddressDto = {
+    zipCode: string;
+    street: null | string;
+    district: null | string;
+    city: null | string;
+    state: null | string;
 };
 
 export type SignUpData = {
@@ -983,3 +991,46 @@ export type UpsertTemplateResponses = {
 };
 
 export type UpsertTemplateResponse = UpsertTemplateResponses[keyof UpsertTemplateResponses];
+
+export type GetAddressByZipCodeData = {
+    body?: never;
+    path: {
+        zipCode: string;
+    };
+    query?: never;
+    url: '/api/v1/zip-codes/{zipCode}';
+};
+
+export type GetAddressByZipCodeErrors = {
+    /**
+     * Bad Request
+     */
+    400: ProblemDetails;
+    /**
+     * Unauthorized
+     */
+    401: ProblemDetails;
+    /**
+     * Not Found
+     */
+    404: ProblemDetails;
+    /**
+     * Too Many Requests
+     */
+    429: ProblemDetails;
+    /**
+     * Service Unavailable
+     */
+    503: ProblemDetails;
+};
+
+export type GetAddressByZipCodeError = GetAddressByZipCodeErrors[keyof GetAddressByZipCodeErrors];
+
+export type GetAddressByZipCodeResponses = {
+    /**
+     * OK
+     */
+    200: ZipCodeAddressDto;
+};
+
+export type GetAddressByZipCodeResponse = GetAddressByZipCodeResponses[keyof GetAddressByZipCodeResponses];

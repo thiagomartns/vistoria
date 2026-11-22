@@ -75,6 +75,7 @@ export const zProblemType = z.enum([
     'urn:vistoria:problem:idempotency-key-reused',
     'urn:vistoria:problem:precondition-required',
     'urn:vistoria:problem:rate-limited',
+    'urn:vistoria:problem:upstream-unavailable',
     'urn:vistoria:problem:internal'
 ]);
 
@@ -268,6 +269,14 @@ export const zUpsertTemplateDto = z.object({
     rooms: z.array(zUpsertTemplateRoomDto).max(40)
 });
 
+export const zZipCodeAddressDto = z.object({
+    zipCode: z.string(),
+    street: z.string().nullable(),
+    district: z.string().nullable(),
+    city: z.string().nullable(),
+    state: z.string().nullable()
+});
+
 export const zSignUpBody = zSignUpDto;
 
 /**
@@ -445,3 +454,12 @@ export const zUpsertTemplatePath = z.object({
  * OK
  */
 export const zUpsertTemplateResponse = zTemplateDto;
+
+export const zGetAddressByZipCodePath = z.object({
+    zipCode: z.string()
+});
+
+/**
+ * OK
+ */
+export const zGetAddressByZipCodeResponse = zZipCodeAddressDto;

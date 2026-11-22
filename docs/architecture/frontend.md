@@ -104,7 +104,7 @@ A reação é escolhida pelo `type`, conforme o [catálogo do backend](backend.m
 
 | Grupo | `type` | O que a outbox faz |
 | --- | --- | --- |
-| Tentar de novo | `internal`, `rate-limited`, `idempotency-in-progress`, falha de rede, resposta sem `ProblemDetails` | Backoff (ou `Retry-After`) com a **mesma** chave |
+| Tentar de novo | `internal`, `rate-limited`, `idempotency-in-progress`, `upstream-unavailable`, falha de rede, resposta sem `ProblemDetails` | Backoff (ou `Retry-After`) com a **mesma** chave; o `upstream-unavailable` só vem da consulta do CEP, que não passa pela outbox nem tenta de novo sozinha |
 | Renovar sessão | `unauthorized` | Pausa a fila, refresh em aba única, retoma com a mesma chave ([ADR 0045](../decisions/0045-o-unauthorized-se-renova-no-client-que-reenvia-a-mesma-requisicao-refresh-sem-resposta-nao-expira-a-sessao-token-renovado-de-outro-usuario-nao-vale.md)) |
 | Decisão do usuário | `version-conflict` (409 ou 412), `deleted` | Marca conflito e abre o `ConflictResolver` |
 | Aceitar o servidor | `locked` | Descarta a transação, adota `current` (no `PUT` e no `DELETE`), tira o rascunho e avisa num toast que a vistoria foi concluída em outro aparelho, a menos que o `current` seja o que este aparelho enviou (`shared/sync/notices.ts`, mostrado pelo shell) |
