@@ -2,12 +2,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import Link from "next/link";
 
 import { ListRow } from "@/shared/components/list-row";
-import { STICKY_TABLE_HEADER } from "@/shared/components/list-table";
+import { type ListLayout, STICKY_TABLE_HEADER } from "@/shared/components/list-table";
 import { SyncBadge, type SyncBadgeState } from "@/shared/components/sync-badge";
 
-// A lista de /clients (Figma 70:2405 e 70:2564): Table no desktop, ListRow abaixo de `lg`. A linha inteira abre
-// /clients/edit?id=. O SyncBadge só aparece fora do sincronizado (silêncio no caminho feliz). "Imóveis" conta os
-// imóveis do cliente no aparelho.
+// A lista de /clients (Figma 70:2405 e 70:2564): Table a partir de `lg`, ListRow abaixo. Só a versão da largura existe
+// na página, pelo `layout` que a tela passa (#223). A linha inteira abre /clients/edit?id=. O SyncBadge só aparece fora
+// do sincronizado (silêncio no caminho feliz). "Imóveis" conta os imóveis do cliente no aparelho.
 
 export interface ClientListItem {
   id: string;
@@ -39,56 +39,57 @@ const COLUMN = {
 const badgeOf = (item: ClientListItem) =>
   item.sync === "sincronizado" ? null : <SyncBadge state={item.sync} />;
 
-export function ClientsList({ items }: { items: ClientListItem[] }) {
-  return (
-    <>
-      <div className="@container hidden overflow-clip rounded-lg border border-border lg:block @min-[460px]:*:data-[slot=table-container]:overflow-x-visible">
-        <Table className="min-w-[460px] table-fixed">
-          <TableHeader className={STICKY_TABLE_HEADER}>
-            <TableRow>
-              <TableHead>Nome</TableHead>
-              <TableHead className={COLUMN.document}>CPF ou CNPJ</TableHead>
-              <TableHead className={COLUMN.email}>E-mail</TableHead>
-              <TableHead className={COLUMN.phone}>Telefone</TableHead>
-              <TableHead className={COLUMN.properties}>Imóveis</TableHead>
-              <TableHead className={COLUMN.sync}>Sincronização</TableHead>
+export function ClientsList({ items, layout }: { items: ClientListItem[]; layout: ListLayout }) {
+  return layout === "tabela" ? (
+    <div className="@container overflow-clip rounded-lg border border-border @min-[460px]:*:data-[slot=table-container]:overflow-x-visible">
+      <Table className="min-w-[460px] table-fixed">
+        <TableHeader className={STICKY_TABLE_HEADER}>
+          <TableRow>
+            <TableHead>Nome</TableHead>
+            <TableHead className={COLUMN.document}>CPF ou CNPJ</TableHead>
+            <TableHead className={COLUMN.email}>E-mail</TableHead>
+            <TableHead className={COLUMN.phone}>Telefone</TableHead>
+            <TableHead className={COLUMN.properties}>Imóveis</TableHead>
+            <TableHead className={COLUMN.sync}>Sincronização</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {items.map((item) => (
+            <TableRow key={item.id} className="relative">
+              <TableCell className="truncate">
+                {/* O link cobre a linha inteira (::after), e o nome continua sendo o nome acessível. */}
+                <Link
+                  href={clientHref(item.id)}
+                  className="outline-none after:absolute after:inset-0 focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-ring"
+                >
+                  {item.name}
+                </Link>
+              </TableCell>
+              <TableCell className={`truncate ${COLUMN.document}`}>{item.document}</TableCell>
+              <TableCell className={`truncate ${COLUMN.email}`}>{item.email}</TableCell>
+              <TableCell className={`truncate ${COLUMN.phone}`}>{item.phone}</TableCell>
+              <TableCell className={`tabular-nums ${COLUMN.properties}`}>
+                {item.properties}
+              </TableCell>
+              <TableCell>{badgeOf(item)}</TableCell>
             </TableRow>
-          </TableHeader>
-          <TableBody>
-            {items.map((item) => (
-              <TableRow key={item.id} className="relative">
-                <TableCell className="truncate">
-                  {/* O link cobre a linha inteira (::after), e o nome continua sendo o nome acessível. */}
-                  <Link
-                    href={clientHref(item.id)}
-                    className="outline-none after:absolute after:inset-0 focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-ring"
-                  >
-                    {item.name}
-                  </Link>
-                </TableCell>
-                <TableCell className={`truncate ${COLUMN.document}`}>{item.document}</TableCell>
-                <TableCell className={`truncate ${COLUMN.email}`}>{item.email}</TableCell>
-                <TableCell className={`truncate ${COLUMN.phone}`}>{item.phone}</TableCell>
-                <TableCell className={`tabular-nums ${COLUMN.properties}`}>{item.properties}</TableCell>
-                <TableCell>{badgeOf(item)}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-      <ul className="flex flex-col lg:hidden">
-        {items.map((item) => (
-          <li key={item.id}>
-            <ListRow
-              href={clientHref(item.id)}
-              title={item.name}
-              subtitle={[item.document, item.phone].filter(Boolean).join(" · ") || undefined}
-              meta={propertiesLabel(item.properties)}
-              trailing={badgeOf(item)}
-            />
-          </li>
-        ))}
-      </ul>
-    </>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  ) : (
+    <ul className="flex flex-col">
+      {items.map((item) => (
+        <li key={item.id}>
+          <ListRow
+            href={clientHref(item.id)}
+            title={item.name}
+            subtitle={[item.document, item.phone].filter(Boolean).join(" · ") || undefined}
+            meta={propertiesLabel(item.properties)}
+            trailing={badgeOf(item)}
+          />
+        </li>
+      ))}
+    </ul>
   );
 }

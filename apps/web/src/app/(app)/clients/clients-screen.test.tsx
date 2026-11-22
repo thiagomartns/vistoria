@@ -1,11 +1,12 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ClientRecord } from "@/features/clients/models/client";
 import type { PropertyRecord } from "@/features/properties/models/property";
 import type { DraftRecord } from "@/shared/sync/drafts";
 import type { RecordSyncState } from "@/shared/sync/sync-view";
+import { resizeTo, stubWidth } from "@/shared/viewport.harness";
 
 import { ClientsScreen } from "./clients-screen";
 
@@ -53,7 +54,13 @@ function seed(over: Partial<typeof local.value>) {
 const table = () => screen.getByRole("table");
 const mobileList = () => screen.getByRole("list");
 
+// No desktop, a não ser que o teste mude a largura: abaixo de `lg`, só a lista do celular existe (#223).
+beforeEach(() => {
+  stubWidth(1440);
+});
+
 afterEach(() => {
+  vi.unstubAllGlobals();
   local.value = {
     store: {},
     ready: true,
@@ -99,6 +106,7 @@ describe("ClientsScreen", () => {
     expect(within(rows[1]!).getByRole("link", { name: "Maria Souza" }).getAttribute("href")).toBe(
       "/clients/edit?id=c2",
     );
+    resizeTo(390);
     expect(within(mobileList()).getByRole("link", { name: /Maria Souza/ }).textContent).toContain(
       "529.982.247-25 · (11) 98765-4321",
     );
@@ -117,6 +125,7 @@ describe("ClientsScreen", () => {
     expect(header).toEqual(["Nome", "CPF ou CNPJ", "E-mail", "Telefone", "Imóveis", "Sincronização"]);
     const rows = within(table()).getAllByRole("row").slice(1) as HTMLTableRowElement[];
     expect(rows.map((row) => row.cells[4]?.textContent)).toEqual(["2", "1"]);
+    resizeTo(390);
     const links = within(mobileList()).getAllByRole("link");
     expect(links[0]?.textContent).toContain("2 imóveis");
     expect(links[1]?.textContent).toContain("1 imóvel");
@@ -129,6 +138,7 @@ describe("ClientsScreen", () => {
 
     const [row] = within(table()).getAllByRole("row").slice(1) as HTMLTableRowElement[];
     expect(row?.cells[4]?.textContent).toBe("0");
+    resizeTo(390);
     expect(within(mobileList()).getByRole("link").textContent).not.toContain("imóve");
   });
 
@@ -140,7 +150,9 @@ describe("ClientsScreen", () => {
     const mariaRow = () => within(table()).getAllByRole("row")[2]!;
     expect(within(mariaRow()).getByText("Salvo no aparelho")).toBeDefined();
     expect(within(table()).getAllByRole("row")[1]?.textContent).not.toContain("Sincronizado");
+    resizeTo(390);
     expect(within(mobileList()).getByText("Salvo no aparelho")).toBeDefined();
+    resizeTo(1440);
 
     seed({ states: new Map([["c2", "enviando"]]) });
     rerender(<ClientsScreen />);
@@ -204,5 +216,63 @@ describe("ClientsScreen", () => {
     await user.type(search, "zzz");
     expect(screen.getByRole("heading", { name: "Nenhum cliente encontrado" })).toBeDefined();
     expect(screen.getByRole("link", { name: "Novo cliente" })).toBeDefined();
+  });
+  describe("lista longa (#223)", () => {
+    // 60 clients, "Cliente 00" a "Cliente 59", na ordem alfabética.
+    const many = Array.from({ length: 60 }, (_, n) => client(`c${n}`, `Cliente ${String(n).padStart(2, "0")}`));
+    // Por seletor: as consultas por role do jsdom ficam lentas com dezenas de linhas.
+    const tableLinks = (container: HTMLElement) => container.querySelectorAll("tbody a");
+    const mobileLinks = (container: HTMLElement) => container.querySelectorAll("ul a");
+
+    it("monta 50 linhas por vez, e 'Mostrar mais' monta a próxima página até acabar", async () => {
+      const user = userEvent.setup();
+      seed({ clients: many });
+      const { container } = render(<ClientsScreen />);
+
+      expect(tableLinks(container)).toHaveLength(50);
+      expect(tableLinks(container)[49]?.textContent).toBe("Cliente 49");
+      expect(screen.getByText("50 de 60 clientes")).toBeDefined();
+
+      await user.click(screen.getByRole("button", { name: "Mostrar mais" }));
+
+      expect(tableLinks(container)).toHaveLength(60);
+      expect(tableLinks(container)[59]?.textContent).toBe("Cliente 59");
+      expect(screen.getByText("60 clientes")).toBeDefined();
+      expect(screen.queryByRole("button", { name: "Mostrar mais" })).toBeNull();
+    });
+
+    it("a busca corre sobre todos os clients, não só os montados, e volta para a primeira página", async () => {
+      const user = userEvent.setup();
+      seed({ clients: many });
+      const { container } = render(<ClientsScreen />);
+      const search = screen.getByRole("searchbox", { name: "Buscar clientes" });
+
+      await user.type(search, "Cliente 59");
+      expect([...tableLinks(container)].map((a) => a.textContent)).toEqual(["Cliente 59"]);
+      expect(screen.getByText("1 cliente")).toBeDefined();
+      expect(screen.queryByRole("button", { name: "Mostrar mais" })).toBeNull();
+
+      await user.clear(search);
+      await user.click(screen.getByRole("button", { name: "Mostrar mais" }));
+      expect(tableLinks(container)).toHaveLength(60);
+
+      await user.type(search, "cliente");
+      expect(tableLinks(container)).toHaveLength(50);
+      expect(screen.getByText("50 de 60 clientes")).toBeDefined();
+    });
+
+    it("só a versão da largura existe: a tabela a partir de 1024 px, a lista do celular abaixo, sem recarregar", () => {
+      seed({ clients: many });
+      stubWidth(1024);
+      const { container } = render(<ClientsScreen />);
+
+      expect(tableLinks(container)).toHaveLength(50);
+      expect(mobileLinks(container)).toHaveLength(0);
+
+      resizeTo(1023);
+      expect(screen.queryByRole("table")).toBeNull();
+      expect(mobileLinks(container)).toHaveLength(50);
+      expect(screen.getByRole("button", { name: "Mostrar mais" })).toBeDefined();
+    });
   });
 });

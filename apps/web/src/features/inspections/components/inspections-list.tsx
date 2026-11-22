@@ -5,17 +5,18 @@ import { Printer } from "lucide-react";
 import Link from "next/link";
 
 import { ListRow } from "@/shared/components/list-row";
-import { STICKY_TABLE_HEADER } from "@/shared/components/list-table";
+import { type ListLayout, STICKY_TABLE_HEADER } from "@/shared/components/list-table";
 import { SyncBadge, type SyncBadgeState } from "@/shared/components/sync-badge";
 
 import { DeleteInspection } from "./delete-inspection";
 
-// A lista de /inspections (wireframe 67:1490): Table no desktop, ListRow abaixo de `lg`. A linha inteira abre a tela de
-// campo. O SyncBadge só aparece fora do sincronizado (silêncio no caminho feliz). No desktop, a linha em andamento tem
-// o "···" com "Excluir vistoria" (#107, estado 4); no celular, exclui-se pela tela de campo. A linha com a exclusão na
-// fila fica apagada, com "Excluindo", até o 204 (estado 5). A concluída e confirmada tem o botão "Laudo" no lugar do
-// "···" (Figma 177:16524, estado 8); no celular, o laudo abre pela tela de campo. A busca e os filtros (#175) ficam na
-// tela: a lista recebe as linhas já filtradas.
+// A lista de /inspections (wireframe 67:1490): Table a partir de `lg`, ListRow abaixo; só a versão da largura existe na
+// página, pelo `layout` que a tela passa (#223). A linha inteira abre a tela de campo. O SyncBadge só aparece fora do
+// sincronizado (silêncio no caminho feliz). No desktop, a linha em andamento tem o "···" com "Excluir vistoria" (#107,
+// estado 4); no celular, exclui-se pela tela de campo. A linha com a exclusão na fila fica apagada, com "Excluindo",
+// até o 204 (estado 5). A concluída e confirmada tem o botão "Laudo" no lugar do "···" (Figma 177:16524, estado 8); no
+// celular, o laudo abre pela tela de campo. A busca e os filtros (#175) ficam na tela: a lista recebe as linhas já
+// filtradas.
 
 export interface InspectionListItem {
   id: string;
@@ -68,89 +69,90 @@ const COLUMN = {
 
 export function InspectionsList({
   items,
+  layout,
   onDelete,
 }: {
   items: InspectionListItem[];
+  layout: ListLayout;
   onDelete: (id: string) => void;
 }) {
-  return (
-    <>
-      <div className="@container hidden overflow-clip rounded-lg border border-border lg:block @min-[556px]:*:data-[slot=table-container]:overflow-x-visible">
-        <Table className="min-w-[556px] table-fixed">
-          <TableHeader className={STICKY_TABLE_HEADER}>
-            <TableRow>
-              <TableHead>Imóvel</TableHead>
-              <TableHead className={COLUMN.client}>Cliente</TableHead>
-              <TableHead className={COLUMN.kind}>Tipo</TableHead>
-              <TableHead className={COLUMN.status}>Status</TableHead>
-              <TableHead className={COLUMN.started}>Início</TableHead>
-              <TableHead className={COLUMN.sync}>Sincronização</TableHead>
-              <TableHead className={COLUMN.actions}>
-                <span className="sr-only">Ações</span>
-              </TableHead>
+  return layout === "tabela" ? (
+    <div className="@container overflow-clip rounded-lg border border-border @min-[556px]:*:data-[slot=table-container]:overflow-x-visible">
+      <Table className="min-w-[556px] table-fixed">
+        <TableHeader className={STICKY_TABLE_HEADER}>
+          <TableRow>
+            <TableHead>Imóvel</TableHead>
+            <TableHead className={COLUMN.client}>Cliente</TableHead>
+            <TableHead className={COLUMN.kind}>Tipo</TableHead>
+            <TableHead className={COLUMN.status}>Status</TableHead>
+            <TableHead className={COLUMN.started}>Início</TableHead>
+            <TableHead className={COLUMN.sync}>Sincronização</TableHead>
+            <TableHead className={COLUMN.actions}>
+              <span className="sr-only">Ações</span>
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {items.map((item) => (
+            <TableRow
+              key={item.id}
+              className={`relative ${item.deleting ? "text-muted-foreground" : ""}`}
+            >
+              <TableCell className="truncate">
+                {/* O link cobre a linha inteira (::after), e o endereço continua sendo o nome acessível. */}
+                <Link
+                  href={item.href}
+                  className="outline-none after:absolute after:inset-0 focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-ring"
+                >
+                  {item.address}
+                </Link>
+              </TableCell>
+              <TableCell className={`truncate ${COLUMN.client}`}>{item.clientName}</TableCell>
+              <TableCell className={`truncate ${COLUMN.kind}`}>{item.kindLabel}</TableCell>
+              <TableCell>{statusOf(item)}</TableCell>
+              <TableCell className={`tabular-nums ${COLUMN.started}`}>{item.startedOn}</TableCell>
+              <TableCell>{badgeOf(item)}</TableCell>
+              <TableCell className="py-0 text-right">
+                {/* Acima do link que cobre a linha, para o "···" receber o clique. */}
+                {item.deletable ? (
+                  <DeleteInspection
+                    subject={item.deleteSubject}
+                    pending={item.unsent}
+                    onConfirm={() => onDelete(item.id)}
+                    className="relative z-10"
+                  />
+                ) : item.reportHref ? (
+                  <Button asChild variant="ghost" size="icon" className="relative z-10">
+                    <Link href={item.reportHref} aria-label={`Laudo de ${item.address}`}>
+                      <Printer aria-hidden="true" />
+                    </Link>
+                  </Button>
+                ) : null}
+              </TableCell>
             </TableRow>
-          </TableHeader>
-          <TableBody>
-            {items.map((item) => (
-              <TableRow
-                key={item.id}
-                className={`relative ${item.deleting ? "text-muted-foreground" : ""}`}
-              >
-                <TableCell className="truncate">
-                  {/* O link cobre a linha inteira (::after), e o endereço continua sendo o nome acessível. */}
-                  <Link
-                    href={item.href}
-                    className="outline-none after:absolute after:inset-0 focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-ring"
-                  >
-                    {item.address}
-                  </Link>
-                </TableCell>
-                <TableCell className={`truncate ${COLUMN.client}`}>{item.clientName}</TableCell>
-                <TableCell className={`truncate ${COLUMN.kind}`}>{item.kindLabel}</TableCell>
-                <TableCell>{statusOf(item)}</TableCell>
-                <TableCell className={`tabular-nums ${COLUMN.started}`}>{item.startedOn}</TableCell>
-                <TableCell>{badgeOf(item)}</TableCell>
-                <TableCell className="py-0 text-right">
-                  {/* Acima do link que cobre a linha, para o "···" receber o clique. */}
-                  {item.deletable ? (
-                    <DeleteInspection
-                      subject={item.deleteSubject}
-                      pending={item.unsent}
-                      onConfirm={() => onDelete(item.id)}
-                      className="relative z-10"
-                    />
-                  ) : item.reportHref ? (
-                    <Button asChild variant="ghost" size="icon" className="relative z-10">
-                      <Link href={item.reportHref} aria-label={`Laudo de ${item.address}`}>
-                        <Printer aria-hidden="true" />
-                      </Link>
-                    </Button>
-                  ) : null}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-      <ul className="flex flex-col lg:hidden">
-        {items.map((item) => (
-          <li key={item.id}>
-            <ListRow
-              href={item.href}
-              title={item.address}
-              subtitle={[item.clientName, item.kindLabel].filter(Boolean).join(" · ") || undefined}
-              meta={item.startedMeta || undefined}
-              muted={item.deleting}
-              trailing={
-                <>
-                  {statusOf(item)}
-                  {badgeOf(item)}
-                </>
-              }
-            />
-          </li>
-        ))}
-      </ul>
-    </>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  ) : (
+    <ul className="flex flex-col">
+      {items.map((item) => (
+        <li key={item.id}>
+          <ListRow
+            href={item.href}
+            title={item.address}
+            subtitle={[item.clientName, item.kindLabel].filter(Boolean).join(" · ") || undefined}
+            meta={item.startedMeta || undefined}
+            muted={item.deleting}
+            trailing={
+              <>
+                {statusOf(item)}
+                {badgeOf(item)}
+              </>
+            }
+          />
+        </li>
+      ))}
+    </ul>
   );
 }

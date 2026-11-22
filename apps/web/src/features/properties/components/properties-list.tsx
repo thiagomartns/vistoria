@@ -2,12 +2,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import Link from "next/link";
 
 import { ListRow } from "@/shared/components/list-row";
-import { STICKY_TABLE_HEADER } from "@/shared/components/list-table";
+import { type ListLayout, STICKY_TABLE_HEADER } from "@/shared/components/list-table";
 import { SyncBadge, type SyncBadgeState } from "@/shared/components/sync-badge";
 
-// A lista de /properties (Figma 71:2726 e 71:2900): Table no desktop, ListRow abaixo de `lg`. A linha inteira abre
-// /properties/edit?id=. O SyncBadge só aparece fora do sincronizado (silêncio no caminho feliz). A coluna e a meta
-// "Vistorias" chegam com a vistoria.
+// A lista de /properties (Figma 71:2726 e 71:2900): Table a partir de `lg`, ListRow abaixo. Só a versão da largura
+// existe na página, pelo `layout` que a tela passa (#223). A linha inteira abre /properties/edit?id=. O SyncBadge só
+// aparece fora do sincronizado (silêncio no caminho feliz). A coluna e a meta "Vistorias" chegam com a vistoria.
 
 export interface PropertyListItem {
   id: string;
@@ -35,54 +35,59 @@ const COLUMN = {
 const badgeOf = (item: PropertyListItem) =>
   item.sync === "sincronizado" ? null : <SyncBadge state={item.sync} />;
 
-export function PropertiesList({ items }: { items: PropertyListItem[] }) {
-  return (
-    <>
-      <div className="@container hidden overflow-clip rounded-lg border border-border lg:block @min-[360px]:*:data-[slot=table-container]:overflow-x-visible">
-        <Table className="min-w-[360px] table-fixed">
-          <TableHeader className={STICKY_TABLE_HEADER}>
-            <TableRow>
-              <TableHead>Endereço</TableHead>
-              <TableHead className={COLUMN.client}>Cliente</TableHead>
-              <TableHead className={COLUMN.type}>Tipo</TableHead>
-              <TableHead className={COLUMN.place}>Cidade</TableHead>
-              <TableHead className={COLUMN.sync}>Sincronização</TableHead>
+export function PropertiesList({
+  items,
+  layout,
+}: {
+  items: PropertyListItem[];
+  layout: ListLayout;
+}) {
+  return layout === "tabela" ? (
+    <div className="@container overflow-clip rounded-lg border border-border @min-[360px]:*:data-[slot=table-container]:overflow-x-visible">
+      <Table className="min-w-[360px] table-fixed">
+        <TableHeader className={STICKY_TABLE_HEADER}>
+          <TableRow>
+            <TableHead>Endereço</TableHead>
+            <TableHead className={COLUMN.client}>Cliente</TableHead>
+            <TableHead className={COLUMN.type}>Tipo</TableHead>
+            <TableHead className={COLUMN.place}>Cidade</TableHead>
+            <TableHead className={COLUMN.sync}>Sincronização</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {items.map((item) => (
+            <TableRow key={item.id} className="relative">
+              <TableCell className="truncate">
+                {/* O link cobre a linha inteira (::after), e o endereço continua sendo o nome acessível. */}
+                <Link
+                  href={propertyHref(item.id)}
+                  className="outline-none after:absolute after:inset-0 focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-ring"
+                >
+                  {item.address}
+                </Link>
+              </TableCell>
+              <TableCell className={`truncate ${COLUMN.client}`}>{item.clientName}</TableCell>
+              <TableCell className={`truncate ${COLUMN.type}`}>{item.typeLabel}</TableCell>
+              <TableCell className={`truncate ${COLUMN.place}`}>{item.place}</TableCell>
+              <TableCell>{badgeOf(item)}</TableCell>
             </TableRow>
-          </TableHeader>
-          <TableBody>
-            {items.map((item) => (
-              <TableRow key={item.id} className="relative">
-                <TableCell className="truncate">
-                  {/* O link cobre a linha inteira (::after), e o endereço continua sendo o nome acessível. */}
-                  <Link
-                    href={propertyHref(item.id)}
-                    className="outline-none after:absolute after:inset-0 focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-ring"
-                  >
-                    {item.address}
-                  </Link>
-                </TableCell>
-                <TableCell className={`truncate ${COLUMN.client}`}>{item.clientName}</TableCell>
-                <TableCell className={`truncate ${COLUMN.type}`}>{item.typeLabel}</TableCell>
-                <TableCell className={`truncate ${COLUMN.place}`}>{item.place}</TableCell>
-                <TableCell>{badgeOf(item)}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-      <ul className="flex flex-col lg:hidden">
-        {items.map((item) => (
-          <li key={item.id}>
-            <ListRow
-              href={propertyHref(item.id)}
-              title={item.address}
-              subtitle={[item.clientName, item.typeLabel].filter(Boolean).join(" · ") || undefined}
-              meta={item.place || undefined}
-              trailing={badgeOf(item)}
-            />
-          </li>
-        ))}
-      </ul>
-    </>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  ) : (
+    <ul className="flex flex-col">
+      {items.map((item) => (
+        <li key={item.id}>
+          <ListRow
+            href={propertyHref(item.id)}
+            title={item.address}
+            subtitle={[item.clientName, item.typeLabel].filter(Boolean).join(" · ") || undefined}
+            meta={item.place || undefined}
+            trailing={badgeOf(item)}
+          />
+        </li>
+      ))}
+    </ul>
   );
 }

@@ -1,11 +1,12 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ClientRecord } from "@/features/clients/models/client";
 import type { PropertyRecord } from "@/features/properties/models/property";
 import type { DraftRecord } from "@/shared/sync/drafts";
 import type { RecordSyncState } from "@/shared/sync/sync-view";
+import { resizeTo, stubWidth } from "@/shared/viewport.harness";
 
 import { PropertiesScreen } from "./properties-screen";
 
@@ -85,7 +86,13 @@ async function choose(user: ReturnType<typeof userEvent.setup>, trigger: HTMLEle
   await user.click(await screen.findByRole("option", { name: option }));
 }
 
+// No desktop, a não ser que o teste mude a largura: abaixo de `lg`, só a lista do celular existe (#223).
+beforeEach(() => {
+  stubWidth(1440);
+});
+
 afterEach(() => {
+  vi.unstubAllGlobals();
   local.value = {
     store: {},
     ready: true,
@@ -132,6 +139,7 @@ describe("PropertiesScreen", () => {
     expect(within(first!).getByRole("link", { name: "Av. Brasil, 1500 · sala 4" }).getAttribute("href")).toBe(
       "/properties/edit?id=p2",
     );
+    resizeTo(390);
     const row = within(mobileList()).getByRole("link", { name: /Rua do Porto/ });
     expect(row.textContent).toContain("Imobiliária Horizonte · Casa");
     expect(row.textContent).toContain("Santos/SP");
@@ -185,20 +193,16 @@ describe("PropertiesScreen", () => {
 
   it("placeholder da busca: completo no desktop, 'Buscar' no celular (Figma 71:2797 e 71:2965)", () => {
     seed({ properties: [flores] });
+    stubWidth(390);
     const { unmount } = render(<PropertiesScreen />);
     expect(screen.getByRole("searchbox").getAttribute("placeholder")).toBe("Buscar");
     unmount();
 
-    vi.stubGlobal("matchMedia", (query: string) => ({
-      matches: query === "(min-width: 768px)",
-      addEventListener: () => {},
-      removeEventListener: () => {},
-    }));
+    stubWidth(768);
     render(<PropertiesScreen />);
     expect(screen.getByRole("searchbox").getAttribute("placeholder")).toBe(
       "Buscar por endereço, bairro ou cidade",
     );
-    vi.unstubAllGlobals();
   });
 
   it("filtros por cliente e por tipo, na barra do desktop", async () => {
@@ -233,5 +237,70 @@ describe("PropertiesScreen", () => {
 
     expect(screen.getByRole("button", { name: "Filtros · 1" })).toBeDefined();
     expect(addresses()).toEqual(["Rua das Flores, 120 · ap 32"]);
+  });
+  describe("lista longa (#223)", () => {
+    // 60 imóveis, "Rua A, 1" a "Rua A, 60", na ordem do endereço; os de número par são casas.
+    const many = Array.from({ length: 60 }, (_, n) =>
+      property(`p${n + 1}`, { street: "Rua A", number: String(n + 1), type: n % 2 ? "house" : "apartment" }),
+    );
+    // Por seletor: as consultas por role do jsdom ficam lentas com dezenas de linhas.
+    const tableLinks = (container: HTMLElement) => container.querySelectorAll("tbody a");
+    const mobileLinks = (container: HTMLElement) => container.querySelectorAll("ul a");
+
+    it("monta 50 linhas por vez, e 'Mostrar mais' monta a próxima página até acabar", async () => {
+      const user = userEvent.setup();
+      seed({ properties: many });
+      const { container } = render(<PropertiesScreen />);
+
+      expect(tableLinks(container)).toHaveLength(50);
+      expect(tableLinks(container)[49]?.textContent).toBe("Rua A, 50");
+      expect(screen.getByText("50 de 60 imóveis")).toBeDefined();
+
+      await user.click(screen.getByRole("button", { name: "Mostrar mais" }));
+
+      expect(tableLinks(container)).toHaveLength(60);
+      expect(tableLinks(container)[59]?.textContent).toBe("Rua A, 60");
+      expect(screen.getByText("60 imóveis")).toBeDefined();
+      expect(screen.queryByRole("button", { name: "Mostrar mais" })).toBeNull();
+    });
+
+    it("a busca e os filtros correm sobre todos os imóveis, e mudar um deles volta para a primeira página", async () => {
+      const user = userEvent.setup();
+      seed({ properties: many });
+      const { container } = render(<PropertiesScreen />);
+      const search = screen.getByRole("searchbox", { name: "Buscar imóveis" });
+
+      await user.type(search, "Rua A, 59");
+      expect([...tableLinks(container)].map((a) => a.textContent)).toEqual(["Rua A, 59"]);
+      expect(screen.getByText("1 imóvel")).toBeDefined();
+
+      await user.clear(search);
+      await user.click(screen.getByRole("button", { name: "Mostrar mais" }));
+      expect(tableLinks(container)).toHaveLength(60);
+
+      // As 30 casas cabem numa página; com a página de volta em 50, todas aparecem, sem "Mostrar mais".
+      await choose(user, screen.getByRole("combobox", { name: "Filtrar por tipo" }), "Casa");
+      expect(tableLinks(container)).toHaveLength(30);
+      expect(tableLinks(container)[29]?.textContent).toBe("Rua A, 60");
+      expect(screen.getByText("30 imóveis")).toBeDefined();
+
+      await choose(user, screen.getByRole("combobox", { name: "Filtrar por tipo" }), "Todos");
+      expect(tableLinks(container)).toHaveLength(50);
+      expect(screen.getByText("50 de 60 imóveis")).toBeDefined();
+    });
+
+    it("só a versão da largura existe: a tabela a partir de 1024 px, a lista do celular abaixo, sem recarregar", () => {
+      seed({ properties: many });
+      stubWidth(1024);
+      const { container } = render(<PropertiesScreen />);
+
+      expect(tableLinks(container)).toHaveLength(50);
+      expect(mobileLinks(container)).toHaveLength(0);
+
+      resizeTo(1023);
+      expect(screen.queryByRole("table")).toBeNull();
+      expect(mobileLinks(container)).toHaveLength(50);
+      expect(screen.getByRole("button", { name: "Mostrar mais" })).toBeDefined();
+    });
   });
 });

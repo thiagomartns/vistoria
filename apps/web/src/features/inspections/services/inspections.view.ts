@@ -1,4 +1,5 @@
 import { clock } from "@/shared/clock";
+import { countLabel as countOf } from "@/shared/list-page";
 import { byText, fold } from "@/shared/search";
 import {
   type DraftRecord,
@@ -354,14 +355,11 @@ export function historyEntryOf(row: InspectionRow): HistoryEntryView {
  * Quantas linhas a lista monta de cada vez. Montar todas trava a tela com milhares de vistorias no aparelho (spike 2,
  * ADR 0047); com busca ou filtro, vale sobre o resultado filtrado (#175).
  */
-export const LIST_PAGE_SIZE = 50;
+export { LIST_PAGE_SIZE } from "@/shared/list-page";
 
 /** "6 vistorias", "1 vistoria"; com a lista cortada, "50 de 10.000 vistorias". */
-export function countLabel(shown: number, total: number): string {
-  const noun = total === 1 ? "vistoria" : "vistorias";
-  const all = total.toLocaleString("pt-BR");
-  return shown < total ? `${shown.toLocaleString("pt-BR")} de ${all} ${noun}` : `${all} ${noun}`;
-}
+export const countLabel = (shown: number, total: number): string =>
+  countOf(shown, total, { one: "vistoria", many: "vistorias" });
 
 /** Só a vistoria em andamento pode ser excluída, e só uma vez: a que já está saindo não mostra o "···". */
 export const isDeletable = (row: Pick<InspectionRow, "status" | "sync">): boolean =>
