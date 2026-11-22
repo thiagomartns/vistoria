@@ -9,7 +9,11 @@
 //   pelo nome de um cliente, da digitação até a lista só com as vistorias dele;
 // - o filtro Imóvel (#225), com todos os imóveis do aparelho: do clique até as opções na tela (no celular, dentro do
 //   Sheet "Filtros"). Com SCREENS=1, os prints do SearchSelect aberto, buscando e sem resultado, e os da Nova vistoria e
-//   do formulário de imóvel, em `.screens/busca/`.
+//   do formulário de imóvel, em `.screens/busca/`;
+// - as listas de clientes e de imóveis (#223), em modo avião: do menu até a primeira página, e a busca, da digitação
+//   até a lista só com o que casa.
+// Cada lista monta só a versão da largura, a Table ou a ListRow (#223): uma com links escondidos pelo CSS também
+// quebra o roteiro, no relatório final.
 // As metas ficaram fixadas antes de medir (frontend.md, Spike 2); uma meta não cumprida quebra o roteiro. A do reload
 // offline foi cumprida pela lista pelo resumo (#154, ADR 0048).
 // `--inspections` é o mínimo de vistorias vivas que o servidor precisa ter (10 mil por padrão; o CI roda com 200).
@@ -37,8 +41,8 @@ import {
 import {
   DEV_EMAIL,
   ROW_LINK,
-  TABLE_LINK,
   apiSignIn,
+  countLinks,
   devPassword,
   listedTotal,
   markListReady,
@@ -95,7 +99,101 @@ const TARGETS = {
   search: { label: "Busca (digitação → lista)", unit: "ms", phone: 500, desktop: 200 },
   // A do filtro Imóvel (#225), fixada antes de medir: o SearchSelect monta no máximo 50 opções.
   propertyFilter: { label: "Filtro Imóvel (clique → opções)", unit: "ms", phone: 300, desktop: 150 },
+  // As das listas de cadastro (#223), fixadas antes de medir: a de "Lista → tela de campo" para abrir pelo menu, e a da
+  // busca de /inspections para a busca.
+  clientsOpen: { label: "Menu → lista de clientes", unit: "ms", phone: 1000, desktop: 500 },
+  clientsSearch: { label: "Busca de clientes → lista", unit: "ms", phone: 500, desktop: 200 },
+  propertiesOpen: { label: "Menu → lista de imóveis", unit: "ms", phone: 1000, desktop: 500 },
+  propertiesSearch: { label: "Busca de imóveis → lista", unit: "ms", phone: 500, desktop: 200 },
 };
+
+/** O endereço de um imóvel como a lista o mostra (`addressOf`, em properties.view.ts). */
+const addressOf = (property) =>
+  `${property.street}, ${property.number}` + (property.complement ? ` · ${property.complement}` : "");
+
+/**
+ * As listas de cadastro (#223): o item do menu, o link de cada linha, a busca e o que ela acha. `target` escolhe o
+ * texto da busca e devolve quantos registros casam com ele, pela regra do app (`matchesSearch` de cada view), entre 1 e
+ * 49, para a lista filtrada caber na primeira página e não ser a primeira página inteira.
+ */
+const REGISTRIES = [
+  {
+    key: "clients",
+    title: "Clientes",
+    link: 'a[href*="/clients/edit?id="]',
+    search: "Buscar clientes",
+    target: ({ clients }) => {
+      // Um nome (com letras) nunca casa com o documento nem com o telefone, só com o nome e o e-mail.
+      const matches = (query) =>
+        clients.filter((client) => fold(client.name).includes(query) || fold(client.email ?? "").includes(query)).length;
+      const names = [...new Set(clients.map((client) => client.name))].toSorted();
+      for (const name of names) {
+        const found = matches(fold(name));
+        if (found >= 1 && found < 50) return { query: name, found };
+      }
+      throw new Error("nenhum nome de cliente acha entre 1 e 49 clientes");
+    },
+  },
+  {
+    key: "properties",
+    title: "Imóveis",
+    link: 'a[href*="/properties/edit?id="]',
+    search: "Buscar imóveis",
+    target: ({ propertyList }) => {
+      const matches = (query) =>
+        propertyList.filter((property) =>
+          [addressOf(property), property.district, property.city].some((field) => fold(field).includes(query)),
+        ).length;
+      for (const property of propertyList) {
+        const found = matches(fold(addressOf(property)));
+        if (found >= 1 && found < 50) return { query: addressOf(property), found };
+      }
+      throw new Error("nenhum endereço acha entre 1 e 49 imóveis");
+    },
+  },
+];
+
+/**
+ * Do clique no item `title` do menu visível até `expected` linhas montadas na lista. Conta os links montados, não os
+ * visíveis: conferir a visibilidade de milhares de links a cada quadro pesaria na própria medida, e o React monta a
+ * lista inteira num commit só.
+ */
+const openFromMenu = (page, title, selector, expected) =>
+  page.evaluate(
+    ([name, links, rows]) =>
+      new Promise((done) => {
+        const item = [...document.querySelectorAll('nav[aria-label="Principal"] a')].find(
+          (a) => a.textContent.trim() === name && a.checkVisibility(),
+        );
+        const clicked = performance.now();
+        item.click();
+        const check = () =>
+          document.querySelectorAll(links).length >= rows ? done(performance.now() - clicked) : requestAnimationFrame(check);
+        requestAnimationFrame(check);
+      }),
+    [title, selector, expected],
+  );
+
+/** Do evento de input da busca `label` com `query` até a lista com `expected` registros distintos. */
+const searchList = (page, label, query, selector, expected) =>
+  page.evaluate(
+    ([name, text, links, rows]) =>
+      new Promise((done) => {
+        const input = document.querySelector(`input[aria-label="${name}"]`);
+        const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+        const ready = () => {
+          const all = document.querySelectorAll(links);
+          // Antes da #223, a lista tem as duas versões: até duas vezes os registros, nunca mais.
+          return all.length <= rows * 2 && new Set([...all].map((a) => a.getAttribute("href"))).size === rows;
+        };
+        const typed = performance.now();
+        setValue.call(input, text);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        const check = () => (ready() ? done(performance.now() - typed) : requestAnimationFrame(check));
+        requestAnimationFrame(check);
+      }),
+    [label, query, selector, expected],
+  );
 
 const DEVICES = [
   {
@@ -201,12 +299,21 @@ async function searchTarget(user) {
   return { name: best, matches: counts.get(best), completed: completed.length };
 }
 
-/** As linhas que a lista montou. */
-const listedCount = (page) => page.evaluate((selector) => document.querySelectorAll(selector).length, TABLE_LINK);
-
-/** Quantas vistorias distintas a lista montou, pelos links da Table e da ListRow. */
+/** Quantas vistorias distintas a lista mostra, pelos links visíveis da Table ou da ListRow. */
 const distinctCount = (page) =>
-  page.evaluate((selector) => new Set([...document.querySelectorAll(selector)].map((a) => a.getAttribute("href"))).size, ROW_LINK);
+  page.evaluate(
+    (selector) =>
+      new Set([...document.querySelectorAll(selector)].filter((a) => a.checkVisibility()).map((a) => a.getAttribute("href")))
+        .size,
+    ROW_LINK,
+  );
+
+/**
+ * A lista montou só a versão da largura (#223): nenhum link escondido pelo CSS. Devolve o problema, ou null; o
+ * relatório final junta os problemas com as metas não cumpridas.
+ */
+const oneVersion = (what, device, { visible, mounted }) =>
+  mounted === visible ? null : `${what} no ${device}: ${mounted} links montados para ${visible} visíveis (duas versões)`;
 
 /** Guarda, na página, o `responseEnd` de cada resposta do delta de vistorias. */
 const watchDeltaEnds = (page) =>
@@ -269,9 +376,11 @@ async function measure(browser, device, user, server) {
         ),
       "os três laços do delta até o fim",
     );
-    const rows = await listedCount(page);
+    const links = await countLinks(page);
+    const rows = links.visible;
     assert.ok(rows >= 1 && rows <= server.count, "a lista monta linhas");
     assert.equal(await distinctCount(page), rows, "uma linha por vistoria");
+    results.problems = [oneVersion("/inspections", device.name, links)].filter(Boolean);
     const pages = sync.filter((s) => s.path.endsWith("/inspections")).length;
     const deltaBytes = sync.reduce((sum, s) => sum + (s.bytes ?? 0), 0);
     ok(
@@ -296,21 +405,24 @@ async function measure(browser, device, user, server) {
     // 3. Live query: outro aparelho troca o imóvel da primeira vistoria da lista; o pull da volta da rede traz o
     // endereço novo para a linha.
     const target = await page.evaluate(
-      (selector) => new URL(document.querySelector(selector).href).searchParams.get("id"),
-      TABLE_LINK,
+      (selector) =>
+        new URL([...document.querySelectorAll(selector)].find((a) => a.checkVisibility()).href).searchParams.get("id"),
+      ROW_LINK,
     );
+
     await watchDeltaEnds(page);
     const liveQuery = [];
     for (let run = 0; run < RUNS; run++) {
+      // O texto do link visível da vistoria: o endereço na Table, a ListRow inteira no celular.
       const before = await page.evaluate(
-        (id) => document.querySelector(`a[href$="id=${id}"]`)?.closest("tr")?.cells[0].textContent,
+        (id) => [...document.querySelectorAll(`a[href$="id=${id}"]`)].find((a) => a.checkVisibility())?.textContent,
         target,
       );
       assert.ok(before, "a linha da vistoria tem endereço");
       await moveToAnotherProperty(server.user, target);
       const changed = page.waitForFunction(
         ([id, previous]) => {
-          const now = document.querySelector(`a[href$="id=${id}"]`)?.closest("tr")?.cells[0].textContent;
+          const now = [...document.querySelectorAll(`a[href$="id=${id}"]`)].find((a) => a.checkVisibility())?.textContent;
           return now && now !== previous && performance.now();
         },
         [target, before],
@@ -389,13 +501,20 @@ async function measure(browser, device, user, server) {
               const input = document.querySelector('input[aria-label="Buscar vistorias"]');
               const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
               const done = () => {
-                const lines = [...document.querySelectorAll("tbody tr")];
+                // As linhas visíveis: a da Table (o `tr`) ou a ListRow (o link), com o nome do cliente.
+                const lines = [...document.querySelectorAll('a[href*="/inspections/edit?id="]')]
+                  .filter((a) => a.checkVisibility())
+                  .map((a) => a.closest("tr") ?? a);
                 // O contador, como o `listedTotal` o lê: "12 vistorias", "50 de 1.234 vistorias".
                 const count = [...document.querySelectorAll("main p")].some((p) => {
                   const match = p.textContent.match(/^(?:[\d.]+ de )?([\d.]+) vistorias?$/);
                   return match && Number(match[1].replaceAll(".", "")) === total;
                 });
-                return count && lines.length === rows && lines.every((tr) => tr.cells[1].textContent === name);
+                return (
+                  count &&
+                  lines.length === rows &&
+                  lines.every((line) => (line.cells ? line.cells[1].textContent === name : line.textContent.includes(name)))
+                );
               };
               const typed = performance.now();
               setValue.call(input, name);
@@ -474,15 +593,68 @@ async function measure(browser, device, user, server) {
       await page.getByRole("listbox", { name: "Cliente" }).waitFor();
       await shoot(page, device.name, "5-imovel-cliente");
     }
+
+    // 7. As listas de clientes e de imóveis (#223), ainda em modo avião: do menu até a primeira página na tela, e a
+    // busca, da digitação até só os registros que casam. O "Mostrar mais" e as linhas no DOM saem só como informação.
+    for (const registry of REGISTRIES) {
+      const total = registry.key === "clients" ? server.clients.length : server.propertyList.length;
+      const firstPage = Math.min(total, 50);
+      await page.goto(new URL("/inspections", page.url()).href);
+      await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
+      const open = [];
+      for (let run = 0; run < RUNS; run++) {
+        open.push(await openFromMenu(page, registry.title, registry.link, firstPage));
+        await page.getByRole("heading", { level: 1, name: registry.title }).waitFor();
+        if (run < RUNS - 1) {
+          await page.locator('nav[aria-label="Principal"] a').filter({ hasText: "Vistorias", visible: true }).click();
+          await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
+        }
+      }
+      const links = await countLinks(page, registry.link);
+      const problem = oneVersion(`/${registry.key}`, device.name, links);
+      if (problem) results.problems.push(problem);
+      results[`${registry.key}Open`] = median(open);
+      ok(
+        `menu → ${registry.title.toLowerCase()}: ${open.map((t) => format(t, "ms")).join(", ")} ` +
+          `(mediana ${format(results[`${registry.key}Open`], "ms")}; ${links.mounted} links montados, ` +
+          `${links.visible} visíveis, de ${total} registros)`,
+      );
+
+      const more = page.getByRole("button", { name: "Mostrar mais" });
+      if (await more.isVisible()) {
+        const shown = Math.min(total, 100);
+        const clicked = Date.now();
+        await more.click();
+        await until(async () => (await countLinks(page, registry.link)).visible >= shown, "a segunda página");
+        ok(`"Mostrar mais": ${shown} linhas em ${format(Date.now() - clicked, "ms")} (informação, sem meta)`);
+      }
+
+      const { query, found } = registry.target(server);
+      const box = page.getByRole("searchbox", { name: registry.search });
+      const search = [];
+      for (let run = 0; run < RUNS; run++) {
+        await box.fill("");
+        await until(
+          async () => (await countLinks(page, registry.link)).visible >= firstPage,
+          `a lista de ${registry.title.toLowerCase()} sem busca`,
+        );
+        search.push(await searchList(page, registry.search, query, registry.link, found));
+      }
+      results[`${registry.key}Search`] = median(search);
+      ok(
+        `busca de ${registry.title.toLowerCase()} por "${query}" (${found} de ${total}): ` +
+          `${search.map((t) => format(t, "ms")).join(", ")} (mediana ${format(results[`${registry.key}Search`], "ms")})`,
+      );
+    }
     return results;
   } finally {
     await context.close();
   }
 }
 
-/** A tabela final: cada medida, a meta e se cumpriu. Devolve as que não cumpriram. */
+/** A tabela final: cada medida, a meta e se cumpriu. Devolve as que não cumpriram, e as listas com duas versões. */
 function report(measured) {
-  const missed = [];
+  const missed = DEVICES.flatMap(({ name }) => measured[name].problems);
   console.log("\nResultado (mediana de 3 nas medidas de tela):\n");
   console.log(`  ${"Medida".padEnd(32)}${"Celular (CPU 4×)".padEnd(30)}Desktop`);
   for (const [key, target] of Object.entries(TARGETS)) {
@@ -523,15 +695,16 @@ try {
   const rooms = live.reduce((sum, inspection) => sum + inspection.rooms.length, 0);
   const items = live.reduce((sum, inspection) => sum + inspection.rooms.reduce((n, room) => n + room.items.length, 0), 0);
   ok(`${live.length} vistorias vivas, com ${rooms} ambientes e ${items} itens`);
-  const properties = (await serverDelta(apiUser, "properties")).filter((property) => !property.deletedAt).length;
-  const context = { count: live.length, properties, user: apiUser };
+  const propertyList = (await serverDelta(apiUser, "properties")).filter((property) => !property.deletedAt);
+  const clients = (await serverDelta(apiUser, "clients")).filter((client) => !client.deletedAt);
+  const context = { count: live.length, properties: propertyList.length, propertyList, clients, user: apiUser };
 
   const measured = {};
   let n = 1;
   for (const device of DEVICES) {
     step(
       ++n,
-      `${device.title}: aparelho limpo, primeiro pull, banco, live query, reload offline, tela de campo e busca`,
+      `${device.title}: aparelho limpo, primeiro pull, banco, live query, reload offline, tela de campo, busca e cadastros`,
     );
     measured[device.name] = await measure(browser, device, user, context);
   }

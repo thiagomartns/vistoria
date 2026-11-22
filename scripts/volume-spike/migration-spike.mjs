@@ -39,7 +39,6 @@ import {
 import {
   DEV_EMAIL,
   ROW_LINK,
-  TABLE_LINK,
   apiSignIn,
   devPassword,
   listedTotal,
@@ -155,10 +154,10 @@ const listShows = (page, total, what) => until(async () => (await listedTotal(pa
 
 /** Abre a tela de campo da primeira vistoria da lista; devolve o id dela. */
 async function openFirst(page) {
-  const link = page.locator(TABLE_LINK).first();
-  await link.waitFor({ state: "attached" });
+  const link = page.locator(ROW_LINK).filter({ visible: true }).first();
+  await link.waitFor();
   const id = new URL(await link.getAttribute("href"), base).searchParams.get("id");
-  await page.evaluate((selector) => [...document.querySelectorAll(selector)].find((a) => a.checkVisibility()).click(), ROW_LINK);
+  await link.click();
   await page.getByRole("radiogroup", { name: "Condição: Piso" }).waitFor();
   return id;
 }
