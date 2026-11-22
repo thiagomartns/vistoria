@@ -14,7 +14,7 @@ import { InspectionsList } from "@/features/inspections/components/inspections-l
 import { useInspections } from "@/features/inspections/hooks/useInspections";
 import { EmptyState } from "@/shared/components/empty-state";
 import { Sheet } from "@/shared/components/sheet";
-import { useIsDesktop } from "@/shared/useIsDesktop";
+import { useIsDesktop, useIsLarge } from "@/shared/useIsDesktop";
 
 // /inspections (wireframe 67:1490 e 67:1649; busca e filtros no Figma "Busca e filtros (#175)"): a busca e "Nova
 // vistoria", os filtros (na barra do desktop, no Sheet "Filtros" do celular) e a lista do banco local, em andamento
@@ -35,6 +35,7 @@ export function InspectionsScreen() {
   const inspections = useInspections();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const desktop = useIsDesktop();
+  const large = useIsLarge();
   const { ready, empty, rows, count, hidden, showMore, remove, filters, setFilters } = inspections;
 
   if (!ready) return null;
@@ -158,7 +159,7 @@ export function InspectionsScreen() {
         />
       ) : (
         <>
-          <InspectionsList items={rows} onDelete={remove} />
+          <InspectionsList items={rows} layout={large ? "tabela" : "linhas"} onDelete={remove} />
           {hidden > 0 ? (
             <Button
               variant="outline"

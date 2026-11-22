@@ -9,10 +9,19 @@ import { readEnvValue } from "../db-init/lib.mjs";
 import { base, callApi, root, until, wait } from "../outbox-spike/lib.mjs";
 
 export const DEV_EMAIL = "dev@vistoria.local";
-/** Os links de tela de campo da lista: um por vistoria na Table, montada também no celular (escondida), e outro na ListRow. */
+/**
+ * Os links de tela de campo da lista: um por vistoria, na Table ou na ListRow, a versão da largura (#223). Antes da
+ * #223, as duas versões ficavam montadas, uma escondida pelo CSS: quem conta linhas conta só as visíveis
+ * (`countLinks`), e o roteiro vale para os dois builds (o do `spike:migration` também).
+ */
 export const ROW_LINK = 'a[href*="/inspections/edit?id="]';
-/** Um por vistoria: o da linha da Table. */
-export const TABLE_LINK = `tbody ${ROW_LINK}`;
+
+/** Quantos links com `selector` estão visíveis e quantos estão montados (os visíveis e os escondidos pelo CSS). */
+export const countLinks = (page, selector = ROW_LINK) =>
+  page.evaluate((s) => {
+    const all = [...document.querySelectorAll(s)];
+    return { visible: all.filter((a) => a.checkVisibility()).length, mounted: all.length };
+  }, selector);
 
 export function devPassword() {
   if (process.env.DEV_USER_PASSWORD) return process.env.DEV_USER_PASSWORD;
@@ -64,15 +73,18 @@ export const serverInspections = (user) => serverDelta(user, "inspections");
 /** Os roteiros de `user` no servidor. */
 export const serverTemplates = (user) => serverDelta(user, "templates");
 
-/** O total de vistorias que o contador da lista diz ("10.000 vistorias", "50 de 10.000 vistorias"), ou null. */
-export const listedTotal = (page) =>
-  page.evaluate(() => {
+/**
+ * O total que o contador da lista diz ("10.000 vistorias", "50 de 10.000 vistorias", "500 clientes"), ou null. `nouns`
+ * é o substantivo no singular e no plural.
+ */
+export const listedTotal = (page, nouns = ["vistoria", "vistorias"]) =>
+  page.evaluate((words) => {
     for (const p of document.querySelectorAll("main p")) {
-      const match = p.textContent.match(/^(?:[\d.]+ de )?([\d.]+) vistorias?$/);
-      if (match) return Number(match[1].replaceAll(".", ""));
+      const match = p.textContent.match(/^(?:[\d.]+ de )?([\d.]+) (\S+)$/);
+      if (match && words.includes(match[2])) return Number(match[1].replaceAll(".", ""));
     }
     return null;
-  });
+  }, nouns);
 
 /**
  * Em todo documento novo do contexto, marca em `window[key]` (`__listReadyAt` por padrão) o `performance.now()` do
@@ -83,12 +95,13 @@ export const markListReady = (context, rows, key = "__listReadyAt") =>
   context.addInitScript(
     ([selector, expected, name]) => {
       const check = () => {
-        if (document.querySelectorAll(selector).length >= expected) window[name] = performance.now();
+        const shown = [...document.querySelectorAll(selector)].filter((a) => a.checkVisibility()).length;
+        if (shown >= expected) window[name] = performance.now();
         else requestAnimationFrame(check);
       };
       requestAnimationFrame(check);
     },
-    [TABLE_LINK, rows, key],
+    [ROW_LINK, rows, key],
   );
 
 /** Espera um valor que a página grava em `window[name]` e o devolve. */

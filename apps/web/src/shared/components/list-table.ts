@@ -17,3 +17,10 @@
  */
 export const STICKY_TABLE_HEADER =
   "[&_th]:sticky [&_th]:-top-6 [&_th]:z-20 [&_th]:bg-background [&_th]:shadow-[inset_0_-1px_0_var(--color-border)]";
+
+/**
+ * A versão da lista na página (#223): a tabela a partir de `lg` (1024 px, ADR 0061) e as `ListRow` abaixo. A tela
+ * escolhe pelo `useIsLarge` e passa para a lista, que monta só essa: com as duas montadas e uma escondida pelo CSS, cada
+ * linha existia duas vezes no DOM.
+ */
+export type ListLayout = "tabela" | "linhas";

@@ -1,10 +1,11 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { TemplateRecord } from "@/features/templates/models/template";
 import type { DraftRecord } from "@/shared/sync/drafts";
 import type { RecordSyncState } from "@/shared/sync/sync-view";
+import { stubWidth } from "@/shared/viewport.harness";
 
 import { TemplatesScreen } from "./templates-screen";
 
@@ -47,6 +48,11 @@ const sala = template("t3", "Sala comercial", []);
 function seed(over: Partial<typeof local.value>) {
   local.value = { ...local.value, ...over };
 }
+
+// No desktop, a não ser que o teste mude a largura: abaixo de `lg`, só a lista do celular existe (#223).
+beforeEach(() => {
+  stubWidth(1440);
+});
 
 afterEach(() => {
   local.value = { store: {}, ready: true, templates: [], drafts: [], states: new Map() };
@@ -92,11 +98,13 @@ describe("TemplatesScreen", () => {
     );
   });
 
-  it("celular: a ListRow com as contagens", () => {
+  it("celular: a ListRow com as contagens, sem a tabela", () => {
     seed({ templates: [apartamento, compacto] });
+    stubWidth(390);
     render(<TemplatesScreen />);
 
-    const row = screen.getAllByRole("link", { name: /Apartamento compacto/ }).at(-1)!;
+    expect(screen.queryByRole("table")).toBeNull();
+    const row = screen.getByRole("link", { name: /Apartamento compacto/ });
     expect(row.getAttribute("href")).toBe("/templates/edit?id=t2");
     expect(within(row).getByText("1 ambiente · 1 item")).toBeDefined();
     expect(screen.getByText("2 ambientes · 5 itens")).toBeDefined();
@@ -136,15 +144,12 @@ describe("TemplatesScreen", () => {
 
   it("o placeholder da busca é curto no celular", () => {
     seed({ templates: [apartamento] });
+    stubWidth(390);
     const { unmount } = render(<TemplatesScreen />);
     expect(screen.getByRole("searchbox").getAttribute("placeholder")).toBe("Buscar");
     unmount();
 
-    vi.stubGlobal("matchMedia", (query: string) => ({
-      matches: query === "(min-width: 768px)",
-      addEventListener: () => {},
-      removeEventListener: () => {},
-    }));
+    stubWidth(768);
     render(<TemplatesScreen />);
     expect(screen.getByRole("searchbox").getAttribute("placeholder")).toBe("Buscar roteiro");
   });

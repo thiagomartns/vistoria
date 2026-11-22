@@ -1,6 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ClientRecord } from "@/features/clients/models/client";
 import type { InspectionRecord } from "@/features/inspections/models/inspection";
@@ -8,6 +8,7 @@ import type { PropertyRecord } from "@/features/properties/models/property";
 import { clock } from "@/shared/clock";
 import type { DraftRecord } from "@/shared/sync/drafts";
 import type { PendingRecord, RecordSyncState } from "@/shared/sync/sync-view";
+import { resizeTo, stubWidth } from "@/shared/viewport.harness";
 import { summaryOf } from "@/features/inspections/services/inspections.summary";
 
 import { InspectionsScreen } from "./inspections-screen";
@@ -108,7 +109,13 @@ function open(over: Partial<typeof EMPTY> = {}) {
   return render(<InspectionsScreen />);
 }
 
+// No desktop, a não ser que o teste mude a largura: abaixo de `lg`, só a lista do celular existe (#223).
+beforeEach(() => {
+  stubWidth(1440);
+});
+
 afterEach(() => {
+  vi.unstubAllGlobals();
   local.value = EMPTY;
   navigation.search = "";
   window.history.replaceState(null, "", "/");
@@ -200,6 +207,7 @@ describe("InspectionsScreen", () => {
     expect(within(rows[0]!).getByRole("link").getAttribute("href")).toBe("/inspections/edit?id=i1");
     expect(screen.getByText("2 vistorias")).toBeDefined();
 
+    resizeTo(390);
     const mobile = within(screen.getByRole("list")).getAllByRole("link");
     expect(mobile[0]?.textContent).toContain("Imobiliária Horizonte · Entrada");
     expect(mobile[0]?.textContent).toContain("Iniciada em 19/10, 09:12");
@@ -265,6 +273,7 @@ describe("InspectionsScreen", () => {
       .getByText("Conflito")
       .closest("tr") as HTMLElement;
     expect(within(row).getByRole("link").getAttribute("href")).toBe("/inspections/conflict?id=i1");
+    resizeTo(390);
     const [mobile, other] = within(screen.getByRole("list")).getAllByRole("link");
     expect(mobile?.textContent).toContain("Conflito");
     expect(mobile?.getAttribute("href")).toBe("/inspections/conflict?id=i1");
@@ -319,6 +328,7 @@ describe("InspectionsScreen", () => {
     expect(within(row).getByText("Excluindo")).toBeDefined();
     expect(within(row).queryByRole("button", { name: "Mais ações" })).toBeNull();
     expect(within(row).getByRole("link").getAttribute("href")).toBe("/inspections/edit?id=i1");
+    resizeTo(390);
     const mobile = within(screen.getByRole("list")).getByRole("link");
     expect(mobile.textContent).toContain("Excluindo");
   });
@@ -335,7 +345,7 @@ describe("InspectionsScreen", () => {
       updatedAt: "2026-10-29T10:00:00.000Z",
     };
     const view = open({ inspections: [inspection("i1"), kept], drafts: [clean] });
-    const rows = () => within(screen.getByRole("list")).getAllByRole("link");
+    const rows = () => within(screen.getByRole("table")).getAllByRole("link");
     expect(rows()).toHaveLength(2);
 
     local.value = { ...local.value, inspections: [kept], drafts: [] };
@@ -357,7 +367,7 @@ describe("InspectionsScreen", () => {
     const mobileLinks = () => container.querySelectorAll("ul a");
 
     expect(tableLinks()).toHaveLength(50);
-    expect(mobileLinks()).toHaveLength(50);
+    expect(mobileLinks()).toHaveLength(0);
     expect(tableLinks()[0]!.getAttribute("href")).toBe("/inspections/edit?id=i0");
     expect(tableLinks()[49]!.getAttribute("href")).toBe("/inspections/edit?id=i49");
     expect(screen.getByText("50 de 60 vistorias")).toBeDefined();
@@ -365,10 +375,14 @@ describe("InspectionsScreen", () => {
     await user.click(screen.getByRole("button", { name: "Mostrar mais" }));
 
     expect(tableLinks()).toHaveLength(60);
-    expect(mobileLinks()).toHaveLength(60);
     expect(tableLinks()[59]!.getAttribute("href")).toBe("/inspections/edit?id=i59");
     expect(screen.getByText("60 vistorias")).toBeDefined();
     expect(screen.queryByRole("button", { name: "Mostrar mais" })).toBeNull();
+
+    // Abaixo de `lg`, as mesmas linhas, só na lista do celular (#223).
+    resizeTo(390);
+    expect(tableLinks()).toHaveLength(0);
+    expect(mobileLinks()).toHaveLength(60);
   });
 
   it("até 50 vistorias, sem 'Mostrar mais'", () => {
