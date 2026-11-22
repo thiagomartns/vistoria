@@ -67,6 +67,11 @@
 // Recarregado em modo avião, segue; com a rede, o servidor tem os ambientes na ordem, com os itens do catálogo e ids
 // todos diferentes, e cada transação chega uma vez só. Com SCREENS=1, os prints em `.screens/roteiros/`, com o prefixo
 // `prontos-`.
+// Desde o #185 o passo 12p digita o CEP no Novo imóvel, com a consulta respondida pela rota da página (o `launch()`
+// responde "não encontrado" em todo o resto, e nenhum roteiro sai para o ViaCEP): a falha e o não encontrado só dão a
+// dica; o encontrado mostra "Buscando endereço…", preenche Rua, Bairro, Cidade e UF e põe o foco no Número; corrigido para
+// um CEP geral, troca a cidade e limpa o que a consulta anterior pôs. Salvo, chega pela outbox. Com SCREENS=1, os prints
+// em `.screens/cep/`.
 // Desde o #133 o passo 13 passa pelo aviso de outro usuário (Cancelar faz o signOut da Bia e mantém a fila da Ana), e o
 // passo 15 prova a limpeza no IndexedDB de verdade: Sair com pendência pelo Dialog e "Apagar e entrar" de outro usuário.
 
@@ -133,6 +138,7 @@ import {
   watchPuts,
   watchRefreshes,
   wiped,
+  ZIP_CODE_ROUTE,
 } from "./lib.mjs";
 
 // Prints dos estados da tela de campo, com SCREENS=1: o mesmo estado no celular e no desktop, trocando o viewport.
@@ -196,6 +202,10 @@ async function shootOpenFilters(page) {
   await page.setViewportSize(original);
   ok("print do Período aberto (desktop) e do Sheet de filtros (celular)");
 }
+
+// O endereço pelo CEP no Novo imóvel (#185), com SCREENS=1.
+const zipCodeDir = process.env.SCREENS ? resolve(process.env.INIT_CWD ?? root, ".screens/cep") : null;
+const shootZipCode = shooter(zipCodeDir);
 
 // Ambientes e itens na tela de campo (#171), com SCREENS=1.
 const structureDir = process.env.SCREENS ? resolve(process.env.INIT_CWD ?? root, ".screens/ambientes") : null;
@@ -1959,6 +1969,97 @@ try {
   assert.equal(new Set(readyKeys).size, readyKeys.length, "cada transação chega uma vez só");
   await readyRow.getByText("Salvo no aparelho").waitFor({ state: "hidden" });
   ok(`a rede volta: o roteiro pronto chega em ${readyKeys.length} PUT, cada chave uma vez, com ${readyIds.length} ids diferentes`);
+  await goTo(page, "Clientes");
+
+  step("12p", "Endereço pelo CEP (#185): a falha e o não encontrado só dão a dica; o encontrado preenche os vazios e põe o foco no Número; corrigir o CEP troca o que a consulta pôs; salvar segue pela outbox");
+  // A consulta responde pela rota da página, por cima da do `launch()`: nenhum provedor de verdade.
+  const zipLookups = [];
+  let releaseFound = () => {};
+  const foundHeld = new Promise((done) => {
+    releaseFound = done;
+  });
+  const zipAnswers = {
+    "11111111": { status: 503, body: problem("upstream-unavailable", 503, "Serviço externo indisponível") },
+    "99999999": { status: 404, body: problem("not-found", 404, "Não encontrado") },
+    "01310100": {
+      status: 200,
+      held: foundHeld,
+      body: JSON.stringify({ zipCode: "01310100", street: "Avenida Paulista", district: "Bela Vista", city: "São Paulo", state: "SP" }),
+    },
+    "35460000": {
+      status: 200,
+      body: JSON.stringify({ zipCode: "35460000", street: null, district: null, city: "Brumadinho", state: "MG" }),
+    },
+  };
+  await page.route(ZIP_CODE_ROUTE, async (zipRoute) => {
+    const zipCode = new URL(zipRoute.request().url()).pathname.split("/").pop();
+    zipLookups.push(zipCode);
+    const answer = zipAnswers[zipCode];
+    await answer.held;
+    await zipRoute.fulfill({
+      status: answer.status,
+      contentType: answer.status === 200 ? "application/json" : "application/problem+json",
+      body: answer.body,
+    });
+  });
+  const zipField = page.getByLabel("CEP");
+  const focusedName = () => page.evaluate(() => document.activeElement?.getAttribute("name"));
+  await goTo(page, "Imóveis");
+  await page.getByRole("link", { name: "Novo imóvel" }).first().click();
+  await page.getByRole("heading", { level: 1, name: "Novo imóvel" }).waitFor();
+  await page.getByLabel("Cliente").click();
+  await page.getByRole("option", { name: "Imobiliária Beta" }).click();
+  await page.getByLabel("Tipo").click();
+  await page.getByRole("option", { name: "Casa" }).click();
+
+  await zipField.fill("11111111");
+  await page.getByText("Busca indisponível. Preencha à mão.").waitFor();
+  assert.equal(await page.getByLabel("Rua").inputValue(), "", "a falha não preenche nada");
+  await shootZipCode(page, "falhou");
+  await zipField.fill("99999999");
+  await page.getByText("CEP não encontrado. Preencha o endereço.").waitFor();
+  await shootZipCode(page, "nao-encontrado");
+  ok("503 e 404: só a dica sob o CEP, sem preencher nada");
+
+  await zipField.fill("01310100");
+  await page.getByText("Buscando endereço…").waitFor();
+  await shootZipCode(page, "buscando");
+  await zipField.focus();
+  releaseFound();
+  await until(async () => (await page.getByLabel("Rua").inputValue()) === "Avenida Paulista", "a rua do CEP");
+  assert.equal(await page.getByLabel("Bairro").inputValue(), "Bela Vista");
+  assert.equal(await page.getByLabel("Cidade").inputValue(), "São Paulo");
+  assert.equal(await page.getByLabel("UF").inputValue(), "SP");
+  assert.equal(await focusedName(), "number", "o foco vai para o Número");
+  assert.equal(await page.getByText("Buscando endereço…").count(), 0, "a dica some");
+  await shootZipCode(page, "encontrado");
+  ok("01310-100: \"Buscando endereço…\", depois Rua, Bairro, Cidade e UF preenchidos e o foco no Número");
+
+  await zipField.fill("35460000");
+  await until(async () => (await page.getByLabel("Cidade").inputValue()) === "Brumadinho", "a cidade do CEP geral");
+  assert.equal(await page.getByLabel("UF").inputValue(), "MG");
+  assert.equal(await page.getByLabel("Rua").inputValue(), "", "a rua da consulta anterior sai");
+  assert.equal(await page.getByLabel("Bairro").inputValue(), "", "o bairro da consulta anterior sai");
+  assert.equal(await focusedName(), "street", "sem rua, o foco vai para a Rua");
+  await shootZipCode(page, "cidade");
+  assert.deepEqual(zipLookups, ["11111111", "99999999", "01310100", "35460000"], "uma consulta por CEP completo");
+  ok("corrigido para o CEP geral 35460-000: Cidade e UF trocadas, Rua e Bairro da consulta anterior limpos, o foco na Rua");
+
+  await page.getByLabel("Rua").fill("Rua do CEP");
+  await page.getByLabel("Número").fill("7");
+  await page.getByLabel("Bairro").fill("Centro");
+  await page.getByRole("button", { name: "Salvar" }).click();
+  const zipLink = linkOf(page, "Rua do CEP, 7");
+  await zipLink.waitFor();
+  const zipPropertyId = new URL(await zipLink.getAttribute("href"), "http://x").searchParams.get("id");
+  await until(async () => (await outboxCount(page, user)) === 0, "o imóvel do CEP sai pela outbox");
+  const zipProperty = (await serverProperty(user, zipPropertyId)).body;
+  assert.deepEqual(
+    [zipProperty.zipCode, zipProperty.street, zipProperty.district, zipProperty.city, zipProperty.state],
+    ["35460000", "Rua do CEP", "Centro", "Brumadinho", "MG"],
+  );
+  await page.unroute(ZIP_CODE_ROUTE);
+  ok("salvo: o imóvel chega ao servidor pela outbox, com a cidade e a UF da consulta");
   await goTo(page, "Clientes");
 
   step(13, "Outro usuário entra: a fila do anterior não sai com a conta dele");
