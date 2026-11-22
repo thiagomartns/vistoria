@@ -121,5 +121,12 @@ public sealed class RateLimitedException(TimeSpan? retryAfter = null, string? de
     public override TimeSpan? RetryAfter { get; } = retryAfter;
 }
 
+/// <summary>
+/// Um provedor externo de que a rota depende (a consulta do CEP, #185) não respondeu. Não é bug nosso, ao contrário do
+/// <c>internal</c>: o log o registra como erro do catálogo, não como exceção não tratada.
+/// </summary>
+public sealed class UpstreamUnavailableException(string? detail = null)
+    : AppException(ProblemTypes.UpstreamUnavailable, StatusCodes.Status503ServiceUnavailable, detail);
+
 public sealed class InternalException(string? detail = null)
     : AppException(ProblemTypes.Internal, StatusCodes.Status500InternalServerError, detail);

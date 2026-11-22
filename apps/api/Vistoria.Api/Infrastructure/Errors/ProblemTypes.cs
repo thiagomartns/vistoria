@@ -24,6 +24,7 @@ public static class ProblemTypes
     public const string IdempotencyKeyReused = Prefix + "idempotency-key-reused";
     public const string PreconditionRequired = Prefix + "precondition-required";
     public const string RateLimited = Prefix + "rate-limited";
+    public const string UpstreamUnavailable = Prefix + "upstream-unavailable";
     public const string Internal = Prefix + "internal";
 
     private static readonly Dictionary<string, (string Title, string Detail)> Catalog = new()
@@ -43,6 +44,7 @@ public static class ProblemTypes
         [IdempotencyKeyReused] = ("Idempotency-Key reutilizada", "A Idempotency-Key já foi usada com outro corpo."),
         [PreconditionRequired] = ("Cabeçalho obrigatório ausente", "Falta um cabeçalho obrigatório para esta operação."),
         [RateLimited] = ("Muitas requisições", "O limite de requisições foi atingido; tente de novo mais tarde."),
+        [UpstreamUnavailable] = ("Serviço externo indisponível", "Um serviço de terceiros de que esta rota depende não respondeu; tente de novo mais tarde."),
         [Internal] = ("Erro interno", "Ocorreu uma falha inesperada no servidor."),
     };
 

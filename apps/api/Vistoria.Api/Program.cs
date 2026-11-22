@@ -11,6 +11,7 @@ builder.Services.AddDatabase(builder.Configuration);
 builder.Services.AddHealth();
 builder.Services.AddMappings();
 builder.Services.AddDomainServices();
+builder.Services.AddZipCodes();
 builder.Services.AddIdempotency();
 builder.Services.AddDevCors(builder.Environment);
 builder.Services.AddProxyHeaders();

@@ -172,6 +172,7 @@ Rotas no plural com a versão no prefixo (`/api/v1/...`). `operationId` explíci
 | `POST /api/v1/auth/signin` | `signIn` | 200 `{ accessToken, expiresAt, user: { id, name } }` + cookie | 400, 401 (`invalid-credentials`), 429 |
 | `POST /api/v1/auth/refresh` | `refreshToken` | 200 `{ accessToken, expiresAt }` + cookie novo (exceto na tolerância) | 401, 429 |
 | `POST /api/v1/auth/signout` | `signOut` | 204, cookie apagado | — |
+| `GET /api/v1/zip-codes/{zipCode}` | `getAddressByZipCode` | 200 `{ zipCode, street, district, city, state }` no formato do `Property`; o que o provedor não traz vem `null` | 400 (`errors.zipCode`), 401, 404, 429, 503 |
 
 **Por que `PUT` com ID do cliente em vez de `POST`.** O cliente já sabe o ID, então criar e atualizar viram a mesma operação (upsert), e reenviar é naturalmente seguro.
 
@@ -213,6 +214,7 @@ O `type` é uma URN: `urn:vistoria:problem:` seguido do slug da tabela (por exem
 | 422 | `idempotency-key-reused` | Mesma chave com corpo diferente | — | Bug: registra e descarta |
 | 428 | `precondition-required` | Faltou `If-Match` ou `Idempotency-Key` | `missingHeader` | Bug: registra e descarta |
 | 429 | `rate-limited` | Limite de taxa | — | Retry após `Retry-After` |
+| 503 | `upstream-unavailable` | Os provedores externos de que a rota depende não responderam (hoje, só a consulta do CEP) | — | O formulário mostra a dica e segue à mão; nada tenta de novo sozinho |
 | 5xx | `internal` | Falha inesperada | — | Retry com backoff, mesma chave |
 
 ### Erros por campo
@@ -263,9 +265,12 @@ Todo prazo e limite do sistema está aqui, e só aqui. O front lê esta tabela; 
 | Envio pela outbox | Um por vez, na ordem de criação ([ADR 0034](../decisions/0034-outbox-serial-uma-transacao-por-vez-na-ordem-de-criacao.md)) | Front |
 | Rate limit de `signup` e `signin` | 5 por minuto por IP, cada | .NET (`RateLimit:CredentialPermitLimit`) |
 | Rate limit de `refresh` | 30 por minuto por IP | .NET (`RateLimit:RefreshPermitLimit`) |
+| Rate limit da consulta do CEP | 30 por minuto por IP | .NET (`RateLimit:ZipCodePermitLimit`) |
+| Cache da consulta do CEP | 30 dias o encontrado, 1 dia o "não existe"; a falha não entra | .NET (`ZipCodeConfig`) |
+| Prazo de cada provedor de CEP | 2 s por tentativa, com uma nova tentativa, e 4 s no total | .NET (`ZipCodeConfig`) |
 
-**Rate limit no CI.** Os dois limites são configuráveis, mas os valores acima valem em dev e em produção, e nenhum
-`appsettings*.json` os muda. Só o job `e2e` do CI os sobe, por variável de ambiente, para os roteiros não esperarem 60 s
+**Rate limit no CI.** Os limites são configuráveis, mas os valores acima valem em dev e em produção, e nenhum
+`appsettings*.json` os muda. Só o job `e2e` do CI sobe os do `signin` e do `refresh`, por variável de ambiente, para os roteiros não esperarem 60 s
 pelo `Retry-After` a cada sexto signin. O limite padrão continua provado pelo `RateLimitTests` e pelo passo 6 do
 `smoke:prod`, no job `prod`.
 

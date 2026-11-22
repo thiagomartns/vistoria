@@ -11,9 +11,11 @@ public static class RateLimitConfig
     public const string SignUpPolicy = "signup";
     public const string SignInPolicy = "signin";
     public const string RefreshPolicy = "refresh";
+    public const string ZipCodePolicy = "zip-code";
 
     public static readonly TimeSpan CredentialWindow = TimeSpan.FromMinutes(1);
     public static readonly TimeSpan RefreshWindow = TimeSpan.FromMinutes(1);
+    public static readonly TimeSpan ZipCodeWindow = TimeSpan.FromMinutes(1);
 
     public static IServiceCollection AddRateLimits(this IServiceCollection services)
     {
@@ -24,6 +26,8 @@ public static class RateLimitConfig
             options.AddPolicy(SignUpPolicy, context => PerIp(context, l => l.CredentialPermitLimit, CredentialWindow));
             options.AddPolicy(SignInPolicy, context => PerIp(context, l => l.CredentialPermitLimit, CredentialWindow));
             options.AddPolicy(RefreshPolicy, context => PerIp(context, l => l.RefreshPermitLimit, RefreshWindow));
+            // Por IP também: o rate limiter roda antes da autenticação, então ainda não há usuário (#185).
+            options.AddPolicy(ZipCodePolicy, context => PerIp(context, l => l.ZipCodePermitLimit, ZipCodeWindow));
             // Como o model state inválido: vira exceção do catálogo, e o GlobalExceptionHandler escreve o 429
             // com Retry-After no mesmo formato de qualquer outro erro.
             options.OnRejected = (context, _) => throw new RateLimitedException(
@@ -66,6 +70,9 @@ public sealed class RateLimitOptions
 
     /// <summary>Por minuto e IP, em <c>refresh</c>. Padrão: 30.</summary>
     public int RefreshPermitLimit { get; set; } = 30;
+
+    /// <summary>Por minuto e IP, na consulta do CEP (<c>getAddressByZipCode</c>, #185). Padrão: 30.</summary>
+    public int ZipCodePermitLimit { get; set; } = 30;
 }
 
 public sealed class RateLimitOptionsValidator : IValidateOptions<RateLimitOptions>
@@ -81,6 +88,11 @@ public sealed class RateLimitOptionsValidator : IValidateOptions<RateLimitOption
         if (options.RefreshPermitLimit < 1)
         {
             failures.Add($"{RateLimitOptions.Section}:RefreshPermitLimit precisa ser maior que zero.");
+        }
+
+        if (options.ZipCodePermitLimit < 1)
+        {
+            failures.Add($"{RateLimitOptions.Section}:ZipCodePermitLimit precisa ser maior que zero.");
         }
 
         return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
