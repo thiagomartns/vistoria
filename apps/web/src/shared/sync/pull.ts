@@ -27,6 +27,10 @@ import { isNewer } from "./version";
 // idade vem do rowversion, e a página lê da store só os ids dela (ADR 0047). A varredura do resync, rara, compara com
 // a store inteira do começo dele. A collection de vistorias não abre inteira (ADR 0048): a pendência de um registro
 // que ela não tem na memória se confere com o confirmado lido por chave.
+// Cada laço tem uma revisão, que sobe quando o registro local passa a guardar um campo que o aparelho antigo descartava
+// (o `completedSnapshot` das vistorias, ADR 0068). O cursor guarda a revisão do laço que o levou do zero ao fim; um
+// cursor de revisão menor começa uma vez o mesmo resync do cursor vencido, e o aparelho recebe o campo em tudo o que
+// já tinha, sem subir a versão do banco local.
 
 /** Uma página do delta (`SyncPageDto` do backend.md, "Leitura por delta"). */
 export interface SyncPage<D> {
@@ -50,6 +54,11 @@ export interface PullEntity<T extends SyncRecord = any, D = any> {
   get: GetCall<D>;
   /** O DTO do servidor na forma do registro local, com a `version`. */
   shape: (dto: D) => T;
+  /**
+   * A revisão do laço (1 sem ela). Sobe quando o registro local passa a guardar um campo novo do DTO: o cursor de uma
+   * revisão menor puxa tudo de novo, uma vez (ADR 0068).
+   */
+  revision?: number;
 }
 
 /** O cursor de cada laço, no banco local do usuário. Vazio é o primeiro sync. */
@@ -63,6 +72,10 @@ export interface CursorStore {
   resyncing: (entity: string) => boolean;
   /** Começa (zera o cursor e marca) ou termina o resync. */
   resync: (entity: string, on: boolean) => Promise<void>;
+  /** A revisão do laço que levou o cursor do zero ao fim (1 no cursor de antes das revisões). */
+  revision: (entity: string) => number;
+  /** Grava a revisão do laço que acabou de chegar ao fim partindo do zero. */
+  stamp: (entity: string, revision: number) => Promise<void>;
 }
 
 /** As marcas dos registros que o pull pulou por ter pendência: entidade e id, sem a versão (ADR 0041). */
@@ -155,14 +168,23 @@ async function resolveMarks(state: PullState, entity: PullEntity): Promise<PullO
  */
 async function pullEntity(state: PullState, entity: PullEntity): Promise<PullOutcome> {
   const { cursors } = state;
+  const revision = entity.revision ?? 1;
   let seen: Set<string> | undefined;
   /** A store confirmada no começo do resync, para a varredura. */
   let atResync: Versions | undefined;
-  if (cursors.resyncing(entity.name)) {
+  // O cursor de uma revisão antiga começa o resync uma vez (ADR 0068), e o retoma se ele caiu no meio: a revisão só é
+  // gravada no fim. Nele, o item com a mesma `version` da store também é regravado, porque o aparelho de antes o
+  // gravou sem o campo novo. O aparelho sem cursor nenhum (o primeiro sync) já parte do zero.
+  const outdated =
+    cursors.revision(entity.name) < revision &&
+    (cursors.get(entity.name) !== undefined || cursors.resyncing(entity.name));
+  if (cursors.resyncing(entity.name) || outdated) {
     await cursors.resync(entity.name, true);
     seen = new Set();
     atResync = await versionsOf(entity.store);
   }
+  /** O laço parte do zero: no fim, o cursor fica com a revisão dele. */
+  const fromZero = cursors.get(entity.name) === undefined;
   for (;;) {
     const cursor = cursors.get(entity.name);
     const result = await entity.page({ query: cursor ? { cursor } : {} });
@@ -178,11 +200,14 @@ async function pullEntity(state: PullState, entity: PullEntity): Promise<PullOut
       atResync = await versionsOf(entity.store);
       continue;
     }
-    await applyPage(state, entity, result.data, seen);
+    await applyPage(state, entity, result.data, seen, outdated);
     if (result.data.hasMore) continue;
     if (seen && atResync) {
       await sweep(state, entity, seen, atResync);
       await cursors.resync(entity.name, false);
+    }
+    if ((fromZero || seen) && cursors.revision(entity.name) !== revision) {
+      await cursors.stamp(entity.name, revision);
     }
     return "done";
   }
@@ -214,7 +239,7 @@ const versionsOf = async (store: PullEntity["store"]): Promise<Versions> =>
 /**
  * Aplica uma página: os `items` vão para a store confirmada e os `deletedIds` saem dela, menos os de registro com
  * pendência, que ganham a marca. Um item com a `version` que a store já tem é o eco da própria escrita: não regrava o
- * registro. O rascunho limpo de um registro gravado passa à versão nova (`rebaseClean`) e o de um excluído sai com ele
+ * registro, menos no resync de revisão (`rewrite`), em que a store o tem sem o campo novo (ADR 0068). O rascunho limpo de um registro gravado passa à versão nova (`rebaseClean`) e o de um excluído sai com ele
  * (ADR 0043). A pendência é a da hora de aplicar, não a de quando a requisição saiu: entre a conferência e a gravação
  * não há `await`, então uma escrita feita com a página em voo vence. Também contam como pendência a transação na
  * outbox (`queued`) e o item mais velho que a store confirmada: o servidor o leu antes de um envio daqui confirmar
@@ -227,6 +252,7 @@ async function applyPage(
   entity: PullEntity,
   page: SyncPage<unknown>,
   seen?: Set<string>,
+  rewrite = false,
 ): Promise<void> {
   const { store } = entity;
   const { drafts } = state;
@@ -244,7 +270,7 @@ async function applyPage(
     const known = confirmed.get(record.id);
     seen?.add(record.id);
     if (held(record.id) || isNewer(known?.version, record.version)) skipped.push(record.id);
-    else if (known?.version !== record.version) {
+    else if (rewrite || known?.version !== record.version) {
       mutations.push({ type: known ? "update" : "insert", key: record.id, modified: record });
       rewritten.push(rebaseClean(drafts, record));
     }
@@ -325,6 +351,8 @@ interface CursorRow {
   complete?: true;
   /** Um resync começou e não terminou. */
   resyncing?: true;
+  /** A revisão do laço que levou o cursor do zero ao fim (`PullEntity.revision`); sem ela, 1. */
+  revision?: number;
 }
 
 interface SkipMarkRow {
@@ -383,6 +411,11 @@ export function cursorStoreOf(
         } else {
           delete row.resyncing;
         }
+      }),
+    revision: (entity) => cursors.get(entity)?.revision ?? 1,
+    stamp: (entity, revision) =>
+      save(entity, (row) => {
+        row.revision = revision;
       }),
   };
 }

@@ -1,6 +1,7 @@
 import type {
   InspectionAuthorDto,
   InspectionKind,
+  InspectionSnapshotDto,
   InspectionStatus,
   ItemCondition,
   UpsertInspectionDto,
@@ -10,8 +11,8 @@ import type {
 
 // Os nuláveis do DTO de entrada são nuláveis só para o `[Required]` do .NET pegar o campo ausente; aqui eles sempre
 // existem. As datas que o servidor define não existem no registro, então nunca vão no `PUT`. A exceção é a conclusão
-// confirmada, `completedAt` e `completedBy` (ADR 0050, ADR 0053): ficam no registro para a tela e o laudo, e o envio
-// os tira do corpo. A
+// confirmada, `completedAt`, `completedBy` e `completedSnapshot` (ADR 0050, ADR 0053, ADR 0068): ficam no registro
+// para a tela e o laudo, e o envio os tira do corpo. A
 // referência da saída (`referenceInspectionId` na raiz, `referenceCondition` e `referenceNotes` no item copiado da
 // entrada) só existe quando há uma (ADR 0052): a entrada e o item posto depois não têm a chave. Ela vai no `PUT` como
 // está; o servidor a grava na criação e a ignora depois (ADR 0051).
@@ -54,6 +55,11 @@ export type InspectionRecord = {
    * servidor confirmou. Nunca vai no `PUT`.
    */
   completedBy?: InspectionAuthorDto;
+  /**
+   * O imóvel e o cliente como estavam na conclusão, copiados pelo servidor (ADR 0068): o laudo da concluída lê daqui, não
+   * do imóvel nem do cliente do aparelho. A mesma regra do `completedAt`. Nunca vai no `PUT`.
+   */
+  completedSnapshot?: InspectionSnapshotDto;
   /** Só na saída: a entrada concluída de onde ela foi copiada (ADR 0052). */
   referenceInspectionId?: string;
 } & Required<

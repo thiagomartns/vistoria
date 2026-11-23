@@ -62,12 +62,20 @@ const lockedNotice = (record: InspectionRecord): SyncNotice => ({
 });
 
 /**
- * O registro depois do 2xx: o enviado, com a `version` e, na conclusão, o `completedAt` e o `completedBy` que o
- * servidor gravou.
+ * O registro depois do 2xx: o enviado, com a `version` e, na conclusão, o `completedAt`, o `completedBy` e o
+ * `completedSnapshot` que o servidor gravou.
  */
 function acceptedInspection(data: { version: string }, sent: InspectionRecord): InspectionRecord {
-  const { completedAt, completedBy } = data as Partial<Pick<InspectionDto, "completedAt" | "completedBy">>;
-  return { ...sent, version: data.version, ...(completedAt && { completedAt }), ...(completedBy && { completedBy }) };
+  const { completedAt, completedBy, completedSnapshot } = data as Partial<
+    Pick<InspectionDto, "completedAt" | "completedBy" | "completedSnapshot">
+  >;
+  return {
+    ...sent,
+    version: data.version,
+    ...(completedAt && { completedAt }),
+    ...(completedBy && { completedBy }),
+    ...(completedSnapshot && { completedSnapshot }),
+  };
 }
 
 /**
@@ -83,9 +91,9 @@ const reopenedInspection = (sent: InspectionRecord): InspectionRecord =>
  * imóvel ainda pendente só sai depois dele; se o imóvel for recusado, ela volta com `propertyId` "Imóvel não
  * encontrado." e vira rascunho recusado, como qualquer `validation` (os erros de ambiente e item chegam no caminho do
  * servidor, `rooms[0].items[1].condition`, e ficam assim no rascunho). A conclusão é o mesmo `PUT`, com `status:
- * completed`: o 2xx traz o `completedAt` e o `completedBy`, a recusa volta ao rascunho em andamento e o `locked`
- * (concluída em outro aparelho) adota o `current` e avisa. O `completedAt` e o `completedBy` do registro nunca vão no
- * corpo.
+ * completed`: o 2xx traz o `completedAt`, o `completedBy` e o `completedSnapshot`, a recusa volta ao rascunho em
+ * andamento e o `locked` (concluída em outro aparelho) adota o `current` e avisa. Esses três campos do registro nunca
+ * vão no corpo.
  */
 export function upsertInspectionMutation(
   inspections: InspectionsCollection,
@@ -96,8 +104,15 @@ export function upsertInspectionMutation(
     store: inspections,
     drafts,
     entity: INSPECTION_ENTITY,
-    send: ({ body: { completedAt: _completedAt, completedBy: _completedBy, ...body }, ...request }) =>
-      upsertInspection({ client, ...request, body }),
+    send: ({
+      body: {
+        completedAt: _completedAt,
+        completedBy: _completedBy,
+        completedSnapshot: _completedSnapshot,
+        ...body
+      },
+      ...request
+    }) => upsertInspection({ client, ...request, body }),
     strategy: inspectionMerge,
     accepted: acceptedInspection,
     reopen: reopenedInspection,
@@ -306,8 +321,12 @@ export function fetchInspection(
 /**
  * O laço de vistorias do pull (`syncInspections`), depois do de imóveis: o imóvel de uma vistoria nova já chegou. Cada
  * item é o agregado inteiro (ambientes e itens) e entra na store por cima do que ela tem, menos a vistoria com
- * pendência (ADR 0041). O rascunho limpo da tela de campo não é pendência e passa à versão nova (ADR 0043).
+ * pendência (ADR 0041). O rascunho limpo da tela de campo não é pendência e passa à versão nova (ADR 0043). Na
+ * revisão 2, o registro guarda o `completedSnapshot`: o aparelho que puxou as concluídas sem ele (num build de antes,
+ * que o descartava) as puxa de novo, uma vez (ADR 0068).
  */
+export const INSPECTIONS_PULL_REVISION = 2;
+
 export function inspectionsPull(
   inspections: InspectionsCollection,
   client?: Client,
@@ -318,5 +337,6 @@ export function inspectionsPull(
     page: (request) => syncInspections({ client, ...request }),
     get: (request) => getInspection({ client, ...request }),
     shape: inspectionRecordOf,
+    revision: INSPECTIONS_PULL_REVISION,
   };
 }

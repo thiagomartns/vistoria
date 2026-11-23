@@ -17,6 +17,7 @@ describe("inspectionRecordOf", () => {
       startedAt: "2026-10-26T13:00:00Z",
       completedAt: null,
       completedBy: null,
+      completedSnapshot: null,
       generalNotes: "Chaves com o porteiro.",
       rooms: [
         {
@@ -92,6 +93,7 @@ describe("inspectionRecordOf", () => {
       startedAt: "2026-10-26T13:00:00Z",
       completedAt: null,
       completedBy: null,
+      completedSnapshot: null,
       generalNotes: null,
       rooms: [{ id: "r1", name: "Sala", position: 0, notes: null, items: [item] }],
       version: "AAAAAAAAB9M=",
@@ -105,7 +107,20 @@ describe("inspectionRecordOf", () => {
     expect(Object.keys(record.rooms[0]!.items[0]!)).toEqual(["id", "name", "position", "condition", "notes"]);
   });
 
-  it("concluída: o completedAt e o completedBy do servidor ficam no registro (ADR 0050, 0053); em andamento, nem existem", () => {
+  it("concluída: o completedAt, o completedBy e a cópia do servidor ficam no registro (ADR 0050, 0053, 0068); em andamento, nem existem", () => {
+    const completedSnapshot = {
+      property: {
+        street: "Rua das Flores",
+        number: "120",
+        complement: "ap 32",
+        district: "Jardim Paulista",
+        city: "São Paulo",
+        state: "SP",
+        zipCode: "01400000",
+        type: "apartment" as const,
+      },
+      client: { name: "Imobiliária Horizonte", document: "11222333000181" },
+    };
     const dto: InspectionDto = {
       id: "i2",
       propertyId: "p1",
@@ -115,6 +130,7 @@ describe("inspectionRecordOf", () => {
       startedAt: "2026-10-19T09:12:00Z",
       completedAt: "2026-10-19T14:32:00Z",
       completedBy: { id: "u1", name: "Thiago Martins" },
+      completedSnapshot,
       generalNotes: null,
       rooms: [],
       version: "AAAAAAAAB9M=",
@@ -125,9 +141,17 @@ describe("inspectionRecordOf", () => {
     expect(inspectionRecordOf(dto)).toMatchObject({
       completedAt: "2026-10-19T14:32:00Z",
       completedBy: { id: "u1", name: "Thiago Martins" },
+      completedSnapshot,
     });
-    const inProgress = inspectionRecordOf({ ...dto, status: "inProgress", completedAt: null, completedBy: null });
+    const inProgress = inspectionRecordOf({
+      ...dto,
+      status: "inProgress",
+      completedAt: null,
+      completedBy: null,
+      completedSnapshot: null,
+    });
     expect(inProgress).not.toHaveProperty("completedAt");
     expect(inProgress).not.toHaveProperty("completedBy");
+    expect(inProgress).not.toHaveProperty("completedSnapshot");
   });
 });

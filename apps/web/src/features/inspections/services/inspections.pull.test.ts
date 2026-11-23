@@ -14,7 +14,7 @@ import {
 import { INSPECTION_ENTITY, type InspectionRecord, type ItemCondition } from "../models/inspection";
 import type { InspectionsCollection } from "./inspections.collection";
 import { DEFAULT_TEMPLATE, newMoveInInspection } from "./inspections.factory";
-import { deleteInspection, saveInspectionDraft } from "./inspections.sync";
+import { INSPECTIONS_PULL_REVISION, deleteInspection, saveInspectionDraft } from "./inspections.sync";
 
 // O pull da vistoria (frontend.md, "Leitura (pull)"; ADR 0041 e 0043), com o harness de `shared/sync/pull.harness.ts`:
 // o agregado inteiro entra por cima da store, menos a vistoria com pendência, e o rascunho limpo da tela de campo passa
@@ -74,8 +74,10 @@ async function known() {
   const api = fakeApi();
   api.seed("inspections", inspectionV1);
   const phone = await device(api, { inspections: [inspectionV1] });
-  // O cursor de quem já tinha a V1: o delta traz o que mudou depois dela, inclusive a exclusão.
+  // O cursor de quem já tinha a V1, num build da revisão de hoje: o delta traz o que mudou depois dela, inclusive a
+  // exclusão.
   await phone.state.cursors.set("inspections", "1");
+  await phone.state.cursors.stamp("inspections", INSPECTIONS_PULL_REVISION);
   const store = {
     inspections: phone.inspections.collection as unknown as InspectionsCollection,
     drafts: phone.drafts,
@@ -331,5 +333,98 @@ describe("pull da vistoria criada no aparelho (#211)", () => {
     const [stored] = (await local.stores()).records;
     expect(stored).toEqual({ ...remote, version });
     expect(phone.marks.list("inspections")).toEqual([]);
+  });
+});
+
+describe("pull da vistoria: a revisão 2 traz a cópia da conclusão às concluídas que o aparelho já tem (ADR 0068)", () => {
+  const completedSnapshot = {
+    property: {
+      street: "Rua das Flores",
+      number: "120",
+      complement: "ap 32",
+      district: "Jardim Paulista",
+      city: "São Paulo",
+      state: "SP",
+      zipCode: "01400000",
+      type: "apartment" as const,
+    },
+    client: { name: "Imobiliária Horizonte", document: "11222333000181" },
+  };
+  /** A concluída como a migração a deixou no servidor: com a cópia, numa versão nova (V2). */
+  const completed: InspectionRecord = {
+    ...inspectionV1,
+    status: "completed",
+    version: V(2),
+    completedAt: "2026-10-29T10:00:00+00:00",
+    completedBy: { id: "u1", name: "Thiago Martins" },
+    completedSnapshot,
+  };
+  /** A mesma V2 no aparelho de um build de antes, que descartou a chave nova e avançou o cursor. */
+  const { completedSnapshot: _dropped, ...withoutSnapshot } = completed;
+
+  it("cursor de antes das revisões: puxa do zero uma vez e regrava a concluída da mesma versão, agora com a cópia", async () => {
+    const api = fakeApi();
+    api.seed("inspections", completed);
+    const phone = await device(api, { inspections: [withoutSnapshot] });
+    await phone.state.cursors.set("inspections", "2", true);
+
+    expect(await phone.pull()).toBe("done");
+
+    expect(api.requests).toContain("GET /api/v1/sync/inspections");
+    expect(phone.inspections.confirmed.get(ID)).toEqual(completed);
+    expect(phone.state.cursors.revision("inspections")).toBe(2);
+    expect(phone.state.cursors.resyncing("inspections")).toBe(false);
+
+    // Feito uma vez: o ciclo seguinte segue do cursor.
+    api.requests.length = 0;
+    expect(await phone.pull()).toBe("done");
+    expect(api.requests).toContain("GET /api/v1/sync/inspections?cursor=2");
+    expect(api.requests).not.toContain("GET /api/v1/sync/inspections");
+  });
+
+  it("o resync da revisão que cai no meio recomeça no ciclo seguinte, e só então a revisão é gravada", async () => {
+    const api = fakeApi();
+    api.seed("inspections", completed);
+    const phone = await device(api, { inspections: [withoutSnapshot] });
+    await phone.state.cursors.set("inspections", "2", true);
+    api.failNext("/api/v1/sync/inspections", () => {
+      throw new TypeError("Failed to fetch");
+    });
+
+    expect(await phone.pull()).toBe("offline");
+    expect(phone.state.cursors.resyncing("inspections")).toBe(true);
+    expect(phone.state.cursors.revision("inspections")).toBe(1);
+
+    expect(await phone.pull()).toBe("done");
+    expect(phone.inspections.confirmed.get(ID)).toEqual(completed);
+    expect(phone.state.cursors.revision("inspections")).toBe(2);
+  });
+
+  it("aparelho novo: o primeiro sync já grava a revisão 2, sem resync depois", async () => {
+    const api = fakeApi();
+    api.seed("inspections", completed);
+    const phone = await device(api);
+
+    expect(await phone.pull()).toBe("done");
+    expect(phone.inspections.confirmed.get(ID)).toEqual(completed);
+    expect(phone.state.cursors.revision("inspections")).toBe(2);
+
+    api.requests.length = 0;
+    await phone.pull();
+    expect(api.requests).not.toContain("GET /api/v1/sync/inspections");
+  });
+
+  it("os laços sem revisão (clientes) não puxam de novo", async () => {
+    const api = fakeApi();
+    api.seed("inspections", completed);
+    const phone = await device(api, { inspections: [completed] });
+    await phone.state.cursors.set("clients", "0", true);
+    await phone.state.cursors.set("inspections", "2", true);
+    await phone.state.cursors.stamp("inspections", INSPECTIONS_PULL_REVISION);
+
+    await phone.pull();
+
+    expect(api.requests).toContain("GET /api/v1/sync/clients?cursor=0");
+    expect(api.requests).toContain("GET /api/v1/sync/inspections?cursor=2");
   });
 });

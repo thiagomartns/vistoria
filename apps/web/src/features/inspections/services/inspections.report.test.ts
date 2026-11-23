@@ -102,6 +102,42 @@ const field = (view: ReturnType<typeof reportView>, label: string) =>
     ? view.report.fields.find((each) => each.label === label)?.value
     : undefined;
 
+const detail = (view: ReturnType<typeof reportView>, label: string) =>
+  view.state === "report"
+    ? view.report.fields.find((each) => each.label === label)?.detail
+    : undefined;
+
+/** A cópia que o servidor gravou na conclusão (ADR 0068), com o imóvel `apto` e o cliente `horizonte` daquele dia. */
+const snapshotOf = (property: PropertyRecord, client: ClientRecord) => ({
+  property: {
+    street: property.street,
+    number: property.number,
+    complement: property.complement,
+    district: property.district,
+    city: property.city,
+    state: property.state,
+    zipCode: property.zipCode,
+    type: property.type,
+  },
+  client: { name: client.name, document: client.document },
+});
+
+/** O imóvel e o cliente depois da conclusão: outro endereço, outro tipo, outro nome e outro documento. */
+const mudado: PropertyRecord = {
+  ...apto,
+  street: "Avenida Paulista",
+  number: "1000",
+  complement: null,
+  district: "Bela Vista",
+  zipCode: "01310100",
+  type: "commercial",
+};
+const renomeado: ClientRecord = {
+  ...horizonte,
+  name: "Horizonte Imóveis",
+  document: "12345678909",
+};
+
 describe("reportView", () => {
   it("vistoria em andamento não tem laudo: o aviso de concluir na tela de campo", () => {
     const view = reportView({ ...entrada, status: "inProgress", completedAt: undefined });
@@ -188,7 +224,45 @@ describe("reportView", () => {
     expect(field(reportView(saida), "Entrada")).toBe(entrada.id);
   });
 
-  it("imóvel ou cliente fora do aparelho, e cliente pessoa física", () => {
+  it("a cópia da conclusão manda: o imóvel e o cliente mudados no aparelho não mudam o laudo, que abre sem eles (ADR 0068)", () => {
+    const copied = { ...entrada, completedSnapshot: snapshotOf(apto, horizonte) };
+
+    for (const view of [
+      reportView(copied, { property: mudado, client: renomeado }),
+      reportView(copied),
+    ]) {
+      expect(field(view, "Imóvel")).toBe(
+        "Rua das Flores, 120 · ap 32 · Jardim Paulista · São Paulo/SP · 01400-000",
+      );
+      expect(field(view, "Tipo de imóvel")).toBe("Apartamento");
+      expect(field(view, "Cliente")).toBe("Imobiliária Horizonte · CNPJ 12.345.678/0001-90");
+    }
+  });
+
+  it("saída de um imóvel que mudou depois da entrada: o endereço da entrada na segunda linha de Entrada, só quando é outro", () => {
+    const moveIn = { ...entrada, completedSnapshot: snapshotOf(apto, horizonte) };
+    const bloco = { ...apto, complement: "ap 32 · Bloco B", zipCode: "01400010" };
+    const moveOut = { ...saida, completedSnapshot: snapshotOf(bloco, horizonte) };
+
+    const view = reportView(moveOut, { property: bloco, client: horizonte, reference: moveIn });
+
+    expect(field(view, "Imóvel")).toBe(
+      "Rua das Flores, 120 · ap 32 · Bloco B · Jardim Paulista · São Paulo/SP · 01400-010",
+    );
+    expect(field(view, "Entrada")).toBe(
+      "Laudo de entrada de 19/10/2026 às 11:47 · 0192f3a1-7c4e-7b2a-9d10-3e5f6a7b8c9d",
+    );
+    expect(detail(view, "Entrada")).toBe(
+      "Endereço na entrada: Rua das Flores, 120 · ap 32 · Jardim Paulista · São Paulo/SP · 01400-000",
+    );
+    // O mesmo endereço nas duas cópias, ou uma delas sem cópia: sem a segunda linha.
+    const same = { ...saida, completedSnapshot: snapshotOf(apto, renomeado) };
+    expect(detail(reportView(same, { reference: moveIn }), "Entrada")).toBeUndefined();
+    expect(detail(reportView(moveOut, { reference: entrada }), "Entrada")).toBeUndefined();
+    expect(detail(reportView(saida, { reference: moveIn }), "Entrada")).toBeUndefined();
+  });
+
+  it("concluída ainda sem a cópia (antes do pull que a traz): o imóvel e o cliente do aparelho, ou — sem eles; cliente pessoa física", () => {
     expect(field(reportView(entrada), "Imóvel")).toBe("—");
     expect(field(reportView(entrada), "Cliente")).toBe("—");
     const cpf = { ...horizonte, name: "Maria Souza", document: "12345678909" };
