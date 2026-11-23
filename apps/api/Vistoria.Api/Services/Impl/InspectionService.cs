@@ -9,6 +9,7 @@ namespace Vistoria.Api.Services.Impl;
 public class InspectionService(
     IInspectionRepository inspections,
     IRepository<Property> properties,
+    IRepository<Client> clients,
     IUserRepository users,
     IMapper mapper,
     TimeProvider time)
@@ -25,8 +26,9 @@ public class InspectionService(
 
     // O que as Data Annotations não alcançam. Imóvel (ou entrada de referência) de outro dono responde igual ao
     // inexistente, para o id dele não vazar. A vistoria concluída (inclusive a que já nasce concluída, feita toda
-    // offline) ganha aqui o CompletedAt e a autoria: o usuário do token, com o nome copiado (ADR 0053). O que o cliente
-    // mandou neles nunca chega ao modelo. Kind e referência são da
+    // offline) ganha aqui o CompletedAt, a autoria (o usuário do token, com o nome copiado, ADR 0053) e a cópia do
+    // imóvel e do cliente lidos do banco (ADR 0068). O que o cliente mandou neles nunca chega ao modelo: o
+    // UpsertInspectionDto não tem esses campos. Kind e referência são da
     // criação (ADR 0051): na regravação, ficam os do registro atual, e as cópias dos itens, o repositório não toca.
     protected override async Task ValidateAsync(
         Inspection proposed, Inspection? current, Guid ownerId, CancellationToken cancellationToken)
@@ -80,6 +82,9 @@ public class InspectionService(
         proposed.CompletedAt = completing ? time.GetUtcNow() : null;
         proposed.CompletedById = completing ? ownerId : null;
         proposed.CompletedByName = completing ? (await users.FindByIdAsync(ownerId, cancellationToken))?.Name : null;
+        proposed.CompletedSnapshot = completing
+            ? CompletionSnapshot.Of(property!, await clients.FindByIdAsync(property!.ClientId, cancellationToken))
+            : null;
     }
 
     // Na criação: a saída aponta para uma entrada concluída, viva, do mesmo imóvel e do mesmo dono; a entrada não tem

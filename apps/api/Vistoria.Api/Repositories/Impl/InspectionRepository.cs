@@ -58,9 +58,12 @@ public class InspectionRepository(AppDbContext db) : GenericRepository<Inspectio
         }
 
         // Definidos uma vez, na criação (ADR 0051): o PUT não os regrava. O CompletedAt e a autoria vêm do service, que
-        // os carimba na conclusão; uma vistoria só é regravada em andamento, então não há valor antigo a manter.
+        // os carimba na conclusão; uma vistoria só é regravada em andamento, então não há valor antigo a manter. A cópia
+        // da conclusão (ADR 0068) é um complex type opcional: vai por atribuição antes do SetValues, que escreve dentro da
+        // instância do registro atual e quebra quando ela é nula.
         var (startedAt, kind, referenceId) = (current.StartedAt, current.Kind, current.ReferenceInspectionId);
         var entry = Db.Entry(current);
+        current.CompletedSnapshot = entity.CompletedSnapshot;
         entry.CurrentValues.SetValues(entity);
         (current.StartedAt, current.Kind, current.ReferenceInspectionId) = (startedAt, kind, referenceId);
         entry.Property(e => e.Version).OriginalValue = entity.Version;
