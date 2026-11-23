@@ -29,6 +29,11 @@ export const zClientDto = z.object({
     updatedAt: z.iso.datetime({ offset: true })
 });
 
+export const zClientSnapshotDto = z.object({
+    name: z.string(),
+    document: z.string().nullable()
+});
+
 export const zInspectionAuthorDto = z.object({
     id: z.uuid(),
     name: z.string()
@@ -118,6 +123,22 @@ export const zPropertyDto = z.object({
     updatedAt: z.iso.datetime({ offset: true })
 });
 
+export const zPropertySnapshotDto = z.object({
+    street: z.string(),
+    number: z.string(),
+    complement: z.string().nullable(),
+    district: z.string(),
+    city: z.string(),
+    state: z.string(),
+    zipCode: z.string(),
+    type: zPropertyType
+});
+
+export const zInspectionSnapshotDto = z.object({
+    property: zPropertySnapshotDto,
+    client: zClientSnapshotDto
+});
+
 export const zRoomDto = z.object({
     id: z.uuid(),
     name: z.string(),
@@ -135,6 +156,7 @@ export const zInspectionDto = z.object({
     startedAt: z.iso.datetime({ offset: true }),
     completedAt: z.iso.datetime({ offset: true }).nullable(),
     completedBy: zInspectionAuthorDto.nullable(),
+    completedSnapshot: zInspectionSnapshotDto.nullable(),
     generalNotes: z.string().nullable(),
     rooms: z.array(zRoomDto),
     version: z.string(),
