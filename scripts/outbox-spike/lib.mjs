@@ -82,13 +82,17 @@ export async function serve() {
 
 export const wait = (ms) => new Promise((done) => setTimeout(done, ms));
 
+/** A consulta do endereço pelo CEP (#185), que `launch()` responde em todo contexto. */
+export const ZIP_CODE_ROUTE = "**/api/v1/zip-codes/*";
+
 /** O intervalo do pull com `PULL_CHAOS=1`, no lugar dos 60 s do app (`PULL_INTERVAL_MS`). */
 const CHAOS_INTERVAL_MS = 1500;
 
 /**
  * Com `PULL_CHAOS=1`, todo contexto troca o intervalo de 60 s do pull por 1,5 s: o roteiro inteiro roda com pulls caindo
  * em qualquer ponto, sem uma linha a mais no app (#144). Os passos que dependem de o aparelho não ter puxado seguram o
- * pull com `holdPull`. `args` vai para o Chrome (o roteiro da V1 passa o `--ignore-certificate-errors`).
+ * pull com `holdPull`. `args` vai para o Chrome (o roteiro da V1 passa o `--ignore-certificate-errors`). A consulta do
+ * CEP nunca sai para o provedor de verdade (`ZIP_CODE_ROUTE`).
  */
 export async function launch({ args = [] } = {}) {
   let browser;
@@ -108,6 +112,15 @@ export async function launch({ args = [] } = {}) {
       trace(page, name);
       trackPrefetch(page);
     });
+    // Nenhum roteiro sai para o ViaCEP pela API (#185): a consulta do CEP responde "não encontrado", e o cadastro segue
+    // à mão, como os roteiros já fazem. O passo que prova a consulta troca a resposta pela rota da página.
+    await context.route(ZIP_CODE_ROUTE, (zipRoute) =>
+      zipRoute.fulfill({
+        status: 404,
+        contentType: "application/problem+json",
+        body: problem("not-found", 404, "Não encontrado"),
+      }),
+    );
     if (chaos) {
       await context.addInitScript((interval) => {
         const setInterval = window.setInterval;

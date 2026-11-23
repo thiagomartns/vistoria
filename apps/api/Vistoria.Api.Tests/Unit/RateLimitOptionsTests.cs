@@ -16,24 +16,28 @@ public class RateLimitOptionsTests
 
         options.CredentialPermitLimit.Should().Be(5);
         options.RefreshPermitLimit.Should().Be(30);
+        options.ZipCodePermitLimit.Should().Be(30);
     }
 
     [Fact]
-    public void Configuration_ChangesBothLimits()
+    public void Configuration_ChangesTheLimits()
     {
         var options = Resolve(new Dictionary<string, string?>
         {
             ["RateLimit:CredentialPermitLimit"] = "1000",
             ["RateLimit:RefreshPermitLimit"] = "2000",
+            ["RateLimit:ZipCodePermitLimit"] = "3000",
         });
 
         options.CredentialPermitLimit.Should().Be(1000);
         options.RefreshPermitLimit.Should().Be(2000);
+        options.ZipCodePermitLimit.Should().Be(3000);
     }
 
     [Theory]
     [InlineData("RateLimit:CredentialPermitLimit", "0")]
     [InlineData("RateLimit:RefreshPermitLimit", "-1")]
+    [InlineData("RateLimit:ZipCodePermitLimit", "0")]
     public void LimitBelowOne_IsRejected(string key, string value)
     {
         var resolve = () => Resolve(new Dictionary<string, string?> { [key] = value });

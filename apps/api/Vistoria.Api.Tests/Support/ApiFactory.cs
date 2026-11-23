@@ -10,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Vistoria.Api.Configurations;
 using Vistoria.Api.Infrastructure.Auth;
+using Vistoria.Api.Infrastructure.ZipCodes;
 using Vistoria.Api.Model;
 
 namespace Vistoria.Api.Tests.Support;
@@ -17,8 +18,9 @@ namespace Vistoria.Api.Tests.Support;
 /// <summary>
 /// API em Development apontando para o SQL Server do <see cref="SqlServerContainer"/>. O startup roda o
 /// <c>MigrateAsync</c> de verdade, como no <c>pnpm dev:api</c>. Cada factory tem a própria chave do JWT e um
-/// relógio manual no lugar do <see cref="TimeProvider"/> do sistema. Cada <c>CreateClient()</c> sai com um IP
-/// próprio (<see cref="RemoteIpHeader"/>), então cada cliente tem o próprio balde do rate limit.
+/// relógio manual no lugar do <see cref="TimeProvider"/> do sistema, e os provedores de CEP nunca chamam a rede
+/// (<see cref="NoNetworkHandler"/>). Cada <c>CreateClient()</c> sai com um IP próprio (<see cref="RemoteIpHeader"/>),
+/// então cada cliente tem o próprio balde do rate limit.
 /// </summary>
 public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
@@ -55,6 +57,9 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         {
             services.Replace(ServiceDescriptor.Singleton<TimeProvider>(Time));
             services.AddTransient<IStartupFilter, RemoteIpFromHeader>();
+            // Nenhum teste sai para o ViaCEP ou a BrasilAPI: quem testa a consulta do CEP troca o handler (#185).
+            services.AddHttpClient<ViaCepLookup>().ConfigurePrimaryHttpMessageHandler(() => new NoNetworkHandler());
+            services.AddHttpClient<BrasilApiLookup>().ConfigurePrimaryHttpMessageHandler(() => new NoNetworkHandler());
         });
     }
 

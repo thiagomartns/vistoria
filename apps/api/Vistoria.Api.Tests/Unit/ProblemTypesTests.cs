@@ -27,6 +27,7 @@ public partial class ProblemTypesTests
         new IdempotencyKeyReusedException(),
         new PreconditionRequiredException("If-Match"),
         new RateLimitedException(TimeSpan.FromSeconds(10)),
+        new UpstreamUnavailableException(),
         new InternalException(),
     ];
 

@@ -21,7 +21,8 @@ import type { Control, UseFormReturn } from "react-hook-form";
 
 // O formulário de /properties/edit (Figma 71:3087 e 71:3337). No desktop, 720 px em linhas: Cliente e Tipo, CEP e
 // Rua, Número e Complemento, Bairro, Cidade e UF; Observações e os botões lado a lado. No celular, um campo por linha,
-// menos Número com Complemento e Cidade com UF; botões lg em largura total. O `form` vem do hook da página.
+// menos Número com Complemento e Cidade com UF; botões lg em largura total. O `form` vem do hook da página. A dica da
+// consulta do endereço pelo CEP fica sob o CEP, como texto de ajuda (Figma 274:34493, #185).
 
 export type PropertyFormFields = {
   clientId: string;
@@ -48,6 +49,10 @@ type PropertyFormProps<TOutput> = {
   typeOptions: Option[];
   /** A máscara ao digitar de cada campo que tem uma (o CEP); o valor sai mascarado, e o schema a tira ao salvar. */
   masks?: Partial<Record<TextName, (raw: string) => string>>;
+  /** A dica sob o CEP (a consulta do endereço, #185): texto de ajuda, não erro, e não impede salvar. */
+  zipCodeHint?: string | null;
+  /** Chamado a cada digitação no CEP, com o valor mascarado, depois do `onChange` do campo. */
+  onZipCodeChange?: (masked: string) => void;
   /** Para cadastrar um cliente quando o aparelho não tem nenhum. */
   newClientHref: string;
   /** Erro do formulário inteiro (recusa do servidor sem campo); o de campo vai no próprio campo. */
@@ -63,6 +68,8 @@ export function PropertyForm<TOutput>({
   clientOptions,
   typeOptions,
   masks = {},
+  zipCodeHint = null,
+  onZipCodeChange,
   newClientHref,
   error,
   cancelHref,
@@ -85,11 +92,23 @@ export function PropertyForm<TOutput>({
           <FormLabel>{label}</FormLabel>
           <FormControl>
             {masks[name] ? (
-              <MaskedInput autoComplete="off" {...input} {...field} mask={masks[name]} />
+              <MaskedInput
+                autoComplete="off"
+                {...input}
+                {...field}
+                mask={masks[name]}
+                onChange={(masked) => {
+                  field.onChange(masked);
+                  if (name === "zipCode") onZipCodeChange?.(masked);
+                }}
+              />
             ) : (
               <Input autoComplete="off" {...input} {...field} />
             )}
           </FormControl>
+          {name === "zipCode" && zipCodeHint ? (
+            <FormDescription aria-live="polite">{zipCodeHint}</FormDescription>
+          ) : null}
           <FormMessage />
         </FormItem>
       )}

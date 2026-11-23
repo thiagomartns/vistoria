@@ -44,6 +44,8 @@ export function PropertyEditScreen() {
     formError,
     conflict,
     masks,
+    zipCodeHint,
+    onZipCodeChange,
   } = usePropertyForm(id);
   const history = usePropertyHistory(status === "found" ? id : null);
 
@@ -56,6 +58,8 @@ export function PropertyEditScreen() {
         clientOptions={clientOptions}
         typeOptions={typeOptions}
         masks={masks}
+        zipCodeHint={zipCodeHint}
+        onZipCodeChange={onZipCodeChange}
         newClientHref={NEW_CLIENT_HREF}
         error={formError}
         cancelHref={PROPERTIES_HREF}

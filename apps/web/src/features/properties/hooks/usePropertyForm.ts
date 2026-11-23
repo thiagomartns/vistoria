@@ -19,6 +19,7 @@ import {
 } from "../schemas/property.schemas";
 import { fetchProperty, propertyConflictHref, saveProperty } from "../services/properties.sync";
 import { type PropertyRow, clientOptionsOf, propertyRowOf } from "../services/properties.view";
+import { useZipCodeLookup } from "./useZipCodeLookup";
 
 /** Para onde o formulário volta: a lista. */
 export const PROPERTIES_HREF = "/properties";
@@ -131,6 +132,9 @@ export function usePropertyForm(id: string | null) {
     errors: draft ? fieldErrorsOf(draft) : undefined,
   });
 
+  // O endereço pelo CEP (#185): uma ajuda, fora da outbox.
+  const zipCode = useZipCodeLookup(form);
+
   // Em conflito, salvar guarda o formulário só no rascunho (saveProperty) e leva ao ConflictResolver, que parte dele.
   const conflictHref = id && flatConflictOf(draft) ? propertyConflictHref(id) : null;
 
@@ -157,6 +161,10 @@ export function usePropertyForm(id: string | null) {
     typeOptions: TYPE_OPTIONS,
     /** As máscaras ao digitar (ADR 0063); o schema as tira ao salvar. */
     masks: PROPERTY_MASKS,
+    /** A dica sob o CEP, da consulta do endereço (#185), ou `null`. */
+    zipCodeHint: zipCode.hint,
+    /** A digitação no CEP, que consulta o endereço ao completar os 8 dígitos. */
+    onZipCodeChange: zipCode.onZipCodeChange,
     /** O rascunho em conflito: o aviso e o caminho para o ConflictResolver. */
     conflict: conflictHref
       ? { title: CONFLICT_TITLE, description: CONFLICT_DESCRIPTION, href: conflictHref }
