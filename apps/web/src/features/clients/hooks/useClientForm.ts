@@ -1,7 +1,14 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { type FieldErrors, useForm } from "react-hook-form";
 
+import { useInspectionImpact } from "@/features/inspections/hooks/useInspectionImpact";
+import {
+  type EditChange,
+  type EditNotice,
+  editNotice,
+} from "@/features/inspections/services/inspections.view";
 import { useLocalStore } from "@/features/local-store/hooks/useLocalStore";
 import type { DraftRecord } from "@/shared/sync/drafts";
 import { flatConflictOf } from "@/shared/sync/flat-conflict";
@@ -55,6 +62,16 @@ const valuesOf = (row: ClientRow): ClientFormValues => ({
 const differs = (values: ClientFormValues, saved: ClientFormValues) =>
   (Object.keys(saved) as (keyof ClientFormValues)[]).some((key) => values[key] !== saved[key]);
 
+/**
+ * O que mudou do que vai no laudo (#234): o nome, o documento ou os dois (`data`). `null` quando só o e-mail ou o
+ * telefone mudaram, e o formulário salva sem aviso.
+ */
+function changeOf(values: ClientFormValues, saved: ClientFormValues): EditChange | null {
+  const name = values.name !== saved.name;
+  const document = values.document !== saved.document;
+  return name && document ? "data" : name ? "name" : document ? "document" : null;
+}
+
 const isField = (key: string): key is (typeof CLIENT_FIELDS)[number] =>
   (CLIENT_FIELDS as readonly string[]).includes(key);
 
@@ -82,7 +99,7 @@ function fieldErrorsOf(draft: DraftRecord): FieldErrors<ClientFormValues> {
  */
 export function useClientForm(id: string | null) {
   const router = useRouter();
-  const { store, ready, clients, drafts, states } = useLocalStore();
+  const { store, ready, clients, properties, drafts, states } = useLocalStore();
 
   const draft = id ? drafts.find((candidate) => candidate.id === id) : undefined;
   const client = id ? clients.find((candidate) => candidate.id === id) : undefined;
@@ -117,7 +134,18 @@ export function useClientForm(id: string | null) {
   // Em conflito, salvar guarda o formulário só no rascunho (saveClient) e leva ao ConflictResolver, que parte dele.
   const conflictHref = id && flatConflictOf(draft) ? clientConflictHref(id) : null;
 
-  const onSubmit = form.handleSubmit((values) => {
+  // As vistorias dos imóveis do cliente, para o aviso ao salvar (#234). O cliente novo não tem.
+  const propertyIds =
+    id && row
+      ? properties.filter((property) => property.clientId === id).map((property) => property.id)
+      : null;
+  const impact = useInspectionImpact(propertyIds);
+  const [confirming, setConfirming] = useState<{
+    notice: EditNotice;
+    values: ClientFormOutput;
+  } | null>(null);
+
+  const save = (values: ClientFormOutput) => {
     // Sujo é o que difere do registro de agora, não o `isDirty`: o reset do `values` (o pull trouxe uma versão nova)
     // zera o `isDirty` e deixa o que a pessoa digitou na tela, que sumiria sem ir para a fila (#144).
     const changed = !row || differs(form.getValues(), valuesOf(row));
@@ -131,6 +159,17 @@ export function useClientForm(id: string | null) {
       });
     }
     router.push(conflictHref ?? CLIENTS_HREF);
+  };
+
+  const onSubmit = form.handleSubmit((values) => {
+    // Com vistorias, mudar o que vai no laudo pede o aviso antes (#234). Em conflito, salvar fica só no rascunho e
+    // leva ao ConflictResolver, sem aviso.
+    const notice =
+      row && impact && !conflictHref
+        ? editNotice(impact, "client", changeOf(form.getValues(), valuesOf(row)))
+        : null;
+    if (notice) setConfirming({ notice, values });
+    else save(values);
   });
 
   return {
@@ -151,5 +190,14 @@ export function useClientForm(id: string | null) {
     /** Recusa do servidor numa chave que o formulário não tem. */
     formError:
       draft && Object.keys(draft.errors).some((key) => !isField(key)) ? SERVER_REJECTED : null,
+    /** O aviso ao salvar um cliente com vistorias (#234): "Salvar" grava, "Voltar" fecha sem salvar. */
+    saveNotice: {
+      notice: confirming?.notice ?? null,
+      onConfirm: () => {
+        if (confirming) save(confirming.values);
+        setConfirming(null);
+      },
+      onCancel: () => setConfirming(null),
+    },
   };
 }

@@ -1,7 +1,14 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { type FieldErrors, useForm } from "react-hook-form";
 
+import { useInspectionImpact } from "@/features/inspections/hooks/useInspectionImpact";
+import {
+  type EditChange,
+  type EditNotice,
+  editNotice,
+} from "@/features/inspections/services/inspections.view";
 import { useLocalStore } from "@/features/local-store/hooks/useLocalStore";
 import type { DraftRecord } from "@/shared/sync/drafts";
 import { flatConflictOf } from "@/shared/sync/flat-conflict";
@@ -72,6 +79,26 @@ const valuesOf = (row: PropertyRow): PropertyFormValues => ({
 const differs = (values: PropertyFormValues, saved: PropertyFormValues) =>
   (Object.keys(saved) as (keyof PropertyFormValues)[]).some((key) => values[key] !== saved[key]);
 
+/** Os campos do endereço, que vão no laudo (#234). */
+const ADDRESS_FIELDS = [
+  "zipCode",
+  "street",
+  "number",
+  "complement",
+  "district",
+  "city",
+  "state",
+] as const satisfies readonly (keyof PropertyFormValues)[];
+
+/**
+ * O que mudou do que vai no laudo (#234): só o endereço, ou também o tipo ou o cliente (`data`). `null` quando só as
+ * observações mudaram, e o formulário salva sem aviso.
+ */
+function changeOf(values: PropertyFormValues, saved: PropertyFormValues): EditChange | null {
+  if (values.type !== saved.type || values.clientId !== saved.clientId) return "data";
+  return ADDRESS_FIELDS.some((key) => values[key] !== saved[key]) ? "address" : null;
+}
+
 const isField = (key: string): key is (typeof PROPERTY_FIELDS)[number] =>
   (PROPERTY_FIELDS as readonly string[]).includes(key);
 
@@ -138,7 +165,14 @@ export function usePropertyForm(id: string | null) {
   // Em conflito, salvar guarda o formulário só no rascunho (saveProperty) e leva ao ConflictResolver, que parte dele.
   const conflictHref = id && flatConflictOf(draft) ? propertyConflictHref(id) : null;
 
-  const onSubmit = form.handleSubmit((values) => {
+  // As vistorias do imóvel, para o aviso ao salvar (#234). O imóvel novo não tem.
+  const impact = useInspectionImpact(id && row ? [id] : null);
+  const [confirming, setConfirming] = useState<{
+    notice: EditNotice;
+    values: PropertyFormOutput;
+  } | null>(null);
+
+  const save = (values: PropertyFormOutput) => {
     // Sujo é o que difere do registro de agora, não o `isDirty`: o reset do `values` (o pull trouxe uma versão nova)
     // zera o `isDirty` e deixa o que a pessoa digitou na tela, que sumiria sem ir para a fila (#144).
     const changed = !row || differs(form.getValues(), valuesOf(row));
@@ -146,6 +180,17 @@ export function usePropertyForm(id: string | null) {
       saveProperty(store, { id: id ?? undefined, ...values });
     }
     router.push(conflictHref ?? PROPERTIES_HREF);
+  };
+
+  const onSubmit = form.handleSubmit((values) => {
+    // Com vistorias, mudar o que vai no laudo pede o aviso antes (#234). Em conflito, salvar fica só no rascunho e
+    // leva ao ConflictResolver, sem aviso.
+    const notice =
+      row && impact && !conflictHref
+        ? editNotice(impact, "property", changeOf(form.getValues(), valuesOf(row)))
+        : null;
+    if (notice) setConfirming({ notice, values });
+    else save(values);
   });
 
   return {
@@ -172,5 +217,14 @@ export function usePropertyForm(id: string | null) {
     /** Recusa do servidor numa chave que o formulário não tem. */
     formError:
       draft && Object.keys(draft.errors).some((key) => !isField(key)) ? SERVER_REJECTED : null,
+    /** O aviso ao salvar um imóvel com vistorias (#234): "Salvar" grava, "Voltar" fecha sem salvar. */
+    saveNotice: {
+      notice: confirming?.notice ?? null,
+      onConfirm: () => {
+        if (confirming) save(confirming.values);
+        setConfirming(null);
+      },
+      onCancel: () => setConfirming(null),
+    },
   };
 }

@@ -331,6 +331,101 @@ export function propertyHistory(
     .filter((row) => row !== undefined);
 }
 
+/** Quantas vistorias usam um imóvel (ou os imóveis de um cliente): as em andamento e as concluídas (#234). */
+export interface EditImpact {
+  inProgress: number;
+  completed: number;
+}
+
+/**
+ * As vistorias dos imóveis `propertyIds`, contadas como a lista as lê: o resumo com a fila por cima e os rascunhos
+ * (ADR 0048). Uma conclusão ainda na fila conta como concluída: a outbox é serial, então ela chega ao servidor, e ganha
+ * a cópia do imóvel e do cliente (ADR 0068), antes da edição que vem depois dela. A exclusão na fila não conta.
+ */
+export function editImpact(
+  summaries: readonly InspectionSummary[],
+  pending: ReadonlyMap<string, PendingRecord>,
+  allDrafts: readonly DraftRecord[],
+  propertyIds: ReadonlySet<string>,
+): EditImpact {
+  const impact: EditImpact = { inProgress: 0, completed: 0 };
+  for (const entry of listEntries(summaries, pending, allDrafts)) {
+    if (!propertyIds.has(entry.propertyId) || entry.inspection?.deleting) continue;
+    if (entry.completed) impact.completed += 1;
+    else impact.inProgress += 1;
+  }
+  return impact;
+}
+
+/**
+ * O que mudou no que vai no laudo: só o endereço do imóvel, só o nome ou só o documento do cliente, ou mais de uma
+ * coisa (`data`: o tipo, o cliente do imóvel, ou nome e documento juntos).
+ */
+export type EditChange = "address" | "name" | "document" | "data";
+
+/** O aviso ao salvar um imóvel ou um cliente com vistorias (Figma "Salvar com vistorias (#234)"). */
+export interface EditNotice {
+  title: string;
+  description: string;
+}
+
+const CHANGE_WORDS: Record<EditChange, { fresh: string; kept: string; short: string; next: string }> = {
+  address: {
+    fresh: "o endereço novo",
+    kept: "o endereço da conclusão",
+    short: "o endereço da conclusão",
+    next: "o novo",
+  },
+  data: { fresh: "os dados novos", kept: "os dados da conclusão", short: "os da conclusão", next: "os novos" },
+  name: { fresh: "o nome novo", kept: "o nome da conclusão", short: "o da conclusão", next: "o novo" },
+  document: {
+    fresh: "o documento novo",
+    kept: "o documento da conclusão",
+    short: "o da conclusão",
+    next: "o novo",
+  },
+};
+
+/**
+ * O texto do aviso: as em andamento passam a usar o dado novo, as concluídas mantêm o da conclusão no laudo. `null`
+ * sem vistorias ou sem mudança no que vai no laudo, e o formulário salva direto.
+ */
+export function editNotice(
+  impact: EditImpact,
+  subject: "property" | "client",
+  change: EditChange | null,
+): EditNotice | null {
+  const { inProgress, completed } = impact;
+  if (!change || inProgress + completed === 0) return null;
+  const words = CHANGE_WORDS[change];
+  const of = subject === "property" ? "deste imóvel" : "dos imóveis deste cliente";
+  const sentences: string[] = [];
+  if (inProgress > 0) {
+    sentences.push(
+      inProgress === 1
+        ? `A vistoria em andamento ${of} passa a usar ${words.fresh}.`
+        : `As ${inProgress} vistorias em andamento ${of} passam a usar ${words.fresh}.`,
+    );
+  }
+  if (completed > 0 && inProgress > 0) {
+    sentences.push(
+      completed === 1
+        ? `A concluída mantém ${words.short} no laudo.`
+        : `As ${completed} concluídas mantêm ${words.short} no laudo.`,
+    );
+  } else if (completed > 0) {
+    sentences.push(
+      completed === 1
+        ? `A vistoria concluída ${of} mantém ${words.kept} no laudo. As próximas usam ${words.next}.`
+        : `As ${completed} vistorias concluídas ${of} mantêm ${words.kept} no laudo. As próximas usam ${words.next}.`,
+    );
+  }
+  return {
+    title: `Salvar as alterações do ${subject === "property" ? "imóvel" : "cliente"}?`,
+    description: sentences.join(" "),
+  };
+}
+
 /** Um item da linha do tempo do imóvel (Figma TimelineItem 231:1825). */
 export interface HistoryEntryView {
   /** "Saída · Em andamento". */

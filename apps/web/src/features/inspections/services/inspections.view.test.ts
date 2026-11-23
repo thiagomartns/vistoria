@@ -28,6 +28,8 @@ import {
   moveOutIdsOf,
   pendingItemIds,
   propertyHistory,
+  editImpact,
+  editNotice,
   referenceOf,
   roomViews,
   withMoveOutOf,
@@ -717,5 +719,60 @@ describe("historyEntryOf (#176)", () => {
       marker: "filled",
     });
     expect(historyEntryOf({ ...rowOf(inspection("i2")), sync: "excluindo" }).marker).toBe("muted");
+  });
+});
+
+describe("editImpact e editNotice (#234)", () => {
+  it("conta as vistorias dos imóveis pedidos com a fila por cima: a conclusão na fila é concluída, a exclusão não conta", () => {
+    const summaries = [
+      summaryOf(inspection("aberta")),
+      summaryOf(inspection("concluida", { status: "completed" })),
+      summaryOf(inspection("concluindo")),
+      summaryOf(inspection("excluindo")),
+      summaryOf(inspection("excluida")),
+      summaryOf(inspection("outro-imovel", { propertyId: "p2" })),
+      summaryOf(inspection("terceiro", { propertyId: "p3", status: "completed" })),
+    ];
+    const pending = new Map([
+      queued(inspection("concluindo", { status: "completed" })),
+      queued({ ...inspection("excluindo"), deleting: true }),
+      queued(inspection("excluida"), { removed: true }),
+      queued(inspection("criada-offline")),
+    ]);
+    const drafts = [rejected(inspection("recusada"))];
+
+    expect(editImpact(summaries, pending, drafts, new Set(["p1"]))).toEqual({ inProgress: 3, completed: 2 });
+    expect(editImpact(summaries, pending, drafts, new Set(["p1", "p3"]))).toEqual({
+      inProgress: 3,
+      completed: 3,
+    });
+    expect(editImpact(summaries, pending, drafts, new Set(["p9"]))).toEqual({ inProgress: 0, completed: 0 });
+  });
+
+  it("o texto: singular e plural, só em andamento, só concluídas, e o imóvel ou o cliente", () => {
+    expect(editNotice({ inProgress: 1, completed: 1 }, "property", "address")).toEqual({
+      title: "Salvar as alterações do imóvel?",
+      description:
+        "A vistoria em andamento deste imóvel passa a usar o endereço novo. A concluída mantém o endereço da conclusão no laudo.",
+    });
+    expect(editNotice({ inProgress: 2, completed: 0 }, "property", "address")?.description).toBe(
+      "As 2 vistorias em andamento deste imóvel passam a usar o endereço novo.",
+    );
+    expect(editNotice({ inProgress: 0, completed: 3 }, "property", "address")?.description).toBe(
+      "As 3 vistorias concluídas deste imóvel mantêm o endereço da conclusão no laudo. As próximas usam o novo.",
+    );
+    expect(editNotice({ inProgress: 0, completed: 1 }, "property", "data")?.description).toBe(
+      "A vistoria concluída deste imóvel mantém os dados da conclusão no laudo. As próximas usam os novos.",
+    );
+    expect(editNotice({ inProgress: 2, completed: 3 }, "client", "name")).toEqual({
+      title: "Salvar as alterações do cliente?",
+      description:
+        "As 2 vistorias em andamento dos imóveis deste cliente passam a usar o nome novo. As 3 concluídas mantêm o da conclusão no laudo.",
+    });
+  });
+
+  it("sem vistorias ou sem mudança no que vai no laudo: sem aviso", () => {
+    expect(editNotice({ inProgress: 0, completed: 0 }, "property", "address")).toBeNull();
+    expect(editNotice({ inProgress: 2, completed: 1 }, "client", null)).toBeNull();
   });
 });

@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ClientRecord } from "@/features/clients/models/client";
+import type { InspectionSummary } from "@/features/inspections/models/inspection-summary";
 import type { PropertyRecord } from "@/features/properties/models/property";
 import { fetchClient, saveClient } from "@/features/clients/services/clients.sync";
 import { resetSession } from "@/shared/auth/session";
@@ -37,11 +38,20 @@ const local = vi.hoisted(() => ({
     properties: [] as PropertyRecord[],
     drafts: [] as DraftRecord[],
     states: new Map<string, RecordSyncState>(),
+    pending: new Map<string, { mutationFnName: string; record: unknown; removed: boolean }>(),
+    outboxRead: true,
   },
 }));
 
 vi.mock("@/features/local-store/hooks/useLocalStore", () => ({
   useLocalStore: () => local.value,
+}));
+
+// Os resumos das vistorias (ADR 0048), para o aviso ao salvar (#234).
+const inspections = vi.hoisted(() => ({ summaries: [] as InspectionSummary[] }));
+
+vi.mock("@/features/inspections/hooks/useInspectionSummaries", () => ({
+  useInspectionSummaries: () => ({ data: inspections.summaries, isReady: true }),
 }));
 
 vi.mock("@/features/clients/services/clients.sync", () => ({
@@ -81,7 +91,10 @@ afterEach(() => {
     properties: [],
     drafts: [],
     states: new Map(),
+    pending: new Map(),
+    outboxRead: true,
   };
+  inspections.summaries = [];
   navigation.push.mockReset();
   vi.mocked(saveClient).mockClear();
   vi.mocked(fetchClient).mockReset().mockResolvedValue("not-found");
@@ -282,6 +295,91 @@ describe("ClientEditScreen", () => {
       document: "52998224725",
       email: "maria.souza@email.com",
       phone: null,
+    });
+  });
+
+  describe("aviso ao salvar um cliente com vistorias (#234)", () => {
+    const property = (id: string, clientId: string) => ({ id, clientId }) as PropertyRecord;
+    const summary = (id: string, propertyId: string, over: Partial<InspectionSummary> = {}): InspectionSummary => ({
+      id,
+      version: "AAAAAAAAB9M=",
+      propertyId,
+      kind: "moveIn",
+      status: "completed",
+      startedAt: "2025-02-03T12:00:00.000Z",
+      evaluated: 29,
+      items: 29,
+      ...over,
+    });
+    const dialog = () => screen.getByRole("dialog");
+    const properties = [property("p1", "c2"), property("p2", "c2"), property("p3", "outro")];
+
+    it("mudar o nome conta as vistorias dos imóveis do cliente; Voltar não salva, Salvar grava e volta", async () => {
+      const user = userEvent.setup();
+      inspections.summaries = [
+        summary("a", "p1", { status: "inProgress" }),
+        summary("b", "p2", { status: "inProgress" }),
+        summary("c", "p1"),
+        summary("d", "p2"),
+        summary("e", "p2"),
+        summary("de-outro", "p3", { status: "inProgress" }),
+      ];
+      open("c2", { clients: [maria], properties });
+      await user.clear(field("Nome"));
+      await user.type(field("Nome"), "Maria Souza Lima");
+
+      await user.click(screen.getByRole("button", { name: "Salvar" }));
+
+      expect(within(dialog()).getByRole("heading", { name: "Salvar as alterações do cliente?" })).toBeTruthy();
+      expect(dialog().textContent).toContain(
+        "As 2 vistorias em andamento dos imóveis deste cliente passam a usar o nome novo. As 3 concluídas mantêm o da conclusão no laudo.",
+      );
+      await user.click(within(dialog()).getByRole("button", { name: "Voltar" }));
+      expect(saveClient).not.toHaveBeenCalled();
+      expect(navigation.push).not.toHaveBeenCalled();
+
+      await user.click(screen.getByRole("button", { name: "Salvar" }));
+      await user.click(within(dialog()).getByRole("button", { name: "Salvar" }));
+
+      await vi.waitFor(() => expect(saveClient).toHaveBeenCalledOnce());
+      expect(vi.mocked(saveClient).mock.calls[0]?.[1]).toMatchObject({ id: "c2", name: "Maria Souza Lima" });
+      expect(navigation.push).toHaveBeenCalledWith("/clients");
+    });
+
+    it("só o documento: o documento novo", async () => {
+      const user = userEvent.setup();
+      inspections.summaries = [summary("a", "p1", { status: "inProgress" })];
+      open("c2", { clients: [maria], properties });
+
+      await user.clear(field("CPF ou CNPJ"));
+      await user.type(field("CPF ou CNPJ"), "11.222.333/0001-81");
+      await user.click(screen.getByRole("button", { name: "Salvar" }));
+
+      expect(dialog().textContent).toContain(
+        "A vistoria em andamento dos imóveis deste cliente passa a usar o documento novo.",
+      );
+    });
+
+    it("só o e-mail ou o telefone mudaram, ou os imóveis dele não têm vistorias: salva direto, sem aviso", async () => {
+      const user = userEvent.setup();
+      inspections.summaries = [summary("a", "p1"), summary("de-outro", "p3")];
+      open("c2", { clients: [maria], properties });
+      await user.clear(field("E-mail"));
+      await user.type(field("E-mail"), "maria@email.com");
+      await user.click(screen.getByRole("button", { name: "Salvar" }));
+      await vi.waitFor(() => expect(saveClient).toHaveBeenCalledOnce());
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    it("cliente sem vistorias nos imóveis dele: mudar o nome salva direto", async () => {
+      const user = userEvent.setup();
+      inspections.summaries = [summary("de-outro", "p3")];
+      open("c2", { clients: [maria], properties });
+      await user.clear(field("Nome"));
+      await user.type(field("Nome"), "Maria S.");
+      await user.click(screen.getByRole("button", { name: "Salvar" }));
+      await vi.waitFor(() => expect(saveClient).toHaveBeenCalledOnce());
+      expect(screen.queryByRole("dialog")).toBeNull();
     });
   });
 
