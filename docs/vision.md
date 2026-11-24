@@ -28,6 +28,8 @@ Um app de **vistoria de imóveis para locação** usado por vistoriadores autôn
 
 ### Fora da versão 1
 
+A versão 2 começa depois do M7: a V1 sai com tag e imagens publicadas (M6) e roda num servidor (M7) antes do primeiro tema abaixo.
+
 | Tema | Quando |
 | --- | --- |
 | Fotos por item | Versão 2 (o modelo já reserva o lugar delas) |
@@ -140,6 +142,8 @@ O M2 é o mais longo e o mais arriscado: é onde backend e front se encontram pe
 | M3 · Conflito | Dois navegadores editam a mesma vistoria offline e convergem sem perder nada | — | Abrir pelo id o que não está no banco local; merge e `ConflictResolver` da vistoria, do cliente e do imóvel; excluir vistoria em andamento (spike 3, [ADR 0038](decisions/0038-escopo-do-m3-leitura-por-id-conflito-de-cadastro-e-exclusao.md)) |
 | M4 · Leitura e sessão | Aparelho novo baixa tudo; 10 mil vistorias abrem rápido; duas abas renovam a sessão sem deslogar | 6 | Pull por delta, sessão offline, refresh em aba única (spike 2) |
 | M5 · Produto V1 | Vistoria real de entrada e saída, ponta a ponta, com laudo impresso, rodando no docker-compose de produção | Ajustes | Todas as telas a partir do Figma, roteiros, saída a partir da entrada, concluir e `locked`, laudo |
+| M6 · Release V1 | Um merge na `main` publica no GHCR as imagens da API e do proxy, sem tag flutuante e sem vulnerabilidade HIGH/CRITICAL corrigível; o compose de produção sobe pela tag do commit sem compilar; o backup do banco restaura num banco limpo no CI com as contagens batendo; a `main` tem a tag `v1.0.0` e o GitHub Release com as notas da V1 | Example do `errors` no OpenAPI (#56); imagens com tag fixa e scan (#194) e no GHCR (#195); backup com teste de restauração (#196); tag e release (#240) | Cancelar na outbox a transação nunca tentada (#117) |
+| M7 · V1 no ar | O vistoriador entra pelo domínio do ambiente publicado, no celular, faz uma vistoria offline e ela chega ao banco compartilhado; o deploy da `main` sobe as imagens do GHCR e aplica as migrações pelo `efbundle`; o backup sai para fora do servidor e restaura | Ambiente publicado com banco compartilhado, que serve de homologação (#50); backup fora do servidor (#241) | — |
 
 **Se atrasar.** As estimativas são otimistas. O MD tem prazo fechado de 3 semanas: o que não ficar pronto em alta fidelidade segue como wireframe e é refinado no M5. Se o M2 passar duas semanas do previsto, o corte vem do M5 (roteiros editáveis viram um roteiro fixo; filtros viram busca simples), nunca da arquitetura de sync, que é o objetivo do estudo.
 
@@ -306,5 +310,5 @@ Um termo, um significado, em todos os documentos, issues e prompts.
 | Merge de três vias | Compara base, local e servidor; só vai para o usuário o que os dois lados mudaram |
 | `ProblemType` | Lista fechada de tipos de erro do catálogo, gerada do contrato |
 | Static export | Build do Next.js em arquivos estáticos, sem servidor |
-| Marco (M0–M5 e MD) | Etapa do roteiro com uma entrega verificável |
+| Marco (M0–M7 e MD) | Etapa do roteiro com uma entrega verificável |
 | ADR | Registro curto de uma decisão de arquitetura |
