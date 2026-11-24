@@ -59,6 +59,10 @@
 // arrastado para o topo, outro removido, um nome vazio que "Pronto" não aceita; no Sheet dos ambientes, um ambiente
 // novo, outro arrastado para o topo e um com itens removido pelo Dialog. Recarregada, segue; com a rede, o servidor tem
 // a lista nova, com as position na ordem da tela. Com SCREENS=1, os prints em `.screens/ambientes/`.
+// Desde o #235 o passo 12m, na Nova vistoria com a Rua da Conclusão escolhida, confere o aviso da entrada do 12k em
+// andamento (o início e o link, que abre a tela de campo dela) e que "Começar vistoria" pede confirmação, e "Cancelar"
+// não cria. O `createInspection` do `lib.mjs` confirma a outra entrada quando o imóvel já tem uma. Com SCREENS=1, os
+// prints do aviso e do Dialog em `.screens/nova-vistoria/`.
 // Desde o #234 o passo 12m2 muda o complemento da Rua da Conclusão: o aviso conta as 2 em andamento e as 2 concluídas
 // dela, "Voltar" não salva e "Salvar" grava. O laudo da concluída do 12h segue com o endereço da conclusão (a cópia que
 // o servidor gravou), aqui e num aparelho novo, que só tem o imóvel novo; depois o complemento volta. Com SCREENS=1, o
@@ -109,6 +113,7 @@ import {
   mark,
   markRoom,
   ok,
+  openMoveInDialog,
   openRoom,
   otherUserWarning,
   outboxCount,
@@ -214,6 +219,29 @@ const shootZipCode = shooter(zipCodeDir);
 // Ambientes e itens na tela de campo (#171), com SCREENS=1.
 const structureDir = process.env.SCREENS ? resolve(process.env.INIT_CWD ?? root, ".screens/ambientes") : null;
 const shootStructure = shooter(structureDir);
+
+/**
+ * O print do Dialog de "Começar vistoria" num imóvel com entrada em andamento (#235), no celular e no desktop: o Radix
+ * fecha o Dialog quando a janela muda, então cada largura abre o seu, e o fecha pelo "Cancelar", sem criar nada.
+ */
+async function shootOpenMoveInConfirm(page, name) {
+  if (!newDir) return;
+  mkdirSync(newDir, { recursive: true });
+  const original = page.viewportSize();
+  const dialog = openMoveInDialog(page);
+  for (const viewport of VIEWPORTS) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await wait(400);
+    await page.getByRole("button", { name: "Começar vistoria" }).click();
+    await dialog.waitFor();
+    await wait(300);
+    await page.screenshot({ path: join(newDir, `${name}-${viewport.name}.png`) });
+    await dialog.getByRole("button", { name: "Cancelar" }).click();
+    await dialog.waitFor({ state: "hidden" });
+  }
+  await page.setViewportSize(original);
+  ok(`print ${name} (celular e desktop)`);
+}
 
 /** O print do Select do Roteiro aberto, no celular e no desktop: o Radix fecha o Select quando a janela muda. */
 async function shootTemplateOptions(page, name) {
@@ -1835,8 +1863,35 @@ try {
   assert.equal(new URL(page.url()).searchParams.get("propertyId"), conclusaoId);
   await until(async () => (await page.getByLabel("Imóvel").textContent()) === conclusaoOption, "o imóvel vem escolhido", 10_000);
   ok("\"Nova vistoria\" abre a Nova vistoria com a Rua da Conclusão escolhida");
-  await page.getByRole("link", { name: "Cancelar" }).click();
-  await page.getByRole("heading", { level: 1, name: "Vistorias" }).waitFor();
+
+  // #235: a Rua da Conclusão tem a entrada do 12k em andamento. O aviso diz quando ela começou e leva a ela; começar
+  // pede confirmação, e "Cancelar" não cria nada (o 12m2 conta 2 em andamento).
+  const openAlert = page.getByRole("alert").filter({ hasText: "Este imóvel já tem uma entrada em andamento" });
+  await openAlert.waitFor();
+  assert.match(await openAlert.textContent(), /Iniciada em \d{2}\/\d{2}\/\d{4} às \d{2}:\d{2}\./, "o aviso tem o início");
+  const openLink = openAlert.getByRole("link", { name: "Abrir a entrada" });
+  assert.equal(
+    new URL(await openLink.getAttribute("href"), page.url()).searchParams.get("id"),
+    fromTemplate,
+    "o link leva à entrada do 12k",
+  );
+  await shootNew(page, "entrada-em-andamento");
+  await shootOpenMoveInConfirm(page, "entrada-em-andamento-confirmar");
+  await page.getByRole("button", { name: "Começar vistoria" }).click();
+  const openConfirm = openMoveInDialog(page);
+  await openConfirm.waitFor();
+  assert.ok(
+    (await openConfirm.textContent()).includes("Outra entrada do mesmo imóvel costuma ser engano"),
+    "o Dialog diz por que pergunta",
+  );
+  await openConfirm.getByRole("button", { name: "Cancelar" }).click();
+  await openConfirm.waitFor({ state: "hidden" });
+  assert.equal(new URL(page.url()).pathname, "/inspections/new", "Cancelar fica na Nova vistoria, sem criar");
+  await openLink.click();
+  await page.waitForURL(/\/inspections\/edit\?id=/);
+  assert.equal(new URL(page.url()).searchParams.get("id"), fromTemplate, "o link abre a entrada do 12k");
+  ok("entrada em andamento (#235): o aviso com o início e o link, que abre a do 12k; começar pede confirmação, e Cancelar não cria");
+  await goTo(page, "Vistorias");
 
   // Sem vistorias: um imóvel novo, só para o EmptyState no Card e na aba.
   const vazio = await createProperty(page, "Imobiliária Beta", "Rua Sem Vistoria", { pending: false });
