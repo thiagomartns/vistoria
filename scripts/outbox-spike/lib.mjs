@@ -656,7 +656,15 @@ export async function editNotes(page, address, notes) {
   await page.getByRole("heading", { level: 1, name: "Imóveis" }).waitFor();
 }
 
-/** De /clients (ou outra lista) a /inspections/new: escolhe o imóvel, começa a vistoria e devolve o id dela. */
+/** O Dialog que "Começar vistoria" abre num imóvel com entrada em andamento (#235). */
+export const openMoveInDialog = (page) =>
+  page.getByRole("dialog", { name: /^Este imóvel já tem (uma entrada|\d+ entradas) em andamento$/ });
+
+/**
+ * De /clients (ou outra lista) a /inspections/new: escolhe o imóvel, começa a vistoria e devolve o id dela. Num imóvel
+ * que já tem entrada em andamento, confirma a outra entrada no Dialog da #235 (o passo 12m do spike:outbox confere o
+ * aviso e o Dialog).
+ */
 export async function createInspection(page, propertyOption) {
   await goTo(page, "Vistorias");
   await page.getByRole("link", { name: "Nova vistoria" }).first().click();
@@ -664,7 +672,12 @@ export async function createInspection(page, propertyOption) {
   await page.getByLabel("Imóvel").click();
   await page.getByRole("option", { name: propertyOption }).click();
   await page.getByRole("button", { name: "Começar vistoria" }).click();
-  await page.waitForURL(/\/inspections\/edit\?id=/);
+  const confirm = openMoveInDialog(page);
+  const field = /\/inspections\/edit\?id=/;
+  // A tela de campo ou o Dialog, o que vier primeiro; o que perde não pode virar rejeição solta.
+  await Promise.race([page.waitForURL(field).catch(() => {}), confirm.waitFor().catch(() => {})]);
+  if (await confirm.isVisible()) await confirm.getByRole("button", { name: "Começar outra entrada" }).click();
+  await page.waitForURL(field);
   await currentRoomIs(page, "Sala");
   return new URL(page.url()).searchParams.get("id");
 }

@@ -916,7 +916,7 @@ export function moveInsOf(
     .toSorted((a, b) => (a.startedAt === b.startedAt ? 0 : a.startedAt < b.startedAt ? 1 : -1))
     .map((inspection) => {
       const hasMoveOut = withMoveOut.has(inspection.id);
-      const label = `Entrada de ${dateOf(inspection.startedAt)} às ${timeOf(inspection.startedAt)} · ${plural(
+      const label = `${moveInLabelOf(inspection.startedAt)} · ${plural(
         itemCounts(inspection as Record<string, unknown>).items,
         "item",
         "itens",
@@ -964,6 +964,88 @@ export function withMoveOutOf(moveOuts: readonly InspectionRecord[]): Set<string
 /** A entrada escolhida por padrão: a mais recente sem saída, ou a mais recente, se todas têm (#184). */
 export function defaultMoveInOf(options: readonly MoveInOption[]): MoveInOption | undefined {
   return options.find((option) => !option.hasMoveOut) ?? options[0];
+}
+
+/** "Entrada de 20/10/2026 às 14:30": o início, com a hora, como no Select da saída. */
+const moveInLabelOf = (startedAt: string) => `Entrada de ${dateOf(startedAt)} às ${timeOf(startedAt)}`;
+
+/** Os textos de um Dialog que confirma começar uma vistoria que costuma ser engano (#184 e #235). */
+export interface StartConfirmation {
+  title: string;
+  description: string;
+  action: string;
+}
+
+/** Outra saída de uma entrada que já tem saída (#184, ADR 0059); `moveInLabel` é o "Entrada de … às …" dela. */
+export function existingMoveOutConfirmation(moveInLabel: string): StartConfirmation {
+  return {
+    title: "Esta entrada já tem saída",
+    description: `${moveInLabel}. Já existe uma saída feita a partir dela; outra saída da mesma entrada costuma ser engano.`,
+    action: "Começar outra saída",
+  };
+}
+
+/** Uma entrada em andamento do imóvel (#235). */
+export interface OpenMoveIn {
+  id: string;
+  startedAt: string;
+}
+
+/**
+ * As entradas em andamento do imóvel (#235), da mais nova para a mais antiga pelo início. Lê como o histórico do imóvel:
+ * o resumo com a fila por cima e os rascunhos (ADR 0048), então a entrada criada offline, ainda na fila, e a recusada
+ * contam. A concluída (também a conclusão na fila) e a com a exclusão na fila não contam.
+ */
+export function openMoveInsOf(
+  summaries: readonly InspectionSummary[],
+  pending: ReadonlyMap<string, PendingRecord>,
+  allDrafts: readonly DraftRecord[],
+  propertyId: string,
+): OpenMoveIn[] {
+  return listEntries(summaries, pending, allDrafts)
+    .filter(
+      (entry) =>
+        entry.propertyId === propertyId &&
+        entry.kind === "moveIn" &&
+        !entry.completed &&
+        !entry.inspection?.deleting,
+    )
+    .sort(newest)
+    .map((entry) => ({ id: entry.id, startedAt: entry.startedAt }));
+}
+
+/** O aviso da Nova vistoria com Entrada num imóvel que já tem entrada em andamento (Figma "Nova vistoria · entrada em andamento (#235)"). */
+export interface OpenMoveInNotice {
+  /** A entrada que o link abre: a mais recente. */
+  id: string;
+  title: string;
+  /** O texto antes do link. */
+  description: string;
+  link: string;
+  /** Os textos do Dialog que "Começar vistoria" abre. */
+  confirmation: StartConfirmation;
+}
+
+/** O aviso das entradas em andamento `open` (a mais recente primeiro), ou null sem nenhuma. */
+export function openMoveInNotice(open: readonly OpenMoveIn[]): OpenMoveInNotice | null {
+  const [latest] = open;
+  if (!latest) return null;
+  const when = `${dateOf(latest.startedAt)} às ${timeOf(latest.startedAt)}`;
+  const title =
+    open.length === 1
+      ? "Este imóvel já tem uma entrada em andamento"
+      : `Este imóvel já tem ${open.length} entradas em andamento`;
+  return {
+    id: latest.id,
+    title,
+    description: open.length === 1 ? `Iniciada em ${when}.` : `A mais recente foi iniciada em ${when}.`,
+    link: open.length === 1 ? "Abrir a entrada" : "Abrir a mais recente",
+    confirmation: {
+      title,
+      description: `${moveInLabelOf(latest.startedAt)}. Outra entrada do mesmo imóvel costuma ser engano: abra a que já existe ou comece outra.`,
+      action: "Começar outra entrada",
+    },
+  };
 }
 
 /** O que a entrada tinha num item da saída, ao lado dele na tela de campo (Figma 42:1632 e 42:1715). */

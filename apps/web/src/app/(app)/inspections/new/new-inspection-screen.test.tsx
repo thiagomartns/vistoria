@@ -482,6 +482,126 @@ describe("NewInspectionScreen", () => {
     });
   });
 
+  describe("entrada em andamento no imóvel (#235)", () => {
+    const at = (day: number, hour = 9) => new Date(2026, 9, day, hour, 30).toISOString();
+    const FLORES = "Rua das Flores, 120 · Imobiliária Lar";
+    const ALERT_TITLE = "Este imóvel já tem uma entrada em andamento";
+    // Uma entrada do imóvel ainda em andamento.
+    const openMoveIn = (id: string, propertyId: string, startedAt: string): InspectionRecord => {
+      const { completedAt: _completed, ...entry } = moveIn(id, propertyId, startedAt);
+      return { ...entry, status: "inProgress" };
+    };
+
+    async function chooseProperty(user: ReturnType<typeof userEvent.setup>, label = FLORES) {
+      await user.click(screen.getByLabelText("Imóvel"));
+      await user.click(await screen.findByRole("option", { name: label }));
+    }
+
+    it("o aviso diz quando a entrada começou e leva a ela; começar pede confirmação, e cancelar não cria", async () => {
+      const user = userEvent.setup();
+      inspections.summaries = [openMoveIn("aberta", "p1", at(20, 14))].map(summaryOf);
+      open([property("p1", "Rua das Flores"), property("p2", "Rua do Porto")]);
+
+      expect(screen.queryByText(ALERT_TITLE)).toBeNull();
+      await chooseProperty(user);
+
+      const alert = screen.getByRole("alert");
+      expect(within(alert).getByText(ALERT_TITLE)).toBeDefined();
+      expect(alert.textContent).toContain("Iniciada em 20/10/2026 às 14:30.");
+      expect(within(alert).getByRole("link", { name: "Abrir a entrada" }).getAttribute("href")).toBe(
+        "/inspections/edit?id=aberta",
+      );
+      const start = screen.getByRole("button", { name: "Começar vistoria" }) as HTMLButtonElement;
+      expect(start.disabled).toBe(false);
+      await user.click(start);
+
+      const dialog = await screen.findByRole("dialog", { name: ALERT_TITLE });
+      expect(dialog.textContent).toContain(
+        "Entrada de 20/10/2026 às 14:30. Outra entrada do mesmo imóvel costuma ser engano: abra a que já existe ou comece outra.",
+      );
+      await user.click(within(dialog).getByRole("button", { name: "Cancelar" }));
+
+      await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(saveInspection).not.toHaveBeenCalled();
+      expect(navigation.push).not.toHaveBeenCalled();
+    });
+
+    it("confirmar cria a outra entrada e abre a tela de campo", async () => {
+      const user = userEvent.setup();
+      inspections.summaries = [openMoveIn("aberta", "p1", at(20, 14))].map(summaryOf);
+      open([property("p1", "Rua das Flores")]);
+
+      await chooseProperty(user);
+      await user.click(screen.getByRole("button", { name: "Começar vistoria" }));
+      const dialog = await screen.findByRole("dialog", { name: ALERT_TITLE });
+      await user.click(within(dialog).getByRole("button", { name: "Começar outra entrada" }));
+
+      await vi.waitFor(() => expect(navigation.push).toHaveBeenCalledWith("/inspections/edit?id=nova"));
+      expect(vi.mocked(saveInspection).mock.calls[0]?.[1]).toMatchObject({ propertyId: "p1", kind: "moveIn" });
+    });
+
+    it("uma entrada criada offline, ainda na fila, conta", async () => {
+      const user = userEvent.setup();
+      const offline = openMoveIn("offline", "p1", at(21, 8));
+      local.value = {
+        ...local.value,
+        pending: new Map([[offline.id, { mutationFnName: "upsertInspection", record: offline, removed: false }]]),
+      };
+      open([property("p1", "Rua das Flores")]);
+
+      await chooseProperty(user);
+
+      expect(screen.getByRole("alert").textContent).toContain("Iniciada em 21/10/2026 às 08:30.");
+      expect(screen.getByRole("link", { name: "Abrir a entrada" }).getAttribute("href")).toBe(
+        "/inspections/edit?id=offline",
+      );
+    });
+
+    it("duas em andamento: o aviso conta as duas e leva à mais recente", async () => {
+      const user = userEvent.setup();
+      inspections.summaries = [openMoveIn("antiga", "p1", at(2)), openMoveIn("nova", "p1", at(20, 14))].map(
+        summaryOf,
+      );
+      open([property("p1", "Rua das Flores")]);
+
+      await chooseProperty(user);
+
+      const alert = screen.getByRole("alert");
+      expect(within(alert).getByText("Este imóvel já tem 2 entradas em andamento")).toBeDefined();
+      expect(alert.textContent).toContain("A mais recente foi iniciada em 20/10/2026 às 14:30.");
+      expect(within(alert).getByRole("link", { name: "Abrir a mais recente" }).getAttribute("href")).toBe(
+        "/inspections/edit?id=nova",
+      );
+    });
+
+    it("sem entrada em andamento no imóvel (concluída, ou em andamento em outro imóvel), nada de aviso, e começar cria direto", async () => {
+      const user = userEvent.setup();
+      inspections.summaries = [moveIn("concluida", "p1", at(1)), openMoveIn("outro", "p2", at(3))].map(summaryOf);
+      open([property("p1", "Rua das Flores"), property("p2", "Rua do Porto")]);
+
+      await chooseProperty(user);
+      expect(screen.queryByText(ALERT_TITLE)).toBeNull();
+      await user.click(screen.getByRole("button", { name: "Começar vistoria" }));
+
+      await vi.waitFor(() => expect(navigation.push).toHaveBeenCalledWith("/inspections/edit?id=nova"));
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    it("com Saída escolhida, o aviso da entrada some", async () => {
+      const user = userEvent.setup();
+      inspections.summaries = [moveIn("concluida", "p1", at(1)), openMoveIn("aberta", "p1", at(20))].map(summaryOf);
+      inspections.records = new Map([["concluida", moveIn("concluida", "p1", at(1))]]);
+      open([property("p1", "Rua das Flores")]);
+
+      await chooseProperty(user);
+      expect(screen.getByText(ALERT_TITLE)).toBeDefined();
+      await user.click(screen.getByRole("radio", { name: "Saída" }));
+
+      expect(screen.queryByText(ALERT_TITLE)).toBeNull();
+      expect(screen.getByLabelText("Vistoria de entrada")).toBeDefined();
+    });
+  });
+
   // #176: o "Nova vistoria" do histórico do imóvel.
   it("com ?propertyId= de um imóvel do aparelho, o Imóvel já vem escolhido e começar cria nele", async () => {
     const user = userEvent.setup();
