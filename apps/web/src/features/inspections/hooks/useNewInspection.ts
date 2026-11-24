@@ -8,13 +8,17 @@ import { useLocalStore } from "@/features/local-store/hooks/useLocalStore";
 import { templateRows } from "@/features/templates/services/templates.view";
 import { byText } from "@/shared/search";
 
+import type { InspectionKind } from "../models/inspection";
 import { newMoveInInspection, newMoveOutInspection } from "../services/inspections.factory";
 import { DELETE_INSPECTION, UPSERT_INSPECTION, saveInspection } from "../services/inspections.sync";
 import {
   DEFAULT_TEMPLATE_ID,
   defaultMoveInOf,
+  existingMoveOutConfirmation,
   moveInsOf,
   moveOutIdsOf,
+  openMoveInNotice,
+  openMoveInsOf,
   templateOptionsOf,
   withMoveOutOf,
 } from "../services/inspections.view";
@@ -44,7 +48,9 @@ export type NewInspectionValues = z.infer<typeof newInspectionSchema>;
  * escolhida), lida inteira do banco local para a cópia. A entrada que já tem saída no aparelho diz isso no Select, a
  * escolhida por padrão é a mais recente sem saída, e começar outra saída dela pede confirmação (#184, ADR 0059). As
  * duas nascem no banco local e na fila, mesmo offline, e
- * abrem a tela de campo no primeiro ambiente.
+ * abrem a tela de campo no primeiro ambiente. Uma entrada num imóvel que já tem entrada em andamento no aparelho mostra
+ * o aviso com o link para ela e pede confirmação ao começar (#235): offline, dois aparelhos podem criar uma entrada
+ * cada um sem se ver, então não bloqueia.
  */
 export function useNewInspection(initialPropertyId: string | null = null) {
   const router = useRouter();
@@ -88,8 +94,17 @@ export function useNewInspection(initialPropertyId: string | null = null) {
     moveIns.find((option) => option.value === moveInId) ?? defaultMoveInOf(moveIns);
   const chosen = chosenOption?.value ?? "";
   const { record: moveIn } = useInspectionRecord(store, moveOut && chosen ? chosen : null);
-  const [confirming, setConfirming] = useState(false);
+  // O tipo fica depois de fechar: o Dialog não troca de texto na animação de saída.
+  const [confirming, setConfirming] = useState<{ kind: InspectionKind; open: boolean }>({
+    kind: "moveOut",
+    open: false,
+  });
   const chosenPlace = places.get(propertyId);
+  // As entradas em andamento do imóvel, com a fila e os rascunhos por cima (#235): só com Entrada escolhida.
+  const openMoveIn =
+    !moveOut && propertyId && summariesReady
+      ? openMoveInNotice(openMoveInsOf(summaries.data, queued, drafts, propertyId))
+      : null;
 
   const create = (values: NewInspectionValues) => {
     if (!store) return;
@@ -108,8 +123,9 @@ export function useNewInspection(initialPropertyId: string | null = null) {
       form.setError("propertyId", { message: "Escolha o imóvel." });
       return;
     }
-    // Outra saída da mesma entrada é quase sempre engano: pergunta antes (#184).
-    if (values.kind === "moveOut" && chosenOption?.hasMoveOut) setConfirming(true);
+    // Outra saída da mesma entrada e outra entrada do mesmo imóvel são quase sempre engano: pergunta antes (#184, #235).
+    if (values.kind === "moveOut" && chosenOption?.hasMoveOut) setConfirming({ kind: "moveOut", open: true });
+    else if (values.kind === "moveIn" && openMoveIn) setConfirming({ kind: "moveIn", open: true });
     else create(values);
   });
 
@@ -147,12 +163,24 @@ export function useNewInspection(initialPropertyId: string | null = null) {
     noMoveIn: moveOut && propertyId !== "" && moveInsReady && moveIns.length === 0,
     /** A saída espera a entrada escolhida ser lida inteira do banco local. */
     waitingMoveIn: moveOut && (chosen === "" || moveIn === undefined),
-    /** A confirmação de começar outra saída de uma entrada que já tem saída. */
-    confirmMoveOut: {
-      open: confirming,
-      onOpenChange: setConfirming,
-      /** "Entrada de 20/10/2026 às 14:30", sem o total de itens nem a marca. */
-      subject: chosenOption?.label.split(" · ")[0] ?? "",
+    /** O aviso da entrada em andamento no imóvel escolhido, com o link para a mais recente, ou null (#235). */
+    openMoveIn: openMoveIn && {
+      title: openMoveIn.title,
+      description: openMoveIn.description,
+      link: openMoveIn.link,
+      href: inspectionHref(openMoveIn.id),
+    },
+    /**
+     * A confirmação de começar mesmo assim: outra saída de uma entrada que já tem saída (#184), ou outra entrada num
+     * imóvel com entrada em andamento (#235). O "Entrada de 20/10/2026 às 14:30" da saída é o rótulo sem o total de
+     * itens nem a marca.
+     */
+    confirmStart: {
+      ...(confirming.kind === "moveIn" && openMoveIn
+        ? openMoveIn.confirmation
+        : existingMoveOutConfirmation(chosenOption?.label.split(" · ")[0] ?? "")),
+      open: confirming.open,
+      onOpenChange: (open: boolean) => setConfirming({ ...confirming, open }),
       onConfirm: () => create(form.getValues()),
     },
   };

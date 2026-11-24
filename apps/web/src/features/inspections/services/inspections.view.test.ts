@@ -26,6 +26,8 @@ import {
   historyEntryOf,
   moveInsOf,
   moveOutIdsOf,
+  openMoveInNotice,
+  openMoveInsOf,
   pendingItemIds,
   propertyHistory,
   editImpact,
@@ -607,6 +609,63 @@ describe("defaultMoveInOf", () => {
     expect(defaultMoveInOf([option("a", true), option("b", false), option("c", false)])?.value).toBe("b");
     expect(defaultMoveInOf([option("a", true), option("b", true)])?.value).toBe("a");
     expect(defaultMoveInOf([])).toBeUndefined();
+  });
+});
+
+describe("openMoveInsOf e openMoveInNotice (#235)", () => {
+  const at = (day: number, hour = 9) => new Date(2026, 9, day, hour, 30).toISOString();
+
+  it("as entradas em andamento do imóvel, com a fila e os rascunhos por cima, da mais nova para a mais antiga", () => {
+    const summaries = [
+      summaryOf(inspection("aberta", { startedAt: at(1) })),
+      summaryOf(inspection("concluida", { status: "completed", startedAt: at(2) })),
+      summaryOf(inspection("concluindo", { startedAt: at(3) })),
+      summaryOf(inspection("excluindo", { startedAt: at(4) })),
+      summaryOf(inspection("excluida", { startedAt: at(5) })),
+      summaryOf(inspection("saida", { kind: "moveOut", startedAt: at(6) })),
+      summaryOf(inspection("outro-imovel", { propertyId: "p2", startedAt: at(7) })),
+    ];
+    const pending = new Map([
+      queued(inspection("criada-offline", { startedAt: at(20) })),
+      queued(inspection("concluindo", { status: "completed", startedAt: at(3) })),
+      queued({ ...inspection("excluindo", { startedAt: at(4) }), deleting: true }),
+      queued(inspection("excluida", { startedAt: at(5) }), { removed: true }),
+    ]);
+    const drafts = [rejected(inspection("recusada", { startedAt: at(10) }))];
+
+    expect(openMoveInsOf(summaries, pending, drafts, "p1").map((entry) => entry.id)).toEqual([
+      "criada-offline",
+      "recusada",
+      "aberta",
+    ]);
+    expect(openMoveInsOf(summaries, pending, drafts, "p9")).toEqual([]);
+  });
+
+  it("o aviso: uma entrada, duas ou mais, e nenhuma", () => {
+    expect(openMoveInNotice([{ id: "a", startedAt: at(20, 14) }])).toEqual({
+      id: "a",
+      title: "Este imóvel já tem uma entrada em andamento",
+      description: "Iniciada em 20/10/2026 às 14:30.",
+      link: "Abrir a entrada",
+      confirmation: {
+        title: "Este imóvel já tem uma entrada em andamento",
+        description:
+          "Entrada de 20/10/2026 às 14:30. Outra entrada do mesmo imóvel costuma ser engano: abra a que já existe ou comece outra.",
+        action: "Começar outra entrada",
+      },
+    });
+    const two = openMoveInNotice([
+      { id: "nova", startedAt: at(20, 14) },
+      { id: "antiga", startedAt: at(1) },
+    ]);
+    expect(two).toMatchObject({
+      id: "nova",
+      title: "Este imóvel já tem 2 entradas em andamento",
+      description: "A mais recente foi iniciada em 20/10/2026 às 14:30.",
+      link: "Abrir a mais recente",
+    });
+    expect(two?.confirmation.title).toBe("Este imóvel já tem 2 entradas em andamento");
+    expect(openMoveInNotice([])).toBeNull();
   });
 });
 

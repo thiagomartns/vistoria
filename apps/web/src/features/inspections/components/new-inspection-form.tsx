@@ -22,8 +22,9 @@ import { ToggleGroup, ToggleGroupItem } from "@/shared/components/toggle-group";
 // e Tipo; na entrada, o Roteiro, entre os do aparelho, ou o roteiro padrão num aparelho sem nenhum, com o link para
 // Roteiros; na saída, a Vistoria de entrada de onde ela parte, ou, sem entrada concluída
 // no imóvel, o aviso e "Começar vistoria" desabilitado (68:1759). "Começar vistoria" e "Cancelar". No desktop, 560 px;
-// no celular, largura cheia e botões lg. Sem imóvel no aparelho, um aviso leva ao cadastro. O `form` vem do hook da
-// página.
+// no celular, largura cheia e botões lg. Sem imóvel no aparelho, um aviso leva ao cadastro. Na entrada, um imóvel com
+// entrada em andamento mostra o aviso com o link para ela, entre Tipo e Roteiro (Figma "Nova vistoria · entrada em
+// andamento (#235)"). O `form` vem do hook da página.
 
 export interface Option {
   value: string;
@@ -51,6 +52,8 @@ type NewInspectionFormProps = {
   /** Sem roteiro no aparelho: a opção é o roteiro padrão. */
   defaultTemplate: boolean;
   templatesHref: string;
+  /** O aviso da entrada em andamento no imóvel escolhido (#235), ou null. */
+  openMoveIn: { title: string; description: string; link: string; href: string } | null;
   /** O tipo escolhido é saída. */
   moveOut: boolean;
   /** As entradas concluídas do imóvel escolhido. */
@@ -78,6 +81,7 @@ export function NewInspectionForm({
   templateId,
   defaultTemplate,
   templatesHref,
+  openMoveIn,
   moveOut,
   moveInOptions,
   moveInId,
@@ -157,6 +161,20 @@ export function NewInspectionForm({
             </FormItem>
           )}
         />
+        {!moveOut && openMoveIn ? (
+          <Alert variant="warning">
+            <TriangleAlert aria-hidden="true" />
+            <AlertTitle>{openMoveIn.title}</AlertTitle>
+            <AlertDescription>
+              <p>
+                {openMoveIn.description}{" "}
+                <Link href={openMoveIn.href} className="font-medium text-foreground underline">
+                  {openMoveIn.link}
+                </Link>
+              </p>
+            </AlertDescription>
+          </Alert>
+        ) : null}
         {!moveOut ? (
           <FormField
             control={form.control}
