@@ -406,6 +406,10 @@ try {
   await b.getByLabel("Telefone").fill("(71) 3000-0002");
   await b.getByLabel("Nome").fill("Dois Aparelhos Imóveis");
   await b.getByRole("button", { name: "Salvar" }).click();
+  // O Nome vai no laudo e o cliente tem vistorias: o aviso da #234 abre antes de salvar, também offline.
+  const notice = b.getByRole("dialog", { name: "Salvar as alterações do cliente?" });
+  await notice.waitFor();
+  await notice.getByRole("button", { name: "Salvar" }).click();
   await b.getByRole("heading", { level: 1, name: "Clientes" }).waitFor();
   ok("celular muda Telefone e E-mail; desktop muda Telefone e Nome");
   const fromBClient = bPuts.length;
