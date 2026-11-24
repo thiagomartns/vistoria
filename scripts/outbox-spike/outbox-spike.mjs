@@ -59,6 +59,10 @@
 // arrastado para o topo, outro removido, um nome vazio que "Pronto" não aceita; no Sheet dos ambientes, um ambiente
 // novo, outro arrastado para o topo e um com itens removido pelo Dialog. Recarregada, segue; com a rede, o servidor tem
 // a lista nova, com as position na ordem da tela. Com SCREENS=1, os prints em `.screens/ambientes/`.
+// Desde o #234 o passo 12m2 muda o complemento da Rua da Conclusão: o aviso conta as 2 em andamento e as 2 concluídas
+// dela, "Voltar" não salva e "Salvar" grava. O laudo da concluída do 12h segue com o endereço da conclusão (a cópia que
+// o servidor gravou), aqui e num aparelho novo, que só tem o imóvel novo; depois o complemento volta. Com SCREENS=1, o
+// print do aviso em `.screens/imovel/`.
 // Desde o #175 o passo 12n busca a Rua da Conclusão na lista, sem acento, filtra as concluídas pelo Status (a URL guarda
 // os dois), abre o laudo de uma e volta para a lista filtrada; com Tipo "Saída", nada combina, e "Limpar filtros" volta
 // a lista inteira. Com SCREENS=1, os prints em `.screens/vistorias/`, com o Período aberto e o Sheet de filtros.
@@ -1840,6 +1844,69 @@ try {
   await page.getByRole("heading", { name: "Nenhuma vistoria deste imóvel" }).waitFor();
   await shootHistory(page, "historico-vazio");
   ok("imóvel sem vistoria: o EmptyState no lugar da linha do tempo");
+  await goTo(page, "Clientes");
+
+  step("12m2", "Laudo com a cópia da conclusão (#234): mudar o endereço da Rua da Conclusão avisa o que muda; o laudo da concluída segue com o endereço da conclusão, também num aparelho novo");
+  const conclusaoEdit = new URL(`/properties/edit?id=${conclusaoId}`, page.url()).href;
+  /** Salva a Rua da Conclusão com o complemento `complement`, pelo aviso, e espera o envio. */
+  const saveComplement = async (complement, shot) => {
+    await page.goto(conclusaoEdit);
+    await page.getByRole("heading", { name: "Histórico do imóvel" }).waitFor();
+    await page.getByLabel("Complemento").fill(complement);
+    await page.getByRole("button", { name: "Salvar", exact: true }).click();
+    const aviso = page.getByRole("dialog", { name: "Salvar as alterações do imóvel?" });
+    await aviso.waitFor();
+    assert.equal(
+      await aviso.getByText(/vistorias em andamento/).textContent(),
+      "As 2 vistorias em andamento deste imóvel passam a usar o endereço novo. As 2 concluídas mantêm o endereço da conclusão no laudo.",
+      "o aviso conta as duas em andamento e as duas concluídas do imóvel",
+    );
+    if (shot) await shootHistory(page, shot);
+    return aviso;
+  };
+  // "Voltar" fecha sem salvar e deixa o que foi digitado.
+  const voltar = await saveComplement("Bloco B", "salvar-com-vistorias");
+  const beforeNotice = puts.length;
+  await voltar.getByRole("button", { name: "Voltar" }).click();
+  await voltar.waitFor({ state: "hidden" });
+  assert.equal(await page.getByLabel("Complemento").inputValue(), "Bloco B", "Voltar deixa o formulário como estava");
+  await wait(1500);
+  assert.equal(puts.length, beforeNotice, "Voltar não enfileira nada");
+  await page.getByRole("button", { name: "Salvar", exact: true }).click();
+  await page.getByRole("dialog", { name: "Salvar as alterações do imóvel?" }).getByRole("button", { name: "Salvar" }).click();
+  await page.getByRole("heading", { level: 1, name: "Imóveis" }).waitFor();
+  await until(async () => (await outboxCount(page, user)) === 0, "a edição do imóvel sai", 60_000);
+  assert.equal((await serverProperty(user, conclusaoId)).body.complement, "Bloco B", "o servidor tem o complemento novo");
+  ok("o aviso diz o que muda nas 2 em andamento e nas 2 concluídas; Voltar não salva, Salvar grava o complemento novo");
+
+  // O laudo da concluída lê a cópia: o endereço sem o "Bloco B", aqui e no servidor.
+  const copied = (await serverInspection(user, concluir)).body.completedSnapshot;
+  assert.equal(copied?.property.street, "Rua da Conclusão", "a concluída tem a cópia do servidor");
+  assert.equal(copied.property.complement, null, "a cópia é a da conclusão, sem o complemento novo");
+  const reportOf = async (target) => {
+    const sheet = target.getByRole("article", { name: "Laudo de vistoria de entrada" });
+    const address = sheet.locator("dt:text-is('Imóvel') + dd");
+    await address.waitFor({ timeout: 30_000 });
+    return address.textContent();
+  };
+  await page.goto(new URL(`/inspections/report?id=${concluir}`, page.url()).href);
+  const here = await reportOf(page);
+  assert.ok(here.startsWith("Rua da Conclusão, 10 · ") && !here.includes("Bloco B"), `o laudo daqui segue com o endereço da conclusão: ${here}`);
+  // Um aparelho novo baixa tudo pelo pull: tem só o imóvel com o "Bloco B", e o laudo mostra a cópia.
+  const another = await browser.newContext({ viewport: { width: 1440, height: 900 }, serviceWorkers: "block" });
+  const anotherPage = await another.newPage();
+  await signIn(anotherPage, user, { next: `/inspections/report?id=${concluir}` });
+  const there = await reportOf(anotherPage);
+  assert.equal(there, here, "o aparelho novo mostra o mesmo endereço da conclusão");
+  await another.close();
+  ok(`o laudo da concluída segue com "${here}", aqui e num aparelho novo, com o imóvel já no "Bloco B"`);
+
+  // Volta o complemento: os passos seguintes procuram a Rua da Conclusão pelo endereço de antes.
+  const desfazer = await saveComplement("", null);
+  await desfazer.getByRole("button", { name: "Salvar" }).click();
+  await page.getByRole("heading", { level: 1, name: "Imóveis" }).waitFor();
+  await until(async () => (await outboxCount(page, user)) === 0, "a volta do complemento sai", 60_000);
+  assert.equal((await serverProperty(user, conclusaoId)).body.complement, null);
   await goTo(page, "Clientes");
 
   step("12n", "Busca e filtros (#175): buscar a Rua da Conclusão, filtrar as concluídas, abrir uma e voltar para a lista filtrada; nada combina e Limpar filtros");
