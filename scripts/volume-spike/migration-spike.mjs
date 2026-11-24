@@ -9,6 +9,9 @@
 //    com todas;
 // 4. o envio é liberado, e a transação feita no build antigo sai, chega ao servidor e entra na vistoria e no resumo;
 // 5. em modo avião, o reload abre a lista e a tela de campo com o que foi marcado.
+// Desde a #234, o passo 3 também confere a revisão 2 do laço de vistorias (ADR 0068): o build antigo baixou as
+// concluídas sem o `completedSnapshot`, e este build as puxa de novo uma vez, até toda concluída do banco local ter a
+// cópia, com a versão do banco local na mesma.
 // O build de `REF` sai de um `git worktree` e fica em `node_modules/.cache/migration-spike/REF`.
 // Exige `pnpm db:up`, `pnpm dev:api`, `pnpm seed` e `pnpm --filter web build`. A senha vem de DEV_USER_PASSWORD ou do
 // infra/.env, nunca impressa (ADR 0025).
@@ -149,6 +152,24 @@ const localRecord = (page, ownerId, store, key) =>
     [`vistoria-${ownerId}`, store, key],
   );
 
+/** Quantas vistorias concluídas o banco local tem, e quantas delas estão sem o `completedSnapshot` (#234). */
+const localCompleted = (page, ownerId) =>
+  page.evaluate(async (name) => {
+    const request = (r) =>
+      new Promise((done, fail) => {
+        r.onsuccess = () => done(r.result);
+        r.onerror = () => fail(r.error);
+      });
+    const db = await request(indexedDB.open(name));
+    try {
+      const rows = await request(db.transaction("inspections").objectStore("inspections").getAll());
+      const completed = rows.filter((row) => row?.status === "completed");
+      return { completed: completed.length, missing: completed.filter((row) => !row.completedSnapshot).length };
+    } finally {
+      db.close();
+    }
+  }, `vistoria-${ownerId}`);
+
 /** A lista diz `total` vistorias. */
 const listShows = (page, total, what) => until(async () => (await listedTotal(page)) === total, what, 120_000);
 
@@ -202,6 +223,7 @@ try {
     120_000,
   );
   const before = await localDb(page, user.id);
+  const oldCompleted = await localCompleted(page, user.id);
   assert.equal(
     before.version,
     current - 1,
@@ -269,6 +291,22 @@ try {
     );
     ok(`${templates.length} roteiro(s) pelo pull: ${templates.map((template) => template.name).join(", ")}`);
   }
+
+  // A revisão 2 das vistorias (#234): o build antigo descartou a cópia da conclusão; este as puxa de novo, uma vez.
+  assert.ok(oldCompleted.completed > 0, "o servidor não tem vistorias concluídas do usuário de dev: rode `pnpm seed`");
+  assert.equal(oldCompleted.missing, oldCompleted.completed, "o build antigo guarda as concluídas sem a cópia");
+  await until(
+    async () => (await localCompleted(page, user.id)).missing === 0,
+    "toda concluída do banco local com a cópia da conclusão",
+    120_000,
+  );
+  await until(
+    async () => (await localRecord(page, user.id, "cursors", "inspections"))?.revision === 2,
+    "o cursor das vistorias na revisão 2",
+    60_000,
+  );
+  assert.equal((await localDb(page, user.id)).version, current, "a cópia chega sem subir a versão do banco local");
+  ok(`as ${oldCompleted.completed} concluídas ganharam a cópia da conclusão pelo resync da revisão 2, no banco ${current}`);
 
   step(4, "O envio liberado: a marcação do build antigo sai e entra na vistoria e no resumo juntos");
   await context.unroute(SENDS);

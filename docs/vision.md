@@ -31,6 +31,8 @@ Um app de **vistoria de imóveis para locação** usado por vistoriadores autôn
 | Tema | Quando |
 | --- | --- |
 | Fotos por item | Versão 2 (o modelo já reserva o lugar delas) |
+| Correção de vistoria concluída, registrada no laudo (adendo) | Versão 2 (#236) |
+| Partes da locação: locador, locatário e imobiliária | Versão 2, depois do adendo (#237) |
 | Assinatura das partes | Versão 3 |
 | IA para redigir observações | Sem previsão |
 | Equipes, vários vistoriadores, portal da imobiliária | Sem previsão |
@@ -41,7 +43,7 @@ Um app de **vistoria de imóveis para locação** usado por vistoriadores autôn
 
 ### Decisões de produto
 
-- **Vistoria concluída é imutável.** Correção depois de concluir é tema de versão futura (adendo). É o que dá valor de prova ao laudo.
+- **Vistoria concluída é imutável.** Correção depois de concluir é tema da versão 2 (adendo, #236). É o que dá valor de prova ao laudo. O laudo mostra o imóvel e o cliente como estavam na conclusão, copiados pelo servidor: editá-los depois muda as vistorias em andamento, não as concluídas ([ADR 0068](decisions/0068-o-laudo-da-concluida-le-a-copia-do-imovel-e-do-cliente-feita-na-conclusao-e-o-pull-refaz-uma-vez-o-laco-das-vistorias-234.md)).
 - **Laudo é uma página imprimível do front**, convertida em PDF pelo próprio navegador. Funciona offline e não exige geração de PDF no servidor.
 - **Cliente e imóvel não são excluídos na V1**, só editados. Evita regras de exclusão em cascata sobre vistorias que são prova.
 - **A saída copia o estado da entrada** no momento da criação. O comparativo funciona offline sem precisar ler outra vistoria.

@@ -31,6 +31,7 @@ const dtoOf = (sent: InspectionRecord, version: string) => ({
   referenceInspectionId: null,
   completedAt: null,
   completedBy: null,
+  completedSnapshot: null,
   rooms: sent.rooms.map((room) => ({
     ...room,
     items: room.items.map((item) => ({ ...item, referenceCondition: null, referenceNotes: null })),
@@ -99,7 +100,7 @@ describe("upsertInspectionMutation", () => {
     const { id: _id, version: _version, ...expected } = record;
     expect(body).toEqual(expected);
     // Nada do que o servidor define vai no corpo.
-    expect(JSON.stringify(body)).not.toMatch(/completedAt|completedBy|reference|createdAt|updatedAt|version/);
+    expect(JSON.stringify(body)).not.toMatch(/completedAt|completedBy|completedSnapshot|reference|createdAt|updatedAt|version/);
     expect(confirmed.get(id)).toEqual({ ...record, version: "AAAAAAAAB9M=" });
   });
 

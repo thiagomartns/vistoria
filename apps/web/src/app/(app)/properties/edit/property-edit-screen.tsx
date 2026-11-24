@@ -4,6 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@sanjou/ui/tabs";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { PropertyHistory } from "@/features/inspections/components/property-history";
+import { SaveWithInspectionsDialog } from "@/features/inspections/components/save-with-inspections-dialog";
 import {
   propertyHistoryHref,
   usePropertyHistory,
@@ -22,7 +23,8 @@ import { PageHeader } from "../../shell-header";
 // Vistorias · N", com a aba no `?tab=` (Dados por padrão), para o "Voltar" da tela de campo e do laudo cair nela. O
 // formulário existe uma vez só na página, então a troca é pelo `useIsWide`, não pelo CSS. Em conflito, o aviso com
 // "Resolver conflito" acima do formulário (55:5132). Um id que o aparelho não tem é buscado no servidor, com o cliente
-// (#101); sem rede, não encontrado ou com falha, o aviso toma o lugar do formulário.
+// (#101); sem rede, não encontrado ou com falha, o aviso toma o lugar do formulário. Mudar o endereço, o tipo ou o
+// cliente de um imóvel com vistorias pede o aviso antes de salvar (Figma "Salvar com vistorias (#234)").
 
 const NEW_CLIENT_HREF = "/clients/edit";
 const HISTORY_TAB = "vistorias";
@@ -46,6 +48,7 @@ export function PropertyEditScreen() {
     masks,
     zipCodeHint,
     onZipCodeChange,
+    saveNotice,
   } = usePropertyForm(id);
   const history = usePropertyHistory(status === "found" ? id : null);
 
@@ -117,6 +120,7 @@ export function PropertyEditScreen() {
       ) : status === "loading" ? null : (
         body
       )}
+      <SaveWithInspectionsDialog {...saveNotice} />
     </>
   );
 }

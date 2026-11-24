@@ -89,6 +89,19 @@ const validation = (errors: Record<string, string[]>) =>
 
 const COMPLETED_AT = "2026-10-19T14:32:00+00:00";
 const COMPLETED_BY = { id: "01a16032-2dfc-7334-9752-3da4fdcc2e88", name: "Thiago Martins" };
+const COMPLETED_SNAPSHOT = {
+  property: {
+    street: "Rua das Flores",
+    number: "120",
+    complement: "ap 32",
+    district: "Jardim Paulista",
+    city: "São Paulo",
+    state: "SP",
+    zipCode: "01400000",
+    type: "apartment",
+  },
+  client: { name: "Imobiliária Horizonte", document: "11222333000181" },
+};
 
 /** A resposta 409 `locked`, com o `current` da vistoria concluída em outro aparelho. */
 const locked = (current: Record<string, unknown>) =>
@@ -106,8 +119,8 @@ const locked = (current: Record<string, unknown>) =>
 
 /**
  * O servidor falso: grava o imóvel (ou o recusa, com `rejectProperty`) e só aceita a vistoria de um imóvel gravado.
- * Como a API, a conclusão exige condição em todos os itens e ganha o `completedAt` e o
- * `completedBy`; com `lockedBy`, toda vistoria já
+ * Como a API, a conclusão exige condição em todos os itens e ganha o `completedAt`, o
+ * `completedBy` e o `completedSnapshot`; com `lockedBy`, toda vistoria já
  * está concluída por outro aparelho (409 `locked` com esse `current`). Anota cada `PUT` com a entidade, o id, a chave e
  * o corpo.
  */
@@ -148,10 +161,11 @@ function fakeServer({
           version: "AAAAAAAAB9R=",
           completedAt: COMPLETED_AT,
           completedBy: COMPLETED_BY,
+          completedSnapshot: COMPLETED_SNAPSHOT,
         });
       }
       return Response.json(
-        { ...body, id, version: "AAAAAAAAB9Q=", completedAt: null, completedBy: null },
+        { ...body, id, version: "AAAAAAAAB9Q=", completedAt: null, completedBy: null, completedSnapshot: null },
         { status: 201 },
       );
     },
@@ -348,7 +362,7 @@ describe("concluir pela outbox (#179)", () => {
     });
   }
 
-  it("offline: o PUT com status completed fica na fila; com a rede, sai uma vez só e a store fica concluída com o completedAt e o completedBy", async () => {
+  it("offline: o PUT com status completed fica na fila; com a rede, sai uma vez só e a store fica concluída com o completedAt, o completedBy e a cópia", async () => {
     const server = fakeServer();
     const local = localStores();
     const { outbox, inspections, inspection } = await synced(server, local);
@@ -379,12 +393,14 @@ describe("concluir pela outbox (#179)", () => {
     expect(completions[0]?.key).toBe(queued?.idempotencyKey);
     expect(completions[0]?.body).not.toHaveProperty("completedAt");
     expect(completions[0]?.body).not.toHaveProperty("completedBy");
+    expect(completions[0]?.body).not.toHaveProperty("completedSnapshot");
     expect(local.confirmed.get(inspection.id)).toEqual({
       ...values,
       status: "completed",
       version: "AAAAAAAAB9R=",
       completedAt: COMPLETED_AT,
       completedBy: COMPLETED_BY,
+      completedSnapshot: COMPLETED_SNAPSHOT,
     });
     expect(local.drafts.has(inspection.id)).toBe(false);
   });
@@ -432,6 +448,7 @@ describe("concluir pela outbox (#179)", () => {
       version: "AAAAAAAAB9S=",
       completedAt: COMPLETED_AT,
       completedBy: COMPLETED_BY,
+      completedSnapshot: COMPLETED_SNAPSHOT,
       createdAt: "2026-10-19T09:12:00+00:00",
       updatedAt: COMPLETED_AT,
       referenceInspectionId: null,
@@ -454,6 +471,7 @@ describe("concluir pela outbox (#179)", () => {
       version: "AAAAAAAAB9S=",
       completedAt: COMPLETED_AT,
       completedBy: COMPLETED_BY,
+      completedSnapshot: COMPLETED_SNAPSHOT,
     });
     expect(local.drafts.has(inspection.id)).toBe(false);
     await new Promise((done) => setTimeout(done, 300));

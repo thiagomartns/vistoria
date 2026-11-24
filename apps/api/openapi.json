@@ -1762,6 +1762,24 @@
           }
         }
       },
+      "ClientSnapshotDto": {
+        "required": [
+          "name",
+          "document"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "document": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "InspectionAuthorDto": {
         "required": [
           "id",
@@ -1788,6 +1806,7 @@
           "startedAt",
           "completedAt",
           "completedBy",
+          "completedSnapshot",
           "generalNotes",
           "rooms",
           "version",
@@ -1835,6 +1854,16 @@
               },
               {
                 "$ref": "#/components/schemas/InspectionAuthorDto"
+              }
+            ]
+          },
+          "completedSnapshot": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/InspectionSnapshotDto"
               }
             ]
           },
@@ -1925,6 +1954,21 @@
           "moveIn",
           "moveOut"
         ]
+      },
+      "InspectionSnapshotDto": {
+        "required": [
+          "property",
+          "client"
+        ],
+        "type": "object",
+        "properties": {
+          "property": {
+            "$ref": "#/components/schemas/PropertySnapshotDto"
+          },
+          "client": {
+            "$ref": "#/components/schemas/ClientSnapshotDto"
+          }
+        }
       },
       "InspectionStatus": {
         "enum": [
@@ -2086,6 +2130,48 @@
           "updatedAt": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "PropertySnapshotDto": {
+        "required": [
+          "street",
+          "number",
+          "complement",
+          "district",
+          "city",
+          "state",
+          "zipCode",
+          "type"
+        ],
+        "type": "object",
+        "properties": {
+          "street": {
+            "type": "string"
+          },
+          "number": {
+            "type": "string"
+          },
+          "complement": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "district": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "zipCode": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/PropertyType"
           }
         }
       },

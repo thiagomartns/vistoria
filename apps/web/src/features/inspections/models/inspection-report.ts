@@ -6,6 +6,8 @@ import type { InspectionKind } from "./inspection";
 export interface ReportField {
   label: string;
   value: string;
+  /** Uma segunda linha, abaixo do valor: na saída, o endereço da entrada quando ele é outro (ADR 0068). */
+  detail?: string;
 }
 
 export interface ReportItem {

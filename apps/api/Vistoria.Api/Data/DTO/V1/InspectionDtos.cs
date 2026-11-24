@@ -86,8 +86,8 @@ public sealed record UpsertInspectionItemDto
 
 /// <summary>
 /// <c>version</c> é o mesmo base64 do <c>ETag</c>, sem aspas, e é a versão do agregado inteiro. Ambientes e itens em
-/// ordem de <c>position</c>; os excluídos não aparecem. <c>completedAt</c> e <c>completedBy</c> só existem na concluída,
-/// gravados pelo servidor na conclusão.
+/// ordem de <c>position</c>; os excluídos não aparecem. <c>completedAt</c>, <c>completedBy</c> e
+/// <c>completedSnapshot</c> só existem na concluída, gravados pelo servidor na conclusão.
 /// </summary>
 public sealed record InspectionDto(
     Guid Id,
@@ -98,6 +98,7 @@ public sealed record InspectionDto(
     DateTimeOffset StartedAt,
     DateTimeOffset? CompletedAt,
     InspectionAuthorDto? CompletedBy,
+    InspectionSnapshotDto? CompletedSnapshot,
     string? GeneralNotes,
     IReadOnlyList<RoomDto> Rooms,
     string Version,
@@ -106,6 +107,26 @@ public sealed record InspectionDto(
 
 /// <summary>Quem concluiu a vistoria, com o nome copiado na conclusão: trocar de nome depois não muda o laudo (ADR 0053).</summary>
 public sealed record InspectionAuthorDto(Guid Id, string Name);
+
+/// <summary>
+/// O imóvel e o cliente como estavam na conclusão, copiados pelo servidor: o laudo da concluída lê daqui, e editar o
+/// imóvel ou o cliente depois não o muda (ADR 0068).
+/// </summary>
+public sealed record InspectionSnapshotDto(PropertySnapshotDto Property, ClientSnapshotDto Client);
+
+/// <summary>O endereço e o tipo do imóvel na conclusão; <c>zipCode</c> sem hífen, como no <c>PropertyDto</c>.</summary>
+public sealed record PropertySnapshotDto(
+    string Street,
+    string Number,
+    string? Complement,
+    string District,
+    string City,
+    string State,
+    string ZipCode,
+    PropertyType Type);
+
+/// <summary>O nome e o documento do cliente na conclusão.</summary>
+public sealed record ClientSnapshotDto(string Name, string? Document);
 
 public sealed record RoomDto(Guid Id, string Name, int Position, string? Notes, IReadOnlyList<InspectionItemDto> Items);
 

@@ -673,6 +673,110 @@ describe("PropertyEditScreen", () => {
   });
 
   // #176: o histórico do imóvel, numa linha do tempo; abas abaixo de 1280 px, Card ao lado do formulário a partir dele.
+  describe("aviso ao salvar um imóvel com vistorias (#234)", () => {
+    const summary = (id: string, over: Partial<InspectionSummary> = {}): InspectionSummary => ({
+      id,
+      version: "AAAAAAAAB9M=",
+      propertyId: "p1",
+      kind: "moveIn",
+      status: "completed",
+      startedAt: "2025-02-03T12:00:00.000Z",
+      evaluated: 29,
+      items: 29,
+      ...over,
+    });
+    const dialog = () => screen.getByRole("dialog");
+
+    it("em andamento e concluída: mudar o endereço abre o aviso; Voltar não salva, Salvar grava e volta", async () => {
+      const user = userEvent.setup();
+      inspections.summaries = [
+        summary("entrada"),
+        summary("saida", { kind: "moveOut", status: "inProgress" }),
+        summary("de-outro", { propertyId: "p2" }),
+      ];
+      open("p1", { properties: [flores] });
+      await user.clear(field("Complemento"));
+      await user.type(field("Complemento"), "ap 32 · Bloco B");
+
+      await user.click(screen.getByRole("button", { name: "Salvar" }));
+
+      expect(within(dialog()).getByRole("heading", { name: "Salvar as alterações do imóvel?" })).toBeTruthy();
+      expect(dialog().textContent).toContain(
+        "A vistoria em andamento deste imóvel passa a usar o endereço novo. A concluída mantém o endereço da conclusão no laudo.",
+      );
+      await user.click(within(dialog()).getByRole("button", { name: "Voltar" }));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(saveProperty).not.toHaveBeenCalled();
+      expect(navigation.push).not.toHaveBeenCalled();
+      expect(field("Complemento").value).toBe("ap 32 · Bloco B");
+
+      await user.click(screen.getByRole("button", { name: "Salvar" }));
+      await user.click(within(dialog()).getByRole("button", { name: "Salvar" }));
+
+      await vi.waitFor(() => expect(saveProperty).toHaveBeenCalledOnce());
+      expect(vi.mocked(saveProperty).mock.calls[0]?.[1]).toMatchObject({ id: "p1", complement: "ap 32 · Bloco B" });
+      expect(navigation.push).toHaveBeenCalledWith("/properties");
+    });
+
+    it("o tipo ou o cliente mudou: os dados novos, com as contagens; a conclusão na fila conta como concluída", async () => {
+      const user = userEvent.setup();
+      inspections.summaries = [
+        summary("a", { status: "inProgress" }),
+        summary("b", { status: "inProgress" }),
+        summary("c"),
+        summary("d"),
+        summary("e", { status: "inProgress" }),
+      ];
+      // A "e" foi concluída aqui e a conclusão está na fila.
+      const pending = new Map([
+        ["e", { mutationFnName: "upsertInspection", record: { ...summary("e"), rooms: [] }, removed: false }],
+      ]);
+      open("p1", { properties: [flores], pending });
+
+      await choose(user, "Tipo", "Casa");
+      await user.click(screen.getByRole("button", { name: "Salvar" }));
+
+      expect(dialog().textContent).toContain(
+        "As 2 vistorias em andamento deste imóvel passam a usar os dados novos. As 3 concluídas mantêm os da conclusão no laudo.",
+      );
+    });
+
+    it("só concluídas: elas mantêm o endereço da conclusão, e as próximas usam o novo", async () => {
+      const user = userEvent.setup();
+      inspections.summaries = [summary("a"), summary("b"), summary("c")];
+      open("p1", { properties: [flores] });
+
+      await user.clear(field("Número"));
+      await user.type(field("Número"), "122");
+      await user.click(screen.getByRole("button", { name: "Salvar" }));
+
+      expect(dialog().textContent).toContain(
+        "As 3 vistorias concluídas deste imóvel mantêm o endereço da conclusão no laudo. As próximas usam o novo.",
+      );
+    });
+
+    it("só as observações mudaram, ou o imóvel não tem vistorias: salva direto, sem aviso", async () => {
+      const user = userEvent.setup();
+      inspections.summaries = [summary("a"), summary("de-outro", { propertyId: "p2", status: "inProgress" })];
+      open("p1", { properties: [flores] });
+      await user.clear(field("Observações"));
+      await user.type(field("Observações"), "Portaria 12h.");
+
+      await user.click(screen.getByRole("button", { name: "Salvar" }));
+
+      await vi.waitFor(() => expect(saveProperty).toHaveBeenCalledOnce());
+      expect(screen.queryByRole("dialog")).toBeNull();
+
+      inspections.summaries = [summary("de-outro", { propertyId: "p2" })];
+      vi.mocked(saveProperty).mockClear();
+      open("p1", { properties: [flores] });
+      await user.clear(screen.getAllByLabelText("Complemento").at(-1)!);
+      await user.click(screen.getAllByRole("button", { name: "Salvar" }).at(-1)!);
+      await vi.waitFor(() => expect(saveProperty).toHaveBeenCalledOnce());
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+  });
+
   describe("histórico do imóvel", () => {
     const summary = (id: string, over: Partial<InspectionSummary> = {}): InspectionSummary => ({
       id,

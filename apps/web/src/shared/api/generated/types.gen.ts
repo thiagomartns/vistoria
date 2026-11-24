@@ -31,6 +31,11 @@ export type ClientDto = {
     updatedAt: string;
 };
 
+export type ClientSnapshotDto = {
+    name: string;
+    document: null | string;
+};
+
 export type InspectionAuthorDto = {
     id: string;
     name: string;
@@ -45,6 +50,7 @@ export type InspectionDto = {
     startedAt: string;
     completedAt: null | string;
     completedBy: null | InspectionAuthorDto;
+    completedSnapshot: null | InspectionSnapshotDto;
     generalNotes: null | string;
     rooms: Array<RoomDto>;
     version: string;
@@ -63,6 +69,11 @@ export type InspectionItemDto = {
 };
 
 export type InspectionKind = 'moveIn' | 'moveOut';
+
+export type InspectionSnapshotDto = {
+    property: PropertySnapshotDto;
+    client: ClientSnapshotDto;
+};
 
 export type InspectionStatus = 'inProgress' | 'completed';
 
@@ -117,6 +128,17 @@ export type PropertyDto = {
     version: string;
     createdAt: string;
     updatedAt: string;
+};
+
+export type PropertySnapshotDto = {
+    street: string;
+    number: string;
+    complement: null | string;
+    district: string;
+    city: string;
+    state: string;
+    zipCode: string;
+    type: PropertyType;
 };
 
 export type PropertyType = 'apartment' | 'house' | 'commercial' | 'other';

@@ -3,6 +3,7 @@ import { formatDocument } from "@/features/clients/schemas/client.schemas";
 import type { PropertyRecord } from "@/features/properties/models/property";
 import { PROPERTY_TYPES, formatZipCode } from "@/features/properties/schemas/property.schemas";
 import { addressOf } from "@/features/properties/services/properties.view";
+import type { InspectionSnapshotDto } from "@/shared/api/generated";
 
 import type { InspectionRecord } from "../models/inspection";
 import type { ReportField, ReportNotice, ReportView } from "../models/inspection-report";
@@ -11,7 +12,7 @@ import { referenceOf } from "./inspections.view";
 
 // Do banco local para o laudo de /inspections/report (Figma 177:16524). Função pura: cada estado cabe num teste, e a
 // folha recebe só o resultado. O laudo é prova (vision.md, H9): só existe para a conclusão que o servidor confirmou,
-// com a data e quem concluiu gravados por ele (ADR 0050, 0053 e 0054).
+// com a data, quem concluiu e a cópia do imóvel e do cliente gravados por ele (ADR 0050, 0053, 0054 e 0068).
 
 /** Os avisos sem laudo (Figma 177:16524, estados 4 a 6). */
 export const REPORT_NOTICES = {
@@ -51,8 +52,14 @@ function documentOf(document: string): string {
   return formatted;
 }
 
+/** O imóvel de que o laudo precisa: o registro do aparelho ou a cópia da conclusão. */
+type ReportProperty = InspectionSnapshotDto["property"];
+
+/** O cliente de que o laudo precisa: o registro do aparelho ou a cópia da conclusão. */
+type ReportClient = InspectionSnapshotDto["client"];
+
 /** "Rua das Flores, 120 · ap 32 · Jardim Paulista · São Paulo/SP · 01400-000". */
-function fullAddressOf(property: PropertyRecord): string {
+function fullAddressOf(property: ReportProperty): string {
   return [
     addressOf(property),
     property.district,
@@ -71,10 +78,31 @@ function completionOf(inspection: InspectionRecord): string {
   return `${sentence} (registrada pelo servidor)`;
 }
 
+/** "Imobiliária Horizonte · CNPJ 12.345.678/0001-90". */
+const clientOf = (client: ReportClient): string =>
+  [client.name, client.document && documentOf(client.document)].filter(Boolean).join(" · ");
+
+/** O campo "Entrada" da saída: a data e o id da entrada e, se a cópia dela tem outro endereço, ele na segunda linha. */
+function moveInOf(inspection: InspectionRecord, referenceId: string, reference?: InspectionRecord): ReportField {
+  const when = dateAndTime(reference?.completedAt);
+  const field: ReportField = {
+    label: "Entrada",
+    value: [when && `Laudo de entrada de ${when}`, referenceId].filter(Boolean).join(" · "),
+  };
+  const then = reference?.completedSnapshot?.property;
+  const now = inspection.completedSnapshot?.property;
+  if (then && now && fullAddressOf(then) !== fullAddressOf(now)) {
+    field.detail = `Endereço na entrada: ${fullAddressOf(then)}`;
+  }
+  return field;
+}
+
 /**
- * O laudo da vistoria `inspection` (o registro com a fila por cima), com o imóvel e o cliente do aparelho. A conclusão
- * confirmada é a que tem o `completedAt`, que só o servidor grava (ADR 0050): concluída sem ele, a conclusão ainda está
- * na fila. `reference`: a entrada de uma saída, quando o aparelho a tem.
+ * O laudo da vistoria `inspection` (o registro com a fila por cima). O imóvel e o cliente vêm da cópia que o servidor
+ * gravou na conclusão (ADR 0068): o laudo não muda quando eles mudam, e abre sem eles no aparelho. Uma concluída que
+ * ainda não recebeu a cópia (antes do pull que a traz) usa o imóvel e o cliente do aparelho. A conclusão confirmada é a
+ * que tem o `completedAt`, que só o servidor grava (ADR 0050): concluída sem ele, a conclusão ainda está na fila.
+ * `reference`: a entrada de uma saída, quando o aparelho a tem.
  */
 export function reportView(
   inspection: InspectionRecord | undefined,
@@ -93,26 +121,18 @@ export function reportView(
   if (!inspection.completedAt) return { state: "pending", notice: REPORT_NOTICES.pending };
 
   const kind = inspection.kind;
+  const copied = inspection.completedSnapshot;
+  const place: ReportProperty | undefined = copied?.property ?? property;
+  const owner: ReportClient | undefined = copied?.client ?? client;
   const fields: ReportField[] = [
-    { label: "Imóvel", value: property ? fullAddressOf(property) : "—" },
-    { label: "Tipo de imóvel", value: property ? PROPERTY_TYPES[property.type] : "—" },
-    {
-      label: "Cliente",
-      value: client
-        ? [client.name, client.document && documentOf(client.document)].filter(Boolean).join(" · ")
-        : "—",
-    },
+    { label: "Imóvel", value: place ? fullAddressOf(place) : "—" },
+    { label: "Tipo de imóvel", value: place ? PROPERTY_TYPES[place.type] : "—" },
+    { label: "Cliente", value: owner ? clientOf(owner) : "—" },
     { label: "Início", value: dateAndTime(inspection.startedAt) ?? "—" },
     { label: "Conclusão", value: completionOf(inspection) },
   ];
   if (inspection.referenceInspectionId) {
-    const when = dateAndTime(reference?.completedAt);
-    fields.push({
-      label: "Entrada",
-      value: [when && `Laudo de entrada de ${when}`, inspection.referenceInspectionId]
-        .filter(Boolean)
-        .join(" · "),
-    });
+    fields.push(moveInOf(inspection, inspection.referenceInspectionId, reference));
   }
   fields.push({ label: "Identificação", value: `${inspection.id} · versão ${inspection.version}` });
 

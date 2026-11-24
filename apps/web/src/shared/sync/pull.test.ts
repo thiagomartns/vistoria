@@ -250,6 +250,8 @@ describe("pull: o laço por entidade", () => {
       complete: () => false,
       resyncing: () => false,
       resync: async () => {},
+      revision: () => 1,
+      stamp: async () => {},
     };
     const phone = await device(api, { cursors });
 

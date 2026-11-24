@@ -26,7 +26,10 @@ export function InspectionReportSheet({ report }: { report: InspectionReport }) 
         {report.fields.map((field) => (
           <div key={field.label} className="contents">
             <dt className="text-muted-foreground">{field.label}</dt>
-            <dd className="min-w-0 break-words text-foreground">{field.value}</dd>
+            <dd className="min-w-0 break-words text-foreground">
+              {field.value}
+              {field.detail ? <span className="block">{field.detail}</span> : null}
+            </dd>
           </div>
         ))}
       </dl>
