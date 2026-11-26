@@ -1,0 +1,7 @@
+# Exceções do scan do Trivy na imagem do proxy (#194, ADR 0069). Cada uma diz por que não nos atinge e vence numa data
+# (`exp:`): vencida, o job `prod` volta a quebrar, e a exceção é revista ou sai junto com o bump do Dependabot.
+
+# golang.org/x/net/html (O(n²) no parser de HTML), no binário do Caddy 2.11.9. O Caddyfile só serve arquivos e repassa
+# /api/* (file_server e reverse_proxy), sem templates nem markdown: nada passa pelo parser. O main do Caddy já está na
+# x/net 0.62.0, a da correção; sai na próxima release.
+CVE-2026-78661 exp:2026-12-31

@@ -15,7 +15,9 @@ x-api-build: &api-build
 
 services:
   db:
-    image: mcr.microsoft.com/mssql/server:2022-latest
+    # Tag exata da CU (#194, ADR 0069). O Dependabot não sobe a CU: ele lê a tag como 2022 com o sufixo "-CU28-…".
+    # A troca é à mão, nos dois composes; o SqlServerContainer dos testes e o job e2e leem a do compose de dev.
+    image: mcr.microsoft.com/mssql/server:2022-CU28-ubuntu-22.04
     restart: unless-stopped
     environment:
       ACCEPT_EULA: "Y"

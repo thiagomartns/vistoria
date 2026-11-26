@@ -2,7 +2,7 @@
 # Uma imagem só: o serviço `migrate` do compose a usa com o efbundle de entrypoint, roda as migrações e sai; o `api`
 # sobe depois dele. Context: a raiz do repositório (o .editorconfig de lá vale no build, como em dev).
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0.403-noble AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0.404-noble AS build
 WORKDIR /src
 COPY .editorconfig ./
 WORKDIR /src/apps/api
@@ -17,7 +17,7 @@ ENV OpenApiGenerateDocuments=false
 RUN dotnet publish Vistoria.Api -c Release --no-restore -o /out
 RUN dotnet ef migrations bundle --project Vistoria.Api --configuration Release -o /out/efbundle
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0.14-noble
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.15-noble
 # curl só para o healthcheck do compose (/health/ready); a imagem base não traz cliente HTTP.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends curl \

@@ -122,11 +122,13 @@ jobs:
       - name: Senha do banco e chave do JWT desta execução
         run: node scripts/db-init/ci-env.mjs
 
-      # A senha vai por variável de ambiente (`-e NOME` sem valor), nunca em argumento.
+      # A senha vai por variável de ambiente (`-e NOME` sem valor), nunca em argumento. A imagem é a do compose de dev,
+      # numa tag exata (#194): nenhum outro lugar a repete.
       - name: SQL Server
         run: |
+          image=$(docker compose -f infra/docker-compose.dev.yml config --images)
           docker run -d --name vistoria-db -e ACCEPT_EULA=Y -e MSSQL_PID=Developer -e MSSQL_SA_PASSWORD \
-            -p 1433:1433 mcr.microsoft.com/mssql/server:2022-latest
+            -p 1433:1433 "$image"
           timeout 180 bash -c 'until docker logs vistoria-db 2>&1 | grep -q "SQL Server is now ready for client connections"; do sleep 2; done'
 
       # Em Development, a API aplica as migrações ao subir. Só aqui o rate limit sobe: os roteiros entram mais de 5 vezes
@@ -237,6 +239,30 @@ jobs:
 
       - name: Compose de produção
         run: pnpm prod:up
+
+      # As duas imagens que o compose acabou de construir (#194): quebra com vulnerabilidade HIGH ou CRITICAL que já tem
+      # correção. A sem correção não quebra, porque não há o que subir.
+      - name: Scan da imagem da API
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: vistoria-api
+          version: v0.76.2
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Scan da imagem do proxy
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: vistoria-proxy
+          version: v0.76.2
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          # As exceções que não nos atingem, cada uma com o porquê e a data em que vence.
+          trivyignores: infra/proxy/.trivyignore
 
       # A entrega do M5 (#178). Antes do smoke: o passo 6 dele esgota o limite do signin do IP, e o 7, o do refresh.
       - name: Roteiro da V1

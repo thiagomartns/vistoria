@@ -11,6 +11,6 @@ RUN pnpm fetch
 COPY apps/web/ apps/web/
 RUN pnpm install --offline --frozen-lockfile --filter web && pnpm --filter web build
 
-FROM caddy:2.11.6-alpine
+FROM caddy:2.11.9-alpine
 COPY infra/proxy/Caddyfile /etc/caddy/Caddyfile
 COPY --from=web /src/apps/web/out /srv

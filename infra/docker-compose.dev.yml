@@ -2,7 +2,9 @@ name: vistoria-dev
 
 services:
   db:
-    image: mcr.microsoft.com/mssql/server:2022-latest
+    # Tag exata da CU (#194, ADR 0069). O Dependabot não sobe a CU: ele lê a tag como 2022 com o sufixo "-CU28-…".
+    # A troca é à mão, nos dois composes; o SqlServerContainer dos testes e o job e2e leem a do compose de dev.
+    image: mcr.microsoft.com/mssql/server:2022-CU28-ubuntu-22.04
     container_name: vistoria-db
     restart: unless-stopped # volta sozinho depois de um reboot; pnpm db:down continua parando de vez
     environment:
