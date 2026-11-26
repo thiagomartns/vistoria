@@ -1,7 +1,7 @@
 # Imagem do proxy de produção (infra/docker-compose.prod.yml): o Caddy com o static export do web dentro.
 # Context: a raiz do repositório (o workspace do pnpm e o lockfile).
 
-FROM node:24.22.0-slim AS web
+FROM node:24.22.2-slim AS web
 ENV CI=true NEXT_TELEMETRY_DISABLED=1
 RUN corepack enable
 WORKDIR /src
