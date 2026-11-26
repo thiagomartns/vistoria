@@ -122,11 +122,13 @@ jobs:
       - name: Senha do banco e chave do JWT desta execução
         run: node scripts/db-init/ci-env.mjs
 
-      # A senha vai por variável de ambiente (`-e NOME` sem valor), nunca em argumento.
+      # A senha vai por variável de ambiente (`-e NOME` sem valor), nunca em argumento. A imagem é a do compose de dev,
+      # numa tag exata (#194): nenhum outro lugar a repete.
       - name: SQL Server
         run: |
+          image=$(docker compose -f infra/docker-compose.dev.yml config --images)
           docker run -d --name vistoria-db -e ACCEPT_EULA=Y -e MSSQL_PID=Developer -e MSSQL_SA_PASSWORD \
-            -p 1433:1433 mcr.microsoft.com/mssql/server:2022-latest
+            -p 1433:1433 "$image"
           timeout 180 bash -c 'until docker logs vistoria-db 2>&1 | grep -q "SQL Server is now ready for client connections"; do sleep 2; done'
 
       # Em Development, a API aplica as migrações ao subir. Só aqui o rate limit sobe: os roteiros entram mais de 5 vezes
@@ -212,11 +214,15 @@ jobs:
           if-no-files-found: ignore
 
   # O docker-compose de produção (#177): as duas imagens, a migração pelo efbundle e o Caddy servindo o front e a API na
-  # mesma origem, com TLS. O roteiro curto entra, sincroniza, renova a sessão pelo cookie e confere o IP do rate limit.
+  # mesma origem, com TLS. As imagens saem do buildx com a tag do commit e passam pelo Trivy, e o compose sobe por essa
+  # tag sem compilar, como no servidor (#195). O roteiro curto entra, sincroniza, renova a sessão pelo cookie e confere o
+  # IP do rate limit.
   prod:
     name: prod
     runs-on: ubuntu-24.04
     timeout-minutes: 25
+    env:
+      IMAGE_TAG: ${{ github.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -224,19 +230,76 @@ jobs:
 
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
 
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      # O cache do pnpm ao lado do build das imagens (ADR 0069): a `main` só lê o cache que a própria `main` gravou, e o de
+      # um PR fica no escopo dele. Envenenar o cache exige código já rodando na `main`.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0 # zizmor: ignore[cache-poisoning]
         with:
           node-version-file: .node-version
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
 
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # As duas imagens pela tag do commit, no cache do Actions por imagem: o `publish` monta as mesmas camadas, sem
+      # compilar de novo.
+      - name: Imagem da API
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          tags: ghcr.io/thiagomartns/vistoria-api:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/thiagomartns/vistoria
+            org.opencontainers.image.revision=${{ github.sha }}
+          load: true
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+
+      - name: Imagem do proxy
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: infra/proxy/Dockerfile
+          tags: ghcr.io/thiagomartns/vistoria-proxy:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/thiagomartns/vistoria
+            org.opencontainers.image.revision=${{ github.sha }}
+          load: true
+          cache-from: type=gha,scope=proxy
+          cache-to: type=gha,scope=proxy,mode=max
+
+      # Quebra com vulnerabilidade HIGH ou CRITICAL que já tem correção (#194). A sem correção não quebra, porque não há
+      # o que subir.
+      - name: Scan da imagem da API
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ghcr.io/thiagomartns/vistoria-api:${{ github.sha }}
+          version: v0.76.2
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Scan da imagem do proxy
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ghcr.io/thiagomartns/vistoria-proxy:${{ github.sha }}
+          version: v0.76.2
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          # As exceções que não nos atingem, cada uma com o porquê e a data em que vence.
+          trivyignores: infra/proxy/.trivyignore
+
       # Gerados no infra/.env.prod (0600) e mascarados: nenhum segredo no workflow (ADR 0025).
       - name: Segredos desta execução
         run: pnpm prod:init
 
+      # Pelo IMAGE_TAG do job, com as imagens que acabaram de passar pelo scan: `--no-build` quebra se faltar uma.
       - name: Compose de produção
-        run: pnpm prod:up
+        run: docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod up -d --no-build --wait
 
       # A entrega do M5 (#178). Antes do smoke: o passo 6 dele esgota o limite do signin do IP, e o 7, o do refresh.
       - name: Roteiro da V1
@@ -276,3 +339,90 @@ jobs:
           version: 1.30.1
           min-severity: medium
           advanced-security: false
+
+  # A cada push na `main`, depois de todos os jobs passarem, as imagens da API e do proxy vão para o GHCR com a tag do
+  # commit e a `main` (#195, ADR 0069). O build sai do cache do `prod` deste commit, e o Trivy passa de novo na imagem
+  # que vai subir. Só este job escreve em packages; o login vem depois do scan, logo antes do push.
+  publish:
+    name: publish
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [api, web, e2e, prod, security]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read # o checkout
+      packages: write # o push das imagens no GHCR
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # O mesmo build do `prod`, lido do cache que ele gravou: as camadas que passaram pelos roteiros, sem compilar de novo.
+      # Este job só lê o cache.
+      - name: Imagem da API
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          tags: |
+            ghcr.io/thiagomartns/vistoria-api:${{ github.sha }}
+            ghcr.io/thiagomartns/vistoria-api:main
+          labels: |
+            org.opencontainers.image.source=https://github.com/thiagomartns/vistoria
+            org.opencontainers.image.revision=${{ github.sha }}
+          load: true
+          cache-from: type=gha,scope=api
+
+      - name: Imagem do proxy
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: infra/proxy/Dockerfile
+          tags: |
+            ghcr.io/thiagomartns/vistoria-proxy:${{ github.sha }}
+            ghcr.io/thiagomartns/vistoria-proxy:main
+          labels: |
+            org.opencontainers.image.source=https://github.com/thiagomartns/vistoria
+            org.opencontainers.image.revision=${{ github.sha }}
+          load: true
+          cache-from: type=gha,scope=proxy
+
+      # Quebra com vulnerabilidade HIGH ou CRITICAL que já tem correção (#194). A sem correção não quebra, porque não há
+      # o que subir.
+      - name: Scan da imagem da API
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ghcr.io/thiagomartns/vistoria-api:${{ github.sha }}
+          version: v0.76.2
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Scan da imagem do proxy
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ghcr.io/thiagomartns/vistoria-proxy:${{ github.sha }}
+          version: v0.76.2
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          # As exceções que não nos atingem, cada uma com o porquê e a data em que vence.
+          trivyignores: infra/proxy/.trivyignore
+
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # A tag do commit antes da `main`: um push que cai no meio nunca deixa a `main` apontando para o que não subiu.
+      - name: Push para o GHCR
+        run: |
+          for image in vistoria-api vistoria-proxy; do
+            docker push "ghcr.io/thiagomartns/$image:$GITHUB_SHA"
+            docker push "ghcr.io/thiagomartns/$image:main"
+          done

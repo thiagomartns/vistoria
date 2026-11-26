@@ -1,21 +1,27 @@
 # Produção (backend.md, "Ambientes e hospedagem"; ADR 0011): o Caddy serve o static export e repassa /api/* para a
 # API, na mesma origem; o banco só existe na rede interna. Os segredos vêm do infra/.env.prod, gerado pelo
-# `pnpm prod:init` e nunca commitado (ADR 0025). Sobe com `pnpm prod:up`:
-#   docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod up -d --build --wait
+# `pnpm prod:init` e nunca commitado (ADR 0025). Sobe de dois jeitos (#195, ADR 0069):
+#   - pelas imagens do GHCR, publicadas pelo CI a cada merge na main, sem compilar nada (o servidor):
+#       IMAGE_TAG=<sha do commit> docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod up -d --no-build --wait
+#   - construindo aqui, com a tag `local` (`pnpm prod:up`):
+#       docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod up -d --build --wait
 # Ordem: db saudável → migrate (efbundle) termina com sucesso → api saudável (/health/ready) → proxy.
 name: vistoria-prod
 
 x-api-environment: &api-environment
   ConnectionStrings__Default: "Server=db,1433;Database=vistoria;User Id=sa;Password=${MSSQL_SA_PASSWORD:?rode pnpm prod:init para gerar infra/.env.prod};TrustServerCertificate=True"
 
-# A API e o migrate são a mesma imagem; os dois declaram o build para o `up --build` não tentar baixá-la.
+# A API e o migrate são a mesma imagem; os dois declaram o build para o `up --build` não tentar baixá-la. Sem IMAGE_TAG,
+# a tag é `local`, a do build desta máquina.
 x-api-build: &api-build
   context: ..
   dockerfile: apps/api/Dockerfile
 
 services:
   db:
-    image: mcr.microsoft.com/mssql/server:2022-latest
+    # Tag exata da CU (#194, ADR 0069). O Dependabot não sobe a CU: ele lê a tag como 2022 com o sufixo "-CU28-…".
+    # A troca é à mão, nos dois composes; o SqlServerContainer dos testes e o job e2e leem a do compose de dev.
+    image: mcr.microsoft.com/mssql/server:2022-CU28-ubuntu-22.04
     restart: unless-stopped
     environment:
       ACCEPT_EULA: "Y"
@@ -42,7 +48,7 @@ services:
   # As migrações como etapa do deploy: o efbundle da imagem da API aplica as pendentes e sai. A connection string vem
   # da configuração do host, como na API, sem passar pela linha de comando.
   migrate:
-    image: vistoria-api
+    image: ghcr.io/thiagomartns/vistoria-api:${IMAGE_TAG:-local}
     build: *api-build
     entrypoint: ["/app/efbundle"]
     restart: "no"
@@ -55,7 +61,7 @@ services:
         condition: service_healthy
 
   api:
-    image: vistoria-api
+    image: ghcr.io/thiagomartns/vistoria-api:${IMAGE_TAG:-local}
     build: *api-build
     restart: unless-stopped
     environment:
@@ -78,7 +84,7 @@ services:
       start_period: 15s
 
   proxy:
-    image: vistoria-proxy
+    image: ghcr.io/thiagomartns/vistoria-proxy:${IMAGE_TAG:-local}
     build:
       context: ..
       dockerfile: infra/proxy/Dockerfile

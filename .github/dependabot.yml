@@ -56,3 +56,42 @@ updates:
     commit-message:
       prefix: chore
       include: scope
+
+  # As imagens base dos dois Dockerfiles (#194). A major do sdk/aspnet acompanha a do TargetFramework, e a do node, o
+  # .node-version: sobem à mão, junto com eles, como no nuget e no npm.
+  - package-ecosystem: docker
+    directories:
+      - /apps/api
+      - /infra/proxy
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "*dotnet/sdk"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "*dotnet/aspnet"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]
+    groups:
+      docker:
+        patterns: ["*"]
+    commit-message:
+      prefix: chore
+      include: scope
+
+  # As imagens dos composes. A CU do SQL Server não sobe por aqui: o Dependabot lê `2022-CU28-ubuntu-22.04` como a
+  # versão 2022 com o sufixo "-CU28-…", e a CU seguinte muda o sufixo. Ela sobe à mão (ADR 0069).
+  - package-ecosystem: docker-compose
+    directory: /infra
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      docker-compose:
+        patterns: ["*"]
+    commit-message:
+      prefix: chore
+      include: scope
