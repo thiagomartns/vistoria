@@ -363,6 +363,21 @@ Em produção, front e API ficam na **mesma origem**, atrás de um proxy. Isso e
 - **No CI:** o job `prod` monta as duas imagens pelo buildx, passa o Trivy (quebra em HIGH/CRITICAL com correção; as exceções ficam em `infra/proxy/.trivyignore`, com data de validade), sobe pelo `IMAGE_TAG` com `--no-build` e roda o `spike:v1` e o `smoke:prod`.
 - **Tags:** toda imagem de terceiros fica numa tag exata, que o Dependabot sobe. A CU do SQL Server sobe à mão, nos dois composes.
 
+**Backup** ([ADR 0070](../decisions/0070-backup-do-banco-de-producao-full-diario-e-log-a-cada-15-min-num-volume-a-parte-restaurado-num-banco-limpo-no-ci-196.md)). O banco fica em recuperação FULL, com RPO de 15 min.
+- **O serviço `backup`** do compose de produção roda o `infra/backup/backup.sh` num loop: um full por dia às 06:00 UTC e um de log a cada 15 min, os dois `WITH CHECKSUM`. Ele usa a imagem do `db` e o sqlcmd dela, com a senha no `SQLCMDPASSWORD`.
+- **Os arquivos** (`vistoria_full_<UTC>.bak`, `vistoria_log_<UTC>.trn`) ficam no volume `sqlbackup`, separado do `sqldata`, e o `backup-init` dá o volume ao usuário `mssql`.
+- **A retenção:** os fulls de 7 dias, os de domingo até 28 dias e os logs que encadeiam com um full diário guardado. O último full nunca sai.
+- **O healthcheck** só fica saudável com um full e um backup de menos de 30 min. Assim, o `up --wait` espera o primeiro full.
+- **No CI**, o job `prod` roda o `pnpm backup:check` depois dos roteiros. Ele faz um log, restaura o último full e os logs num SQL Server limpo e sem rede, e confere as contagens por tabela.
+- **Para fora do servidor:** #241.
+
+**Restauração no servidor**, com o `sqlbackup` intacto ou copiado de volta. Use o mesmo `IMAGE_TAG` e o mesmo `--env-file infra/.env.prod`:
+1. `docker compose -f infra/docker-compose.prod.yml stop proxy api backup`
+2. `docker compose -f infra/docker-compose.prod.yml up -d --wait db`: sobe só o banco, que pode estar vazio.
+3. `docker compose -f infra/docker-compose.prod.yml run --rm --no-deps backup restore`: restaura o último full e os logs depois dele, com o `DBCC CHECKDB`.
+4. `docker compose -f infra/docker-compose.prod.yml up -d --no-build --wait`: o `migrate` não encontra migração pendente.
+5. `docker compose -f infra/docker-compose.prod.yml exec backup bash /backup/backup.sh full`: começa uma cadeia nova a partir do banco restaurado. Os logs seguintes encadeiam com este full, e não com os de antes da restauração.
+
 **Health checks:** nativos do ASP.NET Core (`AddHealthChecks`), fora de `/api/v1`, do contrato e do OpenAPI, sem token. `/health/live` não tem dependência nenhuma: só confirma que o processo responde. `/health/ready` inclui o banco (`AddDbContextCheck` do `AppDbContext`) e responde 503 quando ele não responde, para o proxy tirar a instância da rotação. O corpo é o texto do próprio health check (`Healthy`, `Unhealthy`), não um `ProblemDetails`: o 503 não é erro do catálogo. O `healthcheck` do serviço `api` no compose de produção usa o `/health/ready`; o CI e os scripts (`seed`, roteiros) também esperam por ele.
 
 **Ordem do pipeline:** `UseForwardedHeaders` → `UseExceptionHandler` → `UseCors` (só em dev) → `UseRateLimiter` → `UseAuthentication` → `UseAuthorization` → `MapControllers`. O IP real vem antes de tudo, para o tratamento de erros e o rate limit já o lerem. Com o CORS antes, o preflight não gasta o rate limit; com o rate limit antes da autenticação, força bruta é cortada antes de qualquer PBKDF2.

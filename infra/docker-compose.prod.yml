@@ -5,7 +5,9 @@
 #       IMAGE_TAG=<sha do commit> docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod up -d --no-build --wait
 #   - construindo aqui, com a tag `local` (`pnpm prod:up`):
 #       docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod up -d --build --wait
-# Ordem: db saudável → migrate (efbundle) termina com sucesso → api saudável (/health/ready) → proxy.
+# Ordem: db saudável → migrate (efbundle) termina com sucesso → api saudável (/health/ready) → proxy; e, depois do
+# migrate, o backup (#196, ADR 0070): um full por dia e um de log a cada 15 min, no volume sqlbackup. O servidor precisa
+# do infra/backup/backup.sh ao lado deste arquivo. A restauração está em backend.md, "Ambientes e hospedagem".
 name: vistoria-prod
 
 x-api-environment: &api-environment
@@ -20,7 +22,8 @@ x-api-build: &api-build
 services:
   db:
     # Tag exata da CU (#194, ADR 0069). O Dependabot não sobe a CU: ele lê a tag como 2022 com o sufixo "-CU28-…".
-    # A troca é à mão, nos dois composes; o SqlServerContainer dos testes e o job e2e leem a do compose de dev.
+    # A troca é à mão, nos dois composes (aqui, também no backup-init e no backup); o SqlServerContainer dos testes e o
+    # job e2e leem a do compose de dev.
     image: mcr.microsoft.com/mssql/server:2022-CU28-ubuntu-22.04
     restart: unless-stopped
     environment:
@@ -29,11 +32,16 @@ services:
       # banco, 1 socket ou 4 núcleos e ~1,4 GB de buffer pool, folgados para a V1 (ADR 0056).
       MSSQL_PID: Express
       MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?rode pnpm prod:init para gerar infra/.env.prod}
-    # Sem porta publicada: só a API, pela rede interna, fala com o banco.
+    # Sem porta publicada: só a API, pela rede interna, fala com o banco. Os backups, que o próprio sqlservr grava,
+    # ficam num volume à parte: um sqldata perdido ou corrompido não os leva junto. O `down -v` apaga os dois.
     volumes:
       - sqldata:/var/opt/mssql
+      - sqlbackup:/var/opt/mssql/backup
     networks:
       - backend
+    depends_on:
+      backup-init:
+        condition: service_completed_successfully
     # A senha vai pelo ambiente do sqlcmd (SQLCMDPASSWORD), nunca por -P: argumento aparece no `ps` (#196).
     healthcheck:
       test:
@@ -45,6 +53,17 @@ services:
       timeout: 5s
       retries: 10
       start_period: 20s
+
+  # O Docker cria o ponto de montagem do sqlbackup como root:root 755, e o sqlservr roda como mssql (10001): sem isto,
+  # o BACKUP não grava. Roda uma vez, sem rede.
+  backup-init:
+    image: mcr.microsoft.com/mssql/server:2022-CU28-ubuntu-22.04
+    user: "0:0"
+    entrypoint: ["chown", "10001:10001", "/var/opt/mssql/backup"]
+    restart: "no"
+    network_mode: none
+    volumes:
+      - sqlbackup:/var/opt/mssql/backup
 
   # As migrações como etapa do deploy: o efbundle da imagem da API aplica as pendentes e sai. A connection string vem
   # da configuração do host, como na API, sem passar pela linha de comando.
@@ -84,6 +103,33 @@ services:
       retries: 10
       start_period: 15s
 
+  # O agendamento do backup (o Express não tem o SQL Server Agent). A mesma imagem do db, pelo sqlcmd dela; quem grava é
+  # o sqlservr do db, no sqlbackup. Saudável só com um full e um backup de menos de 30 min: o `up --wait` espera o
+  # primeiro full, e um loop parado aparece no `docker compose ps`.
+  backup:
+    image: mcr.microsoft.com/mssql/server:2022-CU28-ubuntu-22.04
+    entrypoint: ["bash", "/backup/backup.sh"]
+    command: ["run"]
+    restart: unless-stopped
+    environment:
+      SQLCMDSERVER: db
+      # O sqlcmd lê a senha daqui; nenhum comando do backup.sh a leva no argumento.
+      SQLCMDPASSWORD: ${MSSQL_SA_PASSWORD:?rode pnpm prod:init para gerar infra/.env.prod}
+    volumes:
+      - sqlbackup:/var/opt/mssql/backup
+      - ./backup:/backup:ro
+    networks:
+      - backend
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "bash", "/backup/backup.sh", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
   proxy:
     image: ghcr.io/thiagomartns/vistoria-proxy:${IMAGE_TAG:-local}
     build:
@@ -119,5 +165,6 @@ networks:
 
 volumes:
   sqldata:
+  sqlbackup:
   caddy_data:
   caddy_config:
