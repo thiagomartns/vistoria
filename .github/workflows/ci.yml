@@ -308,6 +308,11 @@ jobs:
       - name: Roteiro de produção
         run: pnpm smoke:prod
 
+      # O backup do compose (#196, ADR 0070): o full saiu sozinho ao subir, antes dos roteiros; o log de agora leva o que
+      # eles gravaram. Restaura os dois num SQL Server limpo e quebra se as contagens não baterem.
+      - name: Backup e restauração
+        run: pnpm backup:check
+
       - name: Logs do compose
         if: failure()
         run: docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod logs --tail 200
