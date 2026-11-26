@@ -67,9 +67,30 @@ public class SecretsTests
         literals.Should().BeEmpty();
     }
 
+    // #196: o sqlcmd do compose e dos scripts de backup lê a senha do SQLCMDPASSWORD. Com -P, ela vai no argumento, que
+    // qualquer `ps` do container lê.
+    [Fact]
+    public void SqlcmdCalls_TakePasswordFromEnv()
+    {
+        var infra = Path.Combine(RepoRoot.Path, "infra");
+        var files = Directory.GetFiles(infra, "docker-compose*.yml")
+            .Concat(Directory.GetFiles(infra, "*.sh", SearchOption.AllDirectories))
+            .ToList();
+        files.Select(Path.GetFileName).Should().Contain(["docker-compose.dev.yml", "docker-compose.prod.yml"]);
+
+        var withArgument = files
+            .SelectMany(file => File.ReadLines(file).Select(line => (file: Path.GetRelativePath(RepoRoot.Path, file), line)))
+            .Where(entry => !entry.line.TrimStart().StartsWith('#') && PasswordArgument.IsMatch(entry.line))
+            .Select(entry => $"{entry.file}: {entry.line.Trim()}");
+
+        withArgument.Should().BeEmpty();
+    }
+
+    private static readonly Regex PasswordArgument = new(@"sqlcmd\b.*\s-P\b", RegexOptions.Compiled);
+
     // Um marcador de segredo (fora de um ${...}) cujo valor não começa por ${...}.
     private static readonly Regex LiteralSecret =
-        new(@"(?<!\$\{)(?:MSSQL_SA_PASSWORD:|Password=|SigningKey:)(?>\s*""?)(?!\$\{)", RegexOptions.Compiled);
+        new(@"(?<!\$\{)(?:MSSQL_SA_PASSWORD:|SQLCMDPASSWORD:|Password=|SigningKey:)(?>\s*""?)(?!\$\{)", RegexOptions.Compiled);
 
     private static readonly HashSet<string> SkippedDirs = ["node_modules", ".git", "bin", "obj", ".next", "out"];
 
